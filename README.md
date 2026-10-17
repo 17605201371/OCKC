@@ -134,3 +134,7 @@ E2E_PASSWORD="$DEMO_PASSWORD" node scripts/ui-smoke.mjs
 - 正式备份恢复工具、生产告警、合规审查和 200 会话压力测试。
 
 请将本版本作为可运行的开发基线，不要直接对真实学生投入生产。后续按设计计划分阶段推进，而非把 16 周建设内容视为本次已全部完成。
+
+## 8. CI 模板
+
+当前 GitHub 授权允许提交业务代码，但不允许写入 Actions 工作流。`docs/ci-template.yml` 提供 CI 模板；仓库维护者可将其复制为 `.github/workflows/ci.yml` 后启用。当前未在仓库启用、未宣称 GitHub Actions 已通过。
