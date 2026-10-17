@@ -39,7 +39,29 @@ public class CommunityService {
   return result;
  }
  public void validateContent(JsonNode doc){if(doc==null||!"doc".equals(doc.path("type").asText())||!doc.path("content").isArray()||encode(doc).length()>150000)throw fail(422,"正文结构无效或超过 15 万字符");Set<String> ids=new HashSet<>();walk(doc,ids,0,new int[]{0});}
- private void walk(JsonNode node,Set<String> ids,int depth,int[] count){if(depth>12||++count[0]>5000)throw fail(422,"正文结构过深或节点过多");String type=node.path("type").asText();if(!Set.of("doc","paragraph","heading","text","bulletList","orderedList","listItem","bold","italic","codeBlock","blockquote","hardBreak","horizontalRule").contains(type))throw fail(422,"正文含不支持的节点类型");if(type.equals("paragraph")||type.equals("heading")){String id=node.path("attrs").path("blockId").asText();if(!id.matches("[a-zA-Z0-9_-]{1,80}")||!ids.add(id))throw fail(422,"段落标识缺失或重复，请重新载入编辑器");}for(JsonNode c:node.path("content"))walk(c,ids,depth+1,count);}
+ private void walk(JsonNode node,Set<String> ids,int depth,int[] count){
+  if(depth>12||++count[0]>5000)throw fail(422,"正文结构过深或节点过多");
+  String type=node.path("type").asText();
+  if(!Set.of("doc","paragraph","heading","text","bulletList","orderedList","listItem","bold","italic","codeBlock","blockquote","hardBreak","horizontalRule").contains(type))throw fail(422,"正文含不支持的节点类型");
+  boolean required=type.equals("paragraph")||type.equals("heading");
+  String id=node.path("attrs").path("blockId").asText();
+  // Legacy code blocks may lack an id. New code blocks carry stable ids for evidence and diffs.
+  if(required||(type.equals("codeBlock")&&!id.isBlank())){
+   if(!id.matches("[a-zA-Z0-9_-]{1,80}")||!ids.add(id))throw fail(422,"段落标识缺失或重复，请重新载入编辑器");
+  }
+  for(JsonNode mark:node.path("marks")){
+   String m=mark.path("type").asText();
+   if(!Set.of("bold","italic","strike","underline","code","link").contains(m))throw fail(422,"正文含不支持的文字格式");
+   if(m.equals("link")){
+    String href=mark.path("attrs").path("href").asText();
+    try{
+     var url=java.net.URI.create(href);
+     if(href.length()>4096||href.chars().anyMatch(Character::isWhitespace)||href.chars().anyMatch(Character::isISOControl)||!Set.of("https","http").contains(String.valueOf(url.getScheme()).toLowerCase(Locale.ROOT))||url.getHost()==null)throw new IllegalArgumentException();
+    }catch(IllegalArgumentException ex){throw fail(422,"正文链接必须使用完整的 http 或 https 地址");}
+   }
+  }
+  for(JsonNode c:node.path("content"))walk(c,ids,depth+1,count);
+ }
  public Map<String,String> anchors(JsonNode doc){Map<String,String> map=new LinkedHashMap<>();collect(doc,map);return map;}
  private void collect(JsonNode n,Map<String,String> out){String id=n.path("attrs").path("blockId").asText();if(!id.isBlank())out.put(id,text(n));for(var c:n.path("content"))collect(c,out);}
  private String text(JsonNode n){StringBuilder b=new StringBuilder(n.path("text").asText());for(var c:n.path("content"))b.append(text(c));return b.toString();}

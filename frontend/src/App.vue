@@ -74,6 +74,7 @@ const email = ref(""),
 const modal = ref(""),
   form = ref<Record<string, any>>({});
 const selectedAnchor = ref(""),
+  selectedParagraph = ref(""),
   dirty = ref(false),
   saving = ref(false),
   conflicted = ref(false),
@@ -444,6 +445,7 @@ async function loadEditorState() {
   dirty.value = false;
   conflicted.value = false;
   selectedAnchor.value = "";
+  selectedParagraph.value = "";
   savedAt.value = entry.value.updated_at;
   latest.value = entry.value.versions.length
     ? await api(`/submissions/${entry.value.versions[0].id}`)
@@ -637,7 +639,9 @@ function showModal(kind: string, data: Record<string, any> = {}) {
     excerpt: "",
     claim: "",
     paragraphId:
-      selectedAnchor.value ||
+      (page.value === "editor"
+        ? selectedParagraph.value || selectedAnchor.value
+        : selectedAnchor.value) ||
       anchorOptions(
         page.value === "editor" ? entry.value?.content : version.value?.content,
       )[0]?.id ||
@@ -802,6 +806,7 @@ function beforeUnload(e: BeforeUnloadEvent) {
   }
 }
 function keydown(e: KeyboardEvent) {
+  if (e.defaultPrevented || document.querySelector("dialog[open]")) return;
   if (e.key === "Tab" && (modal.value || commandOpen.value)) {
     const dialog = document.querySelector<HTMLElement>(
       commandOpen.value ? ".command-dialog" : ".modal",
@@ -1571,9 +1576,11 @@ onBeforeUnmount(() => {
                 </div>
                 <Editor
                   :highlight-id="selectedAnchor"
+                  :document-title="entry.title"
+                  @evidence="showModal('evidence')"
                   v-model="entry.content"
                   @update:model-value="changed"
-                  @selected="selectedAnchor = $event"
+                  @selected="selectedParagraph = $event"
                 />
               </div>
               <section class="card source-panel">
