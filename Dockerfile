@@ -14,6 +14,7 @@ RUN mvn -B verify
 FROM eclipse-temurin:21-jre-alpine
 RUN addgroup -S community && adduser -S community -G community
 WORKDIR /app
+RUN mkdir -p /app/data && chown -R community:community /app
 COPY --from=build /src/backend/target/course-community-0.1.0.jar /app/app.jar
 USER community
 ENV SERVER_ADDRESS=0.0.0.0 PORT=8080

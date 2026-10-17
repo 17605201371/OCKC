@@ -1,0 +1,31 @@
+# Temporary PC demonstration only. No real student data.
+services:
+  - type: web
+    name: ockc-demo
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    autoDeployTrigger: 'off'
+    envVars:
+      - key: DEMO_SEED
+        value: 'true'
+      - key: DEMO_PASSWORD
+        sync: false
+      - key: COOKIE_SECURE
+        value: 'true'
+      - key: SERVER_ADDRESS
+        value: 0.0.0.0
+      - key: SERVER_FORWARD_HEADERS_STRATEGY
+        value: framework
+      - key: SERVER_TOMCAT_THREADS_MAX
+        value: '32'
+      - key: DATABASE_URL
+        value: jdbc:h2:file:/app/data/community;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE
+      - key: DATABASE_PASSWORD
+        generateValue: true
+      - key: JAVA_TOOL_OPTIONS
+        value: '-Xms64m -Xmx192m -XX:MaxMetaspaceSize=128m -XX:ReservedCodeCacheSize=48m -Xss512k'
