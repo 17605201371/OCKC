@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from "vue";
 import {
   BookOpen,
   LayoutDashboard,
@@ -36,9 +36,12 @@ import {
   Monitor,
   Layers,
   CornerDownLeft,
+  TrendingUp,
 } from "lucide-vue-next";
 import HomeDashboard from "./HomeDashboard.vue";
-import Editor from "./Editor.vue";
+const Editor = defineAsyncComponent(() => import("./Editor.vue"));
+import ProgressPage from "./ProgressPage.vue";
+import QualitySummary from "./QualitySummary.vue";
 import { api, login, ApiFailure } from "./api";
 const me = ref<any>(null),
   courses = ref<any[]>([]),
@@ -56,7 +59,8 @@ const homeEntry = ref<any>(null),
   commandOpen = ref(false),
   commandQuery = ref(""),
   assignmentFilter = ref("all"),
-  reviewFilter = ref("all");
+  reviewFilter = ref("all"),
+  publicationSort = ref("recent");
 const page = ref("home"),
   loading = ref(true),
   busy = ref(false),
@@ -78,6 +82,7 @@ const selectedAnchor = ref(""),
   dirty = ref(false),
   saving = ref(false),
   conflicted = ref(false),
+  uploadingMedia = ref(false),
   savedAt = ref(""),
   backup = ref<any>(null);
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -145,6 +150,7 @@ const nav = computed(() => [
   ...(isStaff.value ? [{ id: "review", name: "批改中心", icon: PenLine }] : []),
   { id: "community", name: "知识社区", icon: Library },
   { id: "evidence", name: "证据核验", icon: ShieldCheck },
+  { id: "progress", name: isStaff.value ? "教学进展" : "学习轨迹", icon: TrendingUp },
   { id: "rubric", name: "课程量规", icon: SlidersHorizontal },
 ]);
 const navName = computed(
@@ -162,11 +168,10 @@ const pendingQueue = computed(() =>
   queue.value.filter((q) => q.q_final === null),
 );
 const myWork = computed(() => assignments.value.filter((a) => a.entry_id));
-const filteredPubs = computed(() =>
-  publications.value.filter((p) =>
-    (p.title + p.author_name).toLowerCase().includes(query.value.toLowerCase()),
-  ),
-);
+const filteredPubs = computed(() => {
+  const rows = publications.value.filter(p => (p.title + p.author_name).toLowerCase().includes(query.value.toLowerCase()));
+  return publicationSort.value === 'quality' ? rows.sort((a, b) => Number(b.q_final) - Number(a.q_final)) : rows;
+});
 const previewScore = computed(() => {
   const dims: Record<string, number> = {};
   for (const d of rubric) {
@@ -393,7 +398,7 @@ applyTheme();
 watch(page, () => {
   sidebarCollapsed.value = ["editor", "grading", "reader"].includes(page.value);
   panelVisible.value = true;
-  outlineVisible.value = false;
+  outlineVisible.value = ["editor", "reader", "grading"].includes(page.value);
 });
 function dimensionScore(key: string) {
   const items = grading.value.filter(
@@ -419,6 +424,7 @@ async function go(target: string) {
   window.scrollTo(0, 0);
 }
 async function flushBeforeLeave() {
+  if (uploadingMedia.value) { notify("图片上传中，请稍候再离开"); return false; }
   if (page.value === "editor" && dirty.value) return await saveDraft();
   return true;
 }
@@ -495,6 +501,10 @@ async function saveDraft(): Promise<boolean> {
     if (!dirty.value) return true;
   }
   if (!dirty.value || !entry.value) return true;
+  if (entry.value.evidence.some((ev: any) => !anchorOptions(entry.value.content).some(a => a.id === ev.paragraphId))) {
+    error.value = "有证据关联的正文已删除，请撤销删除，或在「论断与证据」中移除失效证据后再保存。";
+    return false;
+  }
   if (conflicted.value) {
     error.value = "存在并发冲突。请复制正文后重新加载，避免覆盖其他修改。";
     return false;
@@ -509,6 +519,7 @@ async function saveDraft(): Promise<boolean> {
   inFlight = (async () => {
     try {
       const saved = await api(`/entries/${entry.value.id}/draft`, "PUT", data);
+      if (error.value.startsWith('有证据关联的正文已删除')) error.value = '';
       entry.value.revision = saved.revision;
       entry.value.updated_at = saved.updated_at;
       savedAt.value = saved.updated_at;
@@ -547,6 +558,7 @@ function restoreBackup() {
   notify("已恢复本地备份，等待保存");
 }
 async function submit() {
+  if (uploadingMedia.value) { notify("请等待图片上传完成"); return; }
   await run(async () => {
     for (let i = 0; i < 5 && dirty.value; i++) {
       if (!(await saveDraft())) return;
@@ -610,7 +622,7 @@ function anchorOptions(doc: any) {
         (x.text || "") + (x.content || []).map(texts).join("");
       out.push({
         id: n.attrs.blockId,
-        text: texts(n).slice(0, 32) || "空段落",
+        text: (n.type === "figure" ? "[图片] " + (n.attrs.caption || n.attrs.alt || "未添加图注") : n.type === "mathBlock" ? "[公式] " + n.attrs.latex : texts(n)).slice(0, 60) || "空段落",
       });
     }
     for (const c of n.content || []) walk(c);
@@ -618,6 +630,22 @@ function anchorOptions(doc: any) {
   if (doc) walk(doc);
   return out;
 }
+function documentHeadings(doc: any) {
+  const out: { id: string; text: string; level: number }[] = [];
+  function walk(n: any) {
+    if (n.type === 'heading' && n.attrs?.blockId) out.push({ id: n.attrs.blockId, text: (n.content || []).map((x: any) => x.text || '').join('') || '未命名章节', level: n.attrs.level || 1 });
+    for (const c of n.content || []) walk(c);
+  }
+  if (doc) walk(doc);
+  return out;
+}
+const activeOutlineId = computed(() => {
+  const headings = documentHeadings(entry.value?.content); if (!headings.length) return '';
+  let current = headings[0].id, found = false;
+  function walk(n: any) { if (found) return; if (n.type === 'heading' && n.attrs?.blockId) current = n.attrs.blockId; if (n.attrs?.blockId === selectedParagraph.value) { found = true; return; } for (const c of n.content || []) walk(c); }
+  if (entry.value?.content && selectedParagraph.value) walk(entry.value.content);
+  return found ? current : headings[0].id;
+});
 function focusAnchor(id: string, original = "") {
   const nodes = [...document.querySelectorAll<HTMLElement>("[data-block-id]")];
   const el = nodes.find((x) => x.dataset.blockId === id);
@@ -800,7 +828,7 @@ async function viewVerification(ev: any) {
   });
 }
 function beforeUnload(e: BeforeUnloadEvent) {
-  if (dirty.value) {
+  if (dirty.value || uploadingMedia.value) {
     e.preventDefault();
     e.returnValue = "";
   }
@@ -1001,7 +1029,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </aside>
-    <main class="main" :class="{ expanded: sidebarCollapsed }">
+    <main class="main" :class="{ expanded: sidebarCollapsed, 'creation-workspace': ['editor', 'reader', 'grading'].includes(page) }">
       <header class="topbar">
         <button
           class="icon-btn nav-toggle"
@@ -1028,7 +1056,7 @@ onBeforeUnmount(() => {
           <ArrowLeft :size="14" />返回</button
         ><span class="crumb"
           ><span v-if="page !== 'home'"
-            >课程空间 <span class="crumb-sep">/</span></span
+            >{{ course?.title || "课程空间" }} <span class="crumb-sep">/</span></span
           ><strong>{{ page === "home" ? "首页" : navName }}</strong></span
         ><span class="grow"></span
         ><button
@@ -1226,6 +1254,8 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
+        <ProgressPage v-else-if="page === 'progress'" :course-id="cid" :staff="isStaff" @open-version="openVersion($event, isStaff)" @assignments="go('assignments')" />
+
         <section v-else-if="page === 'review'" class="page">
           <div class="page-heading">
             <div>
@@ -1352,7 +1382,7 @@ onBeforeUnmount(() => {
                 v-model="query"
                 placeholder="搜索标题或作者"
                 aria-label="搜索社区条目" /></label
-            ><span class="muted">仅展示已获批的指定版本</span>
+            ><label class="community-sort">排序<select v-model="publicationSort" aria-label="社区排序"><option value="recent">最近发布</option><option value="quality">质量分优先</option></select></label><span class="muted">仅展示已获批的指定版本</span>
           </div>
           <div class="community-grid">
             <article
@@ -1360,6 +1390,7 @@ onBeforeUnmount(() => {
               :key="p.id"
               class="knowledge-card"
             >
+              <button v-if="p.cover" class="knowledge-cover" aria-label="打开图文知识帖" @click="openVersion(p.submission_id)"><img :src="p.cover" :alt="p.title + '的插图'" loading="lazy" /></button>
               <div class="card-top">
                 <span class="category-label">课程知识帖</span
                 ><span class="quality-number"
@@ -1469,13 +1500,13 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-else-if="page === 'editor' && entry" class="editing-page">
+        <section v-else-if="page === 'editor' && entry" class="editing-page knowledge-workbench">
           <div class="editor-heading">
             <div>
               <button class="text-btn muted" @click="go('assignments')">
                 <ArrowLeft :size="16" />返回作业
               </button>
-              <h1>创作与修订</h1>
+              <span class="workspace-kicker">KNOWLEDGE STUDIO</span><h1>创作与修订</h1>
               <p>
                 {{
                   saving
@@ -1487,7 +1518,7 @@ onBeforeUnmount(() => {
                 · 草稿 r{{ entry.revision }}
               </p>
             </div>
-            <div class="button-row">
+            <div class="button-row"><button class="text-btn history-trigger" @click="panelVisible = true; feedbackTab = 'versions'"><History :size="16" />历史版本</button>
               <button
                 class="btn secondary"
                 :class="{ pressed: outlineVisible }"
@@ -1502,13 +1533,13 @@ onBeforeUnmount(() => {
                 <PanelLeftClose :size="16" />评分与反馈</button
               ><button
                 class="btn secondary"
-                :disabled="saving || busy"
+                :disabled="saving || busy || uploadingMedia"
                 @click="saveDraft"
               >
                 <Save :size="17" />保存草稿</button
               ><button
                 class="btn primary"
-                :disabled="saving || busy || conflicted"
+                :disabled="saving || busy || conflicted || uploadingMedia"
                 @click="submit"
               >
                 <Send :size="17" />提交评审
@@ -1532,33 +1563,23 @@ onBeforeUnmount(() => {
               'without-panel': !panelVisible,
             }"
           >
-            <aside v-if="outlineVisible" class="document-outline">
-              <h3>
-                <ListTree :size="16" />{{
-                  page === "editor" ? "写作大纲" : "文档大纲"
-                }}
-              </h3>
-              <p>点击段落，定位正文</p>
-              <nav aria-label="正文段落">
-                <button
-                  v-for="(a, i) in anchorOptions(entry.content)"
-                  :key="a.id"
-                  :class="{ selected: selectedAnchor === a.id }"
-                  @click="focusAnchor(a.id)"
-                >
-                  <span>{{ i + 1 }}</span
-                  ><span>{{ a.text }}</span>
-                </button>
+            <aside v-if="outlineVisible" class="document-outline studio-outline">
+              <div class="outline-section-label"><ListTree :size="16" /><h3>写作大纲</h3><span>{{ documentHeadings(entry.content).length }}</span></div>
+              <nav aria-label="文章章节">
+                <button v-for="(a, i) in documentHeadings(entry.content)" :key="a.id" :class="{ selected: activeOutlineId === a.id, 'sub-heading': a.level > 1 }" @click="focusAnchor(a.id)"><span>{{ i + 1 }}</span><span>{{ a.text }}</span></button>
               </nav>
-              <div class="outline-foot">
-                <ShieldCheck :size="16" /><span
-                  >段落标识保持稳定，反馈不会随顺序变化而错位。</span
-                >
-              </div>
+              <p v-if="!documentHeadings(entry.content).length" class="outline-empty">用 H1 / H2 组织文章，章节将自动出现在这里。</p>
+              <section class="outline-evidence"><div class="outline-section-label"><BookOpen :size="16" /><h3>挂载证据</h3><span>{{ entry.evidence.length }}</span></div>
+                <button v-for="(e, i) in entry.evidence" :key="i" class="outline-source" @click="focusAnchor(e.paragraphId)"><span>E{{ i + 1 }}</span><span>{{ e.sourceTitle }}</span></button>
+                <p v-if="!entry.evidence.length" class="outline-empty">让每一个关键论断，都有可靠的来源。</p>
+                <button class="outline-add" @click="showModal('evidence')"><Plus :size="15" />挂载新证据</button>
+              </section>
+              <section class="outline-assignment"><span class="eyebrow">当前任务</span><strong>{{ currentAssignment?.title }}</strong><p><Clock :size="13" />{{ fmt(currentAssignment?.due_at) }} 截止</p><details><summary>查看任务要求</summary><p>{{ currentAssignment?.requirements }}</p></details></section>
+              <div class="outline-foot"><ShieldCheck :size="16" /><span>草稿持续保存，提交后生成独立版本。段落与图片均可关联证据。</span></div>
             </aside>
             <div class="document-column">
               <div class="document-paper">
-                <span class="eyebrow">知识帖 · 草稿</span
+                <span class="eyebrow document-label"><span class="draft-dot"></span>知识帖草稿 <span class="grow"></span><span>仅你与任课教师可见</span></span
                 ><input
                   v-model="entry.title"
                   maxlength="160"
@@ -1577,6 +1598,7 @@ onBeforeUnmount(() => {
                 <Editor
                   :highlight-id="selectedAnchor"
                   :document-title="entry.title"
+                  :entry-id="entry.id" :evidence-count="entry.evidence.length" @uploading="uploadingMedia = $event"
                   @evidence="showModal('evidence')"
                   v-model="entry.content"
                   @update:model-value="changed"
@@ -1600,9 +1622,9 @@ onBeforeUnmount(() => {
                 >
                   <div>
                     <strong>{{ e.sourceTitle }}</strong>
-                    <p>{{ e.claim }}</p>
+                    <p>{{ e.claim }}</p><p v-if="!anchorOptions(entry.content).some(a => a.id === e.paragraphId)" class="orphan-source-warning">关联内容已删除：请撤销删除或移除此证据。</p>
                     <span class="muted"
-                      >{{ e.paragraphId }} · 提交后待核验</span
+                      >证据 E{{ i + 1 }} · 提交后待核验</span
                     >
                   </div>
                   <button
@@ -1620,28 +1642,12 @@ onBeforeUnmount(() => {
             </div>
             <aside v-show="panelVisible" class="feedback-sidebar">
               <div class="panel-title">
-                <h2>评分与反馈</h2>
+                <h2>质量与反馈</h2>
                 <span class="badge">{{
                   latest ? `最近提交 v${latest.version_no}` : "尚未提交"
                 }}</span>
               </div>
-              <div v-if="latest?.evaluation" class="score-overview">
-                <span>教师确认质量分</span>
-                <div class="big-score">
-                  {{ number(latest.evaluation.q_final) }}<small>/ 100</small>
-                </div>
-                <div class="dimension-grid">
-                  <div v-for="d in rubric" :key="d.d">
-                    <span>{{ d.name }}</span
-                    ><strong>{{
-                      number(latest.evaluation.dimensions[d.d])
-                    }}</strong>
-                  </div>
-                </div>
-                <p class="small-note">
-                  四维等权 · 分数对应已提交版本，不是当前草稿
-                </p>
-              </div>
+              <QualitySummary v-if="latest?.evaluation" :evaluation="latest.evaluation" :version="latest.version_no" draft @rubric="go('rubric')" />
               <div v-else class="no-score">
                 <Clock :size="24" />
                 <h3>{{ latest ? "等待教师评审" : "写下你的第一版" }}</h3>
@@ -1678,7 +1684,7 @@ onBeforeUnmount(() => {
                       >{{ f.resolved ? "已解决" : "待修订" }}</span
                     >
                   </div>
-                  <h3>{{ f.body }}</h3>
+                  <h3 class="feedback-highlight">{{ f.body }}</h3>
                   <button
                     class="text-btn"
                     @click="focusAnchor(f.paragraph_id, f.original_text)"
@@ -1834,10 +1840,10 @@ onBeforeUnmount(() => {
           >
             <aside v-if="outlineVisible" class="document-outline">
               <h3><ListTree :size="16" />文档大纲</h3>
-              <p>点击段落，定位正文</p>
+              <p>点击章节，定位正文</p>
               <nav aria-label="正文段落">
                 <button
-                  v-for="(a, i) in anchorOptions(version.content)"
+                  v-for="(a, i) in documentHeadings(version.content)"
                   :key="a.id"
                   :class="{ selected: selectedAnchor === a.id }"
                   @click="focusAnchor(a.id)"
@@ -2096,28 +2102,7 @@ onBeforeUnmount(() => {
                 <h2>质量与版本</h2>
                 <span class="badge">v{{ version.version_no }}</span>
               </div>
-              <div v-if="version.evaluation" class="score-overview">
-                <span>教师确认质量分</span>
-                <div class="big-score">
-                  {{ number(version.evaluation.q_final) }}<small>/ 100</small>
-                </div>
-                <div class="dimension-grid">
-                  <div v-for="d in rubric" :key="d.d">
-                    <span>{{ d.name }}</span
-                    ><strong>{{
-                      number(version.evaluation.dimensions[d.d])
-                    }}</strong>
-                  </div>
-                </div>
-                <p class="small-note">
-                  {{ version.evaluation.teacher_name }} ·
-                  {{ fmt(version.evaluation.created_at) }}
-                </p>
-                <p v-if="version.evaluation.gate_reason" class="error-note">
-                  质量门槛：{{ version.evaluation.gate_reason }}
-                </p>
-                <p class="teacher-summary">{{ version.evaluation.summary }}</p>
-              </div>
+              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" @rubric="go('rubric')" /><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
               <div v-else class="empty">
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>

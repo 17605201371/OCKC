@@ -8,8 +8,14 @@ import {
   onBeforeUnmount,
 } from "vue";
 import { useEditor, EditorContent } from "@tiptap/vue-3";
+import { TableKit } from '@tiptap/extension-table';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+import { Figure, MathBlock, Callout } from './richBlocks';
+import { uploadImage } from './api';
 import StarterKit from "@tiptap/starter-kit";
 import { Extension } from "@tiptap/core";
+import { closeHistory } from "@tiptap/pm/history";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import {
@@ -35,6 +41,12 @@ import {
   Keyboard,
   Check,
   X,
+  ImagePlus,
+  Table2,
+  Sigma,
+  Lightbulb,
+  Underline,
+  Trash2,
 } from "lucide-vue-next";
 import { toMarkdown } from "./markdown";
 const props = defineProps<{
@@ -42,8 +54,68 @@ const props = defineProps<{
   readonly?: boolean;
   highlightId?: string;
   documentTitle?: string;
+  entryId?: number;
+  evidenceCount?: number;
 }>();
-const emit = defineEmits(["update:modelValue", "selected", "evidence"]);
+const emit = defineEmits(["update:modelValue", "selected", "evidence", "uploading"]);
+const mediaDialog = ref<HTMLDialogElement>(), mathDialog = ref<HTMLDialogElement>();
+const imageFile = ref<HTMLInputElement>();
+const media = ref({ src: '', alt: '', caption: '', source: '' });
+const mediaError = ref(''), mediaBusy = ref(false), mathLatex = ref(''), mathError = ref('');
+let mediaPosition: number | null = null, mathPosition: number | null = null;
+const mathPreview = computed(() => {
+  try { return katex.renderToString(mathLatex.value || '\\text{在下方输入公式}', { displayMode: true, throwOnError: true, trust: false, maxExpand: 100, maxSize: 20 }); }
+  catch { return ''; }
+});
+function showImage(node?: any, pos?: number) {
+  mediaPosition = typeof pos === 'number' ? pos : null;
+  media.value = node ? { ...node.attrs } : { src: '', alt: '', caption: '', source: '' };
+  mediaError.value = ''; bubble.value = false;
+  savedSelection = { from: editor.value!.state.selection.from, to: editor.value!.state.selection.to };
+  nextTick(() => mediaDialog.value?.showModal());
+}
+async function selectImage(event: Event) {
+  const input = event.target as HTMLInputElement, file = input.files?.[0];
+  if (!file) return;
+  await loadImage(file); input.value = '';
+}
+async function loadImage(file: File) {
+  if (!props.entryId) { mediaError.value = '请先打开一份作业草稿'; return; }
+  if (!['image/png', 'image/jpeg'].includes(file.type) || file.size > 5 * 1024 * 1024) { mediaError.value = '请选择不超过 5 MB 的 PNG 或 JPEG 图片'; return; }
+  mediaBusy.value = true; mediaError.value = ''; emit('uploading', true);
+  try { const result = await uploadImage(props.entryId, file); media.value.src = result.src; if (!media.value.alt) media.value.alt = file.name.replace(/\.[^.]+$/, '').slice(0, 300); }
+  catch (e: any) { mediaError.value = e.message || '上传失败，请重试'; }
+  finally { mediaBusy.value = false; emit('uploading', false); }
+}
+function insertImage() {
+  if (!media.value.src) { mediaError.value = '请先上传一张图片'; return; }
+  const e = editor.value; if (!e) return;
+  e.view.dispatch(closeHistory(e.state.tr));
+  if (mediaPosition !== null) e.chain().focus().setNodeSelection(mediaPosition).updateAttributes('figure', media.value).run();
+  else e.chain().focus().setTextSelection(savedSelection).insertContent([{ type: 'figure', attrs: { ...media.value, blockId: crypto.randomUUID() } }, { type: 'paragraph', attrs: { blockId: crypto.randomUUID() } }]).run();
+  e.view.dispatch(closeHistory(e.state.tr));
+  mediaDialog.value?.close();
+}
+function showMath(node?: any, pos?: number) {
+  mathPosition = typeof pos === 'number' ? pos : null; mathLatex.value = node?.attrs?.latex || ''; mathError.value = ''; bubble.value = false;
+  savedSelection = { from: editor.value!.state.selection.from, to: editor.value!.state.selection.to };
+  nextTick(() => mathDialog.value?.showModal());
+}
+function insertMath() {
+  if (!mathLatex.value.trim() || !mathPreview.value) { mathError.value = '请填写有效的 LaTeX 公式'; return; }
+  const e = editor.value; if (!e) return;
+  e.view.dispatch(closeHistory(e.state.tr));
+  if (mathPosition !== null) e.chain().focus().setNodeSelection(mathPosition).updateAttributes('mathBlock', { latex: mathLatex.value }).run();
+  else e.chain().focus().setTextSelection(savedSelection).insertContent([{ type: 'mathBlock', attrs: { latex: mathLatex.value, blockId: crypto.randomUUID() } }, { type: 'paragraph', attrs: { blockId: crypto.randomUUID() } }]).run();
+  e.view.dispatch(closeHistory(e.state.tr));
+  mathDialog.value?.close();
+}
+function evidenceFor(id: string) { emit('selected', id); emit('evidence'); }
+function tableAction(action: string) {
+  const c = editor.value?.chain().focus(); if (!c) return;
+  if (action === 'row') c.addRowAfter().run(); else if (action === 'column') c.addColumnAfter().run();
+  else if (action === 'deleteRow') c.deleteRow().run(); else if (action === 'deleteColumn') c.deleteColumn().run(); else c.deleteTable().run();
+}
 const slash = ref<{ from: number; to: number; query: string } | null>(null);
 const slashIndex = ref(0),
   bubble = ref(false),
@@ -57,6 +129,10 @@ const linkValue = ref(""),
 let savedSelection = { from: 0, to: 0 };
 let dismissedSlash = "";
 const commands = [
+  { id: 'image', label: '图片与图注', detail: '上传示意图，补充图注和来源', hint: '图片', icon: ImagePlus, terms: 'image photo tupian 图片' },
+  { id: 'table', label: '表格', detail: '对照概念、过程与数据', hint: '3 × 3', icon: Table2, terms: 'table biaoge 表格' },
+  { id: 'math', label: '公式', detail: '用 LaTeX 排版公式与反应式', hint: 'LaTeX', icon: Sigma, terms: 'math formula gongshi 公式' },
+  { id: 'callout', label: '提示块', detail: '突出关键结论或常见误区', hint: '提示', icon: Lightbulb, terms: 'callout note tishi 提示' },
   {
     id: "paragraph",
     label: "正文",
@@ -142,7 +218,9 @@ const readingMinutes = computed(() =>
   Math.max(1, Math.ceil(characterCount.value / 350)),
 );
 function activeBlockId() {
-  const p = editor.value?.state.selection.$from;
+  const selection = editor.value?.state.selection;
+  if ((selection as any)?.node?.attrs?.blockId) return (selection as any).node.attrs.blockId;
+  const p = selection?.$from;
   if (!p) return "";
   for (let d = p.depth; d >= 0; d--)
     if (p.node(d).attrs.blockId) return p.node(d).attrs.blockId;
@@ -219,6 +297,11 @@ function insertCommand(id: string) {
   if (slash.value)
     chain = chain.deleteRange({ from: slash.value.from, to: slash.value.to });
   slash.value = null;
+  if (['image', 'math'].includes(id)) {
+    chain.run(); if (id === 'image') showImage(); else showMath(); return;
+  }
+  if (id === 'table') { chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); return; }
+  if (id === 'callout') { chain.insertContent({ type: 'callout', content: [{ type: 'paragraph', attrs: { blockId: crypto.randomUUID() }, content: [{ type: 'text', text: '关键结论：' }] }] }).run(); return; }
   if (id === "paragraph") chain.setParagraph().run();
   else if (id.startsWith("h"))
     chain.setHeading({ level: Number(id.slice(1)) as 1 | 2 | 3 }).run();
@@ -317,7 +400,7 @@ const Ids = Extension.create({
   addGlobalAttributes() {
     return [
       {
-        types: ["paragraph", "heading", "codeBlock"],
+        types: ["paragraph", "heading", "codeBlock", "figure", "mathBlock"],
         attributes: {
           blockId: {
             default: null,
@@ -338,7 +421,7 @@ const Ids = Extension.create({
           const seen = new Set<string>();
           state.doc.descendants((node, pos) => {
             if (
-              ["paragraph", "heading", "codeBlock"].includes(node.type.name)
+              ["paragraph", "heading", "codeBlock", "figure", "mathBlock"].includes(node.type.name)
             ) {
               let id = node.attrs.blockId;
               if (!id || seen.has(id)) {
@@ -419,6 +502,9 @@ const editor = useEditor({
       },
       heading: { levels: [1, 2, 3] },
     }),
+    TableKit.configure({ table: { resizable: false, HTMLAttributes: { class: 'knowledge-table' } } }),
+    Figure.configure({ onEdit: showImage, onEvidence: evidenceFor }),
+    MathBlock.configure({ onEdit: showMath }), Callout,
     Ids,
     Highlight,
   ],
@@ -427,6 +513,16 @@ const editor = useEditor({
       class: "prose-editor",
       "aria-label": props.readonly ? "作品正文" : "知识帖正文",
       "data-placeholder": "写下你的解释，或输入 / 插入内容…",
+    },
+    handlePaste: (_view, event) => {
+      const file = [...(event.clipboardData?.files || [])].find(f => f.type.startsWith('image/'));
+      if (!props.readonly && file) { event.preventDefault(); showImage(); void loadImage(file); return true; }
+      return false;
+    },
+    handleDrop: (_view, event) => {
+      const file = [...(event.dataTransfer?.files || [])].find(f => f.type.startsWith('image/'));
+      if (!props.readonly && file) { event.preventDefault(); const pos = editor.value?.view.posAtCoords({ left: event.clientX, top: event.clientY }); if (pos) editor.value?.commands.setTextSelection(pos.pos); showImage(); void loadImage(file); return true; }
+      return false;
     },
     handleKeyDown: (_view, event) => {
       if (event.isComposing) return false;
@@ -530,6 +626,21 @@ onBeforeUnmount(() => {
       class="writer-commandbar"
       aria-label="写作工具"
     >
+      <div class="writer-format-tools">
+        <button type="button" aria-label="正文加粗" title="加粗" :class="{ active: editor.isActive('bold') }" @mousedown.prevent @click="editor.chain().focus().toggleBold().run()"><Bold :size="17" /></button>
+        <button type="button" aria-label="正文斜体" title="斜体" :class="{ active: editor.isActive('italic') }" @mousedown.prevent @click="editor.chain().focus().toggleItalic().run()"><Italic :size="17" /></button>
+        <button type="button" aria-label="正文下划线" title="下划线" :class="{ active: editor.isActive('underline') }" @mousedown.prevent @click="editor.chain().focus().toggleUnderline().run()"><Underline :size="17" /></button>
+        <span class="writer-separator"></span>
+        <button type="button" aria-label="设置一级标题" title="一级标题" :class="{ active: editor.isActive('heading', {level: 1}) }" @mousedown.prevent @click="editor.chain().focus().toggleHeading({level: 1}).run()"><Heading1 :size="19" /></button>
+        <button type="button" aria-label="设置二级标题" title="二级标题" :class="{ active: editor.isActive('heading', {level: 2}) }" @mousedown.prevent @click="editor.chain().focus().toggleHeading({level: 2}).run()"><Heading2 :size="19" /></button>
+        <span class="writer-separator"></span>
+        <button type="button" aria-label="插入无序列表" title="无序列表" @mousedown.prevent @click="editor.chain().focus().toggleBulletList().run()"><List :size="19" /></button>
+        <button type="button" aria-label="插入图片" title="图片与图注" @mousedown.prevent @click="showImage()"><ImagePlus :size="19" /></button>
+        <button type="button" aria-label="插入表格" title="插入表格" @mousedown.prevent @click="insertCommand('table')"><Table2 :size="18" /></button>
+        <button type="button" aria-label="插入公式" title="公式" @mousedown.prevent @click="showMath()"><Sigma :size="19" /></button>
+        <button type="button" aria-label="插入提示块" title="提示块" @mousedown.prevent @click="insertCommand('callout')"><Lightbulb :size="18" /></button>
+        <button type="button" class="toolbar-evidence" @mousedown.prevent @click="attachEvidence"><BookOpen :size="16" /><span>挂证据<span v-if="evidenceCount"> · {{ evidenceCount }}</span></span></button>
+      </div>
       <div class="writer-mode">
         <span class="writer-mode-dot"></span>即时渲染
         <span class="writer-key">Markdown</span>
@@ -588,6 +699,9 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </div>
+    <div v-if="!readonly && editor?.isActive('table')" class="table-context" aria-label="表格操作">
+      <span>表格</span><button @mousedown.prevent @click="tableAction('row')">下方加行</button><button @mousedown.prevent @click="tableAction('column')">右侧加列</button><button @mousedown.prevent @click="tableAction('deleteRow')">删除行</button><button @mousedown.prevent @click="tableAction('deleteColumn')">删除列</button><button @mousedown.prevent @click="tableAction('delete')"><Trash2 :size="13" />删除表格</button>
+    </div>
     <EditorContent :editor="editor" />
     <div v-if="!readonly" class="writer-status">
       <span
@@ -601,6 +715,29 @@ onBeforeUnmount(() => {
       >
     </div>
     <Teleport to="body">
+      <dialog ref="mediaDialog" class="writer-dialog media-dialog" @cancel="mediaBusy && $event.preventDefault()">
+        <div class="writer-dialog-head"><div><span class="eyebrow">图文表达</span><h2>图片与图注</h2></div><button class="icon-btn" aria-label="关闭图片设置" :disabled="mediaBusy" @click="mediaDialog?.close()"><X :size="19" /></button></div>
+        <div class="writer-dialog-content">
+          <input ref="imageFile" type="file" accept="image/png,image/jpeg" hidden aria-label="选择图片文件" @change="selectImage" />
+          <button class="image-upload-zone" type="button" :disabled="mediaBusy" @click="imageFile?.click()">
+            <img v-if="media.src" :src="media.src" alt="待插入图片预览" /><ImagePlus v-else :size="30" />
+            <strong>{{ mediaBusy ? '正在上传…' : media.src ? '点击替换图片' : '选择一张知识示意图' }}</strong><span>PNG / JPEG · 最大 5 MB · 也可粘贴或拖入正文</span>
+          </button>
+          <label>图片说明（替代文本）<input v-model="media.alt" maxlength="300" placeholder="简要描述图片内容，便于理解和无障碍阅读" /></label>
+          <label>图注<input v-model="media.caption" maxlength="1000" placeholder="例如：图 1　类囊体薄膜上的电子传递与 ATP 合成" /></label>
+          <label>图片来源<input v-model="media.source" maxlength="1000" placeholder="教材版本及页码、原始网址，或注明自绘" /></label>
+          <p class="small-note">仅上传有权使用的图片。来源说明不等于证据已通过核验。</p><p v-if="mediaError" role="alert" class="writer-field-error">{{ mediaError }}</p>
+        </div>
+        <div class="writer-dialog-foot"><button class="btn secondary" :disabled="mediaBusy" @click="mediaDialog?.close()">取消</button><button class="btn primary" :disabled="mediaBusy" @click="insertImage">{{ mediaPosition !== null ? '更新图片' : '插入图片' }}</button></div>
+      </dialog>
+      <dialog ref="mathDialog" class="writer-dialog math-dialog">
+        <div class="writer-dialog-head"><h2>插入学科公式</h2><button class="icon-btn" aria-label="关闭公式设置" @click="mathDialog?.close()"><X :size="19" /></button></div>
+        <div class="writer-dialog-content"><div class="formula-preview" v-if="mathPreview" v-html="mathPreview"></div><p v-else class="formula-preview muted">输入有效公式后显示排版预览</p>
+          <label>LaTeX 公式<textarea v-model="mathLatex" rows="4" maxlength="2000" placeholder="例如：ATP \rightarrow ADP + P_i" /></label>
+          <div class="formula-examples"><span>快速示例</span><button @click="mathLatex = 'ATP \\rightarrow ADP + P_i'">ATP 转化</button><button @click="mathLatex = 'E = mc^2'">能量</button><button @click="mathLatex = '\\frac{a}{b}'">分式</button></div>
+          <p class="small-note">使用 KaTeX 支持的 LaTeX 语法；不执行脚本或加载外部资源。</p><p v-if="mathError" role="alert" class="writer-field-error">{{ mathError }}</p>
+        </div><div class="writer-dialog-foot"><button class="btn secondary" @click="mathDialog?.close()">取消</button><button class="btn primary" @click="insertMath">确认公式</button></div>
+      </dialog>
       <div
         v-if="slash && !readonly"
         class="writer-slash"
@@ -779,8 +916,8 @@ onBeforeUnmount(() => {
           <p class="writer-help-note">
             这是结构化富文本，不是 Markdown
             源码模式。支持上述快捷输入；暂不支持整篇 Markdown
-            导入、表格和图片上传。导出的 .md
-            仅含标题与正文，不包含证据附件、批注、评分或版本记录。
+            导入。支持图片、图注、表格、公式和提示块。导出的 .md
+            仅含标题与正文；图片为需登录的站内链接，不包含图片文件、证据附件、批注、评分或版本记录。
           </p>
         </div>
         <div class="writer-dialog-foot">

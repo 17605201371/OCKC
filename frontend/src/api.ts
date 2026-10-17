@@ -48,3 +48,15 @@ export async function login(email: string, password: string) {
   await refreshCsrf();
   return api("/auth/me");
 }
+
+export async function uploadImage(entryId: number, file: File) {
+  if (!csrf) await refreshCsrf();
+  const body = new FormData(); body.append('file', file);
+  const r = await fetch(`/api/entries/${entryId}/media`, {
+    method: 'POST', credentials: 'same-origin',
+    headers: { [csrf!.headerName]: csrf!.token }, body,
+  });
+  const data = await r.json().catch(() => ({ message: '图片上传失败' }));
+  if (!r.ok) throw new ApiFailure(r.status, data.message || '图片上传失败');
+  return data;
+}

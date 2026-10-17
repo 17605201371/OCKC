@@ -26,6 +26,7 @@ public class ApiController {
  @GetMapping("/courses") public Object courses(Principal p){return service.courses(uid(p));}
  @PostMapping("/courses") public Object createCourse(@Valid @RequestBody CourseRequest r,Principal p){long u=uid(p);if(s.db.queryForObject("SELECT COUNT(*) FROM course_member WHERE user_id=? AND role='TEACHER'",Integer.class,u)==0)throw ApiError.fail(403,"创建课程需要已有教师身份");return service.createCourse(r.title(),r.description(),u);}
  @PostMapping("/courses/{cid}/members") public Object member(@PathVariable long cid,@Valid @RequestBody MemberRequest r,Principal p){service.addMember(cid,r.email(),r.role(),uid(p));return Map.of("ok",true);}
+ @GetMapping("/courses/{cid}/progress") public Object progress(@PathVariable long cid,Principal p){return service.progress(cid,uid(p));}
  @GetMapping("/courses/{cid}/assignments") public Object assignments(@PathVariable long cid,Principal p){return service.assignments(cid,uid(p));}
  @PostMapping("/courses/{cid}/assignments") public Object createAssignment(@PathVariable long cid,@Valid @RequestBody AssignmentRequest r,Principal p){return service.createAssignment(cid,r.title(),r.requirements(),r.dueAt(),uid(p));}
  @PostMapping("/assignments/{aid}/entries") public Object start(@PathVariable long aid,Principal p){return service.start(aid,uid(p));}

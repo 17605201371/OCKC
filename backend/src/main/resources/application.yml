@@ -18,8 +18,8 @@ spring:
       fail-on-unknown-properties: true
   servlet:
     multipart:
-      max-file-size: 1MB
-      max-request-size: 1MB
+      max-file-size: 5MB
+      max-request-size: 6MB
 app:
   seed: ${DEMO_SEED:false}
   seed-password: ${DEMO_PASSWORD:}

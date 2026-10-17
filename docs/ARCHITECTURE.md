@@ -34,8 +34,14 @@ HTTPS 由正式部署反向代理提供；本地默认 HTTP + localhost。密码
 
 ## 与设计书的阶段性差异
 
-本地以 H2 降低试跑门槛，保留 MySQL 驱动与 Compose。未引入 Redis/RabbitMQ；未实现 AI、成长档案、复杂协同与题库。量规固定，正式阈值及 N/A 学科适用范围仍需教学负责人确认。所有限制在 README 和界面显示，不把首阶段开发版称为完整系统。
+本地以 H2 降低试跑门槛，保留 MySQL 驱动与 Compose。未引入 Redis/RabbitMQ；未实现 AI、深度成长报告、复杂协同与题库；已实现基于真实版本记录的基础学习轨迹/教学进展。量规固定，正式阈值及 N/A 学科适用范围仍需教学负责人确认。所有限制在 README 和界面显示，不把首阶段开发版称为完整系统。
 
 ## 本期终端边界
 
 仅交付 PC 浏览器（建议 1280px 及以上）；移动端暂不开发、不作为本期验收项。既有基础响应式样式不代表移动端功能已验收。
+
+## 三栏图文工作台增量
+
+`MediaController` 管理 PNG/JPEG 上传与权限读取，`entry_media` 存重编码后的不可变媒体。上传关联 entry，正文存媒体 UUID 引用；同课学生的读取权限还必须满足已发布 submission JSON 实际引用该 UUID，避免“旧版已发布”带来的新草稿泄露。详见 `WRITING-EDITOR.md`。
+
+正文 schema 新增 figure、mathBlock、callout 和表格节点。MathView 使用 KaTeX 安全选项，只执行渲染；并非用户 HTML 注入。学习轨迹 API 根据 course_member 区分本人/全课，返回最小版本/评价元数据，不返回他人草稿正文。当前数据量小，查询尚未分页/批量聚合，不宣称已通过规模化压测。

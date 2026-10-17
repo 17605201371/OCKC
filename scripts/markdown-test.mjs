@@ -59,4 +59,8 @@ assert.equal(
   "> 引用\n",
 );
 assert.ok(toMarkdown(doc([p("a*b")])).includes("a\\*b"));
-console.log("Markdown serializer: 7 assertions PASS");
+assert.equal(toMarkdown(doc([{type:'mathBlock',attrs:{latex:'E=mc^2'}}])), '$$\nE=mc^2\n$$\n');
+assert.ok(toMarkdown(doc([{type:'figure',attrs:{src:'/api/media/test',alt:'图[1]',caption:'示意图',source:'自绘'}}])).includes('![图\\[1\\]](/api/media/test)'));
+assert.ok(toMarkdown(doc([{type:'callout',content:[p('提示内容')]}])).includes('> **提示**'));
+assert.equal(toMarkdown(doc([{type:'table',content:[{type:'tableRow',content:[{type:'tableHeader',content:[p('名称')]},{type:'tableHeader',content:[p('值')]}]},{type:'tableRow',content:[{type:'tableCell',content:[p('ATP')]},{type:'tableCell',content:[p('ADP')]}]}]}])), '| 名称 | 值 |\n| --- | --- |\n| ATP | ADP |\n');
+console.log("Markdown serializer: 11 assertions PASS");

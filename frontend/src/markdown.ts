@@ -68,6 +68,17 @@ export function toMarkdown(doc: any): string {
         );
         return `${fence}${String(n.attrs?.language || "").replace(/[^\w+-]/g, "")}\n${text}\n${fence}`;
       }
+      case "figure": {
+        const safe = (v: string) => String(v || '').replace(/([\\\[\]])/g, '\\$1').replace(/\n/g, ' ');
+        return `![${safe(n.attrs?.alt || '知识帖插图')}](${n.attrs?.src || ''})` + (n.attrs?.caption ? `\n\n*${safe(n.attrs.caption)}*` : '') + (n.attrs?.source ? `\n\n来源：${safe(n.attrs.source)}` : '');
+      }
+      case "mathBlock": return `$$\n${n.attrs?.latex || ''}\n$$`;
+      case "callout": return `> **提示**\n` + inner.split('\n').map((l: string) => '> ' + l).join('\n');
+      case "table": {
+        const rows = (n.content || []).map((r: any) => (r.content || []).map((c: any) => (c.content || []).map((p: any) => children(p)).join('<br>').replace(/\|/g, '\\|').replace(/\n/g, ' ')));
+        if (!rows.length) return '';
+        return [ '| ' + rows[0].join(' | ') + ' |', '| ' + rows[0].map(() => '---').join(' | ') + ' |', ...rows.slice(1).map((r: string[]) => '| ' + r.join(' | ') + ' |') ].join('\n');
+      }
       case "horizontalRule":
         return "---";
       default:

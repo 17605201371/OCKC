@@ -1,5 +1,6 @@
 package cn.course.community;
 import com.fasterxml.jackson.databind.*;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class DocumentContentTest {
@@ -25,4 +26,16 @@ class DocumentContentTest {
  }
  @Test void legacyCodeBlocksRemainReadableAndSavable()throws Exception{var n=doc("{\"type\":\"codeBlock\",\"content\":[{\"type\":\"text\",\"text\":\"old\"}]}");assertDoesNotThrow(()->service.validateContent(n));}
  @Test void unknownMarksRejected()throws Exception{var n=doc("{\"type\":\"paragraph\",\"attrs\":{\"blockId\":\"p\"},\"content\":[{\"type\":\"text\",\"text\":\"bad\",\"marks\":[{\"type\":\"script\"}]}]}");assertThrows(ApiError.Failure.class,()->service.validateContent(n));}
+
+ @Test void richKnowledgeBlocksAccepted()throws Exception{
+  var n=doc("""
+   {"type":"figure","attrs":{"blockId":"fig1","src":"/api/media/00000000-0000-0000-0000-000000000000","alt":"示意图","caption":"图注","source":"自绘"}},
+   {"type":"mathBlock","attrs":{"blockId":"math1","latex":"E=mc^2"}},
+   {"type":"callout","content":[{"type":"paragraph","attrs":{"blockId":"note"},"content":[{"type":"text","text":"关键结论"}]}]},
+   {"type":"table","content":[{"type":"tableRow","content":[{"type":"tableHeader","attrs":{"colspan":1,"rowspan":1},"content":[{"type":"paragraph","attrs":{"blockId":"cell"}}]}]}]}
+   """);assertDoesNotThrow(()->service.validateContent(n));assertTrue(service.anchors(n).get("fig1").contains("图注"));assertEquals("E=mc^2",service.anchors(n).get("math1"));
+ }
+ @Test void externalImageAndEmptyFormulaRejected()throws Exception{
+  for(String node:List.of("{\"type\":\"figure\",\"attrs\":{\"blockId\":\"fig\",\"src\":\"https://example.com/image.png\"}}","{\"type\":\"mathBlock\",\"attrs\":{\"blockId\":\"m\",\"latex\":\"\"}}"))assertThrows(ApiError.Failure.class,()->service.validateContent(json.readTree("{\"type\":\"doc\",\"content\":["+node+"]}")));
+ }
 }
