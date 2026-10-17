@@ -1,0 +1,10 @@
+**/node_modules
+**/target
+**/dist
+**/data
+**/*.log
+**/*.mv.db
+.git
+.qa
+.env
+.env.*

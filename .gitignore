@@ -1,0 +1,27 @@
+# Dependencies and build output
+node_modules/
+frontend/dist/
+backend/target/
+backend/src/main/resources/static/
+# Local data, environment and credentials
+.env
+.env.*
+!.env.example
+*.mv.db
+*.trace.db
+*.db
+backend/data/
+data/
+*.pem
+*.key
+# Local test output
+.qa/
+*.log
+playwright-report/
+test-results/
+.DS_Store
+.idea/
+.vscode/
+
+# Local dependency audit output
+*audit*.json

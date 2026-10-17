@@ -41,7 +41,7 @@ compose.yml               本地 MySQL 集成配置
 
 环境：**JDK 21、Node.js 22.12+、npm、联网下载 Maven/npm 依赖**。Maven Wrapper 已包含，不需要全局安装 Maven。
 
-macOS / Linux：
+macOS / Linux（先 `git clone https://github.com/17605201371/OCKC.git`，再 `cd OCKC`）：
 
 ```bash
 # 请先在当前终端设置你自己选择的本地演示密码，至少 12 位。

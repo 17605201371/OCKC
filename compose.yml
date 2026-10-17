@@ -1,0 +1,32 @@
+# Local MySQL integration / demonstration only. Use TLS, backups and reviewed configuration before deployment.
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: community
+      MYSQL_USER: community
+      MYSQL_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$${MYSQL_ROOT_PASSWORD}\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      DATABASE_URL: jdbc:mysql://db:3306/community?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
+      DATABASE_USER: community
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD}
+      DEMO_SEED: ${DEMO_SEED:-false}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+volumes:
+  mysql-data:

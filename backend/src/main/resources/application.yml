@@ -1,0 +1,29 @@
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${PORT:8080}
+  servlet:
+    session:
+      timeout: 60m
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${COOKIE_SECURE:false}
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:h2:file:./data/community;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_ON_EXIT=FALSE}
+    username: ${DATABASE_USER:sa}
+    password: ${DATABASE_PASSWORD:}
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+  servlet:
+    multipart:
+      max-file-size: 1MB
+      max-request-size: 1MB
+app:
+  seed: ${DEMO_SEED:false}
+  seed-password: ${DEMO_PASSWORD:}
+logging:
+  level:
+    root: INFO
+server.error.include-message: never
