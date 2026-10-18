@@ -1,0 +1,1 @@
+ALTER TABLE assignment ADD COLUMN ai_feedback_enabled BOOLEAN NOT NULL DEFAULT FALSE;

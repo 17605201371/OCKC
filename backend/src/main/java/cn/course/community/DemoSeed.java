@@ -23,7 +23,7 @@ public class DemoSeed implements CommandLineRunner {
   long cid=s.id(service.createCourse("教学设计 · 演示课程","以可追溯的知识作品，连接创作、评价与改进。演示数据由系统初始化。",teacher),"id");
   service.addMember(cid,emails.get(1),"STUDENT",teacher);service.addMember(cid,emails.get(2),"STUDENT",teacher);
   long c2=s.id(service.createCourse("独立课程 · 权限测试","用于验证跨课程数据隔离",teacher),"id");service.addMember(c2,emails.get(3),"STUDENT",teacher);
-  long aid=s.id(service.createAssignment(cid,"解释光反应与卡尔文循环的物质联系","面向高中课堂撰写一篇知识帖：说明关键场所、物质与能量联系，引用可核验来源，并区分事实与推断。首轮提交后依据反馈至少修订一次。",Instant.now().plus(30,ChronoUnit.DAYS).toString(),teacher),"id");
+  long aid=s.id(service.createAssignment(cid,"解释光反应与卡尔文循环的物质联系","面向高中课堂撰写一篇知识帖：说明关键场所、物质与能量联系，引用可核验来源，并区分事实与推断。首轮提交后依据反馈至少修订一次。",Instant.now().plus(30,ChronoUnit.DAYS).toString(),false,teacher),"id");
   var entry=service.start(aid,student);long eid=s.id(entry,"id");
   var doc=json.readTree("""
   {"type":"doc","content":[{"type":"heading","attrs":{"level":2,"blockId":"intro"},"content":[{"type":"text","text":"把两个阶段放回同一条物质链"}]},{"type":"paragraph","attrs":{"blockId":"p-light"},"content":[{"type":"text","text":"光反应发生在类囊体薄膜上，吸收光能并形成 ATP 和 NADPH，水的光解伴随氧气释放。"}]},{"type":"paragraph","attrs":{"blockId":"p-cycle"},"content":[{"type":"text","text":"卡尔文循环在叶绿体基质中进行，利用 ATP 和 NADPH 参与二氧化碳固定及后续还原。两个阶段不是彼此独立的过程。"}]},{"type":"paragraph","attrs":{"blockId":"p-gap"},"content":[{"type":"text","text":"物质能够在两个阶段之间形成联系；这一解释还需补全返回物质及适用条件。"}]}]}

@@ -58,3 +58,7 @@ E2E_BASE_URL=http://127.0.0.1:8084 node scripts/studio-e2e.mjs
 `seed-studio-example.mjs` 只用于默认演示课程，必须显式设置 `ALLOW_DEMO_WRITE=true`、`DEMO_BASE_URL`、`E2E_PASSWORD`。它通过真实 API 新建明确标注的「新版图文编辑体验 · 演示作业」，使用仓库中的自绘 SVG 生成 PNG，保存并提交独立示例作品，写入明确注明“功能演示、非真实学习评价”的评分/批注与发布记录。不覆盖原有作业或草稿；检测到示例已有提交时保持其草稿不变。不要对真实课程运行。
 
 `capture-studio-demo.mjs` 可在本机隔离演示环境截图，只接受 localhost / 127.0.0.1 地址。截图和生成的 PNG 存入忽略的 `.qa/`，不作为应用依赖。
+
+## 质量与反馈右栏
+
+教师按作业开关 AI 入口、侧栏布局和真实模型服务边界见 [FEEDBACK-SIDEBAR.md](FEEDBACK-SIDEBAR.md)。

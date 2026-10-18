@@ -38,7 +38,20 @@ public class CommunityService {
  }
  @Transactional public Map<String,Object> createCourse(String title,String description,long uid){long id=s.insert("INSERT INTO course(title,description) VALUES(?,?)",title,description);s.db.update("INSERT INTO course_member(course_id,user_id,role) VALUES(?,?,'TEACHER')",id,uid);s.audit(uid,"COURSE_CREATE","course",id);return s.one("SELECT * FROM course WHERE id=?",id);}
  @Transactional public void addMember(long cid,String email,String role,long uid){s.teacher(cid,uid);if(!List.of("STUDENT","ASSISTANT").contains(role))throw fail(422,"仅可添加学生或助教");long target=s.uid(email);if(s.db.queryForObject("SELECT COUNT(*) FROM course_member WHERE course_id=? AND user_id=?",Integer.class,cid,target)>0)throw fail(409,"该用户已是课程成员");s.db.update("INSERT INTO course_member(course_id,user_id,role) VALUES(?,?,?)",cid,target,role);s.audit(uid,"MEMBER_ADD","course",cid);}
- @Transactional public Map<String,Object> createAssignment(long cid,String title,String requirements,String due,long uid){s.teacher(cid,uid);Instant deadline;try{deadline=Instant.parse(due);}catch(Exception e){throw fail(422,"截止时间格式错误");}if(deadline.isBefore(Instant.now()))throw fail(422,"截止时间须晚于当前时间");long id=s.insert("INSERT INTO assignment(course_id,title,requirements,due_at,rubric_version,created_at) VALUES(?,?,?,?,'four-dim-v1',?)",cid,title,requirements,deadline.toString(),now());s.audit(uid,"ASSIGNMENT_CREATE","assignment",id);return assignment(id);}
+ @Transactional public Map<String,Object> createAssignment(long cid,String title,String requirements,String due,boolean aiEnabled,long uid){s.teacher(cid,uid);Instant deadline;try{deadline=Instant.parse(due);}catch(Exception e){throw fail(422,"截止时间格式错误");}if(deadline.isBefore(Instant.now()))throw fail(422,"截止时间须晚于当前时间");long id=s.insert("INSERT INTO assignment(course_id,title,requirements,due_at,rubric_version,created_at,ai_feedback_enabled) VALUES(?,?,?,?,'four-dim-v1',?,?)",cid,title,requirements,deadline.toString(),now(),aiEnabled);s.audit(uid,"ASSIGNMENT_CREATE","assignment",id);return assignment(id);}
+ @Transactional public Map<String,Object> setAiPolicy(long aid,boolean enabled,long uid){
+  var a=assignment(aid);s.teacher(s.id(a,"course_id"),uid);
+  s.one("SELECT id FROM assignment WHERE id=? FOR UPDATE",aid);
+  s.db.update("UPDATE assignment SET ai_feedback_enabled=? WHERE id=?",enabled,aid);
+  s.audit(uid,enabled?"ASSIGNMENT_AI_ENABLE":"ASSIGNMENT_AI_DISABLE","assignment",aid);
+  return assignment(aid);
+ }
+ public Map<String,Object> aiFeedback(long eid,long uid){
+  var e=entry(eid);String role=s.role(s.id(e,"course_id"),uid);
+  if(s.id(e,"author_id")!=uid&&!"TEACHER".equals(role))throw fail(403,"AI 反馈仅作者与任课教师可见");
+  boolean enabled=Boolean.TRUE.equals(assignment(s.id(e,"assignment_id")).get("ai_feedback_enabled"));
+  return Map.of("enabled",enabled,"status",enabled?"NOT_CONFIGURED":"DISABLED","suggestions",List.of(),"formalScore",false);
+ }
  @Transactional public Map<String,Object> start(long aid,long uid){var a=assignment(aid);s.student(s.id(a,"course_id"),uid);s.one("SELECT id FROM assignment WHERE id=? FOR UPDATE",aid);var existing=s.db.queryForList("SELECT id FROM entry WHERE assignment_id=? AND author_id=?",aid,uid);if(!existing.isEmpty())return getEntry(s.id(existing.getFirst(),"id"),uid);
   String block=UUID.randomUUID().toString();String doc="{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"attrs\":{\"blockId\":\""+block+"\"}}]}";
   long id=s.insert("INSERT INTO entry(assignment_id,author_id,title,draft_json,evidence_json,revision,updated_at) VALUES(?,?,?,?,?,0,?)",aid,uid,a.get("title"),doc,"[]",now());s.audit(uid,"ENTRY_CREATE","entry",id);return getEntry(id,uid);}

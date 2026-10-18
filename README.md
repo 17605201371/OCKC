@@ -148,3 +148,7 @@ E2E_PASSWORD="$DEMO_PASSWORD" node scripts/ui-smoke.mjs
 ## 9. PC 在线演示部署
 
 可在自己的浏览器打开 [Render 部署入口](https://render.com/deploy?repo=https://github.com/17605201371/OCKC)，按 `docs/RENDER-DEMO.md` 创建 Free 演示服务。此链接是部署配置入口，不是已上线的网址。需要登录 Render、设置演示密码、确认免费计划并等待构建；数据可能在重启/休眠后丢失。当前仅补齐配置，尚未完成云端构建验收。
+
+## 作业级 AI 策略与反馈右栏
+
+实现说明与安全边界见 [docs/FEEDBACK-SIDEBAR.md](docs/FEEDBACK-SIDEBAR.md)。当前仅完成入口策略和状态展示，尚未接入模型，不会发送学生正文。

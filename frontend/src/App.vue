@@ -37,11 +37,14 @@ import {
   Layers,
   CornerDownLeft,
   TrendingUp,
+  Sparkles,
 } from "lucide-vue-next";
 import HomeDashboard from "./HomeDashboard.vue";
 const Editor = defineAsyncComponent(() => import("./Editor.vue"));
 import ProgressPage from "./ProgressPage.vue";
 import QualitySummary from "./QualitySummary.vue";
+import AiFeedback from "./AiFeedback.vue";
+const aiSidebarVisible = ref(false);
 import { api, login, ApiFailure } from "./api";
 const me = ref<any>(null),
   courses = ref<any[]>([]),
@@ -662,6 +665,7 @@ function showModal(kind: string, data: Record<string, any> = {}) {
     title: "",
     requirements: "",
     dueAt: "",
+    aiFeedbackEnabled: false,
     sourceTitle: "",
     sourceUrl: "",
     excerpt: "",
@@ -691,6 +695,14 @@ function showModal(kind: string, data: Record<string, any> = {}) {
     30,
   );
 }
+async function toggleAssignmentAi(a: any) {
+  await run(async () => {
+    const updated = await api(`/assignments/${a.id}/ai-policy`, 'PUT', { enabled: !a.ai_feedback_enabled });
+    assignments.value = assignments.value.map(row => row.id === a.id ? { ...row, ...updated } : row);
+    notify(updated.ai_feedback_enabled ? '已开放 AI 反馈入口；模型服务尚未配置' : '已关闭 AI 反馈，学生编辑页不再显示该区块');
+  });
+}
+function sidebarJump(id: string) { const target = document.getElementById(id), panel = target?.closest<HTMLElement>('.feedback-sidebar'); if (target && panel) panel.scrollTo({ top: panel.scrollTop + target.getBoundingClientRect().top - panel.getBoundingClientRect().top - (panel.querySelector<HTMLElement>('.feedback-sticky-header')?.offsetHeight || 0) - 16, behavior: 'smooth' }); }
 function closeModal() {
   if (!busy.value) modal.value = "";
 }
@@ -702,6 +714,7 @@ async function modalSubmit() {
         title: f.title,
         requirements: f.requirements,
         dueAt: new Date(f.dueAt).toISOString(),
+        aiFeedbackEnabled: f.aiFeedbackEnabled,
       });
       await refreshCourse();
       notify("作业已发布，量规锁定为 four-dim-v1");
@@ -1169,6 +1182,11 @@ onBeforeUnmount(() => {
               <p>{{ a.requirements }}</p>
               <div class="meta-line">
                 <Clock :size="16" />{{ fmt(a.due_at) }} 截止
+              </div>
+              <div class="assignment-ai-policy">
+                <div><span><Sparkles :size="14" />AI 修改建议</span><small>{{ a.ai_feedback_enabled ? '已开放入口 · 服务待配置' : '未开放 · 学生端不显示' }}</small></div>
+                <button v-if="isTeacher" class="policy-switch" role="switch" :aria-checked="!!a.ai_feedback_enabled" :aria-label="`AI 修改建议：${a.title}`" :disabled="busy" @click="toggleAssignmentAi(a)"><span></span></button>
+                <span v-else class="small-label">{{ a.ai_feedback_enabled ? '已开启' : '未开启' }}</span>
               </div>
               <div class="assignment-foot">
                 <span class="muted">{{ a.rubric_version }}</span
@@ -1641,34 +1659,19 @@ onBeforeUnmount(() => {
               </section>
             </div>
             <aside v-show="panelVisible" class="feedback-sidebar">
+              <div class="feedback-sticky-header">
               <div class="panel-title">
                 <h2>质量与反馈</h2>
                 <span class="badge">{{
                   latest ? `最近提交 v${latest.version_no}` : "尚未提交"
                 }}</span>
               </div>
-              <QualitySummary v-if="latest?.evaluation" :evaluation="latest.evaluation" :version="latest.version_no" draft @rubric="go('rubric')" />
-              <div v-else class="no-score">
-                <Clock :size="24" />
-                <h3>{{ latest ? "等待教师评审" : "写下你的第一版" }}</h3>
-                <p>提交后，教师反馈和四维评价会出现在这里。</p>
+              <nav class="feedback-jump-nav" aria-label="反馈分区导航"><button @click="sidebarJump('sidebar-quality')">质量评分</button><button @click="sidebarJump('sidebar-teacher')">教师批注<span>{{ latest?.feedback?.length || 0 }}</span></button><button v-if="aiSidebarVisible" @click="sidebarJump('sidebar-ai')">AI 反馈</button></nav>
               </div>
-              <div class="tabs">
-                <button
-                  :class="{ active: feedbackTab === 'feedback' }"
-                  @click="feedbackTab = 'feedback'"
-                >
-                  教师反馈
-                  <span>{{ latest?.feedback?.length || 0 }}</span></button
-                ><button
-                  :class="{ active: feedbackTab === 'versions' }"
-                  @click="feedbackTab = 'versions'"
-                >
-                  版本记录
-                </button>
-              </div>
-              <template v-if="feedbackTab === 'feedback'"
-                ><p v-if="latest?.evaluation?.summary" class="teacher-summary">
+              <div id="sidebar-quality"><QualitySummary :evaluation="latest?.evaluation" :version="latest?.version_no" draft @rubric="go('rubric')" /></div>
+              <section id="sidebar-teacher" class="sidebar-section teacher-feedback-section" aria-label="教师批注">
+                <header class="sidebar-section-heading"><h3><MessageSquare :size="15" />教师批注</h3><span class="small-label">{{ latest?.feedback?.length || 0 }} 条</span></header>
+              <p v-if="latest?.evaluation?.summary" class="teacher-summary">
                   {{ latest.evaluation.summary }}
                 </p>
                 <article
@@ -1684,6 +1687,7 @@ onBeforeUnmount(() => {
                       >{{ f.resolved ? "已解决" : "待修订" }}</span
                     >
                   </div>
+                  <p class="feedback-version-meta">{{ latest?.evaluation?.teacher_name || '任课教师' }} · 提交 v{{ latest?.version_no }}</p>
                   <h3 class="feedback-highlight">{{ f.body }}</h3>
                   <button
                     class="text-btn"
@@ -1725,11 +1729,11 @@ onBeforeUnmount(() => {
                     </button>
                   </div>
                 </article>
-                <p v-if="!latest?.feedback?.length" class="empty-text">
-                  还没有教师批注。
-                </p></template
-              >
-              <div v-else class="version-list">
+                <div v-if="!latest?.feedback?.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? '还没有教师批注' : '提交后，在这里查看教师批注' }}</p><span>批注会定位到对应段落或图片。</span></div>
+              </section>
+              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" @visibility="aiSidebarVisible = $event" />
+              <details class="sidebar-version-history" :open="feedbackTab === 'versions'"><summary><History :size="14" />版本记录<span>{{ entry.versions.length }}</span><ChevronRight :size="14" class="history-chevron" /></summary>
+              <div class="version-list">
                 <button
                   v-for="v in entry.versions"
                   :key="v.id"
@@ -1750,11 +1754,8 @@ onBeforeUnmount(() => {
                   提交评审后生成不可变版本。
                 </p>
               </div>
-              <div class="ai-boundary">
-                <ShieldCheck :size="17" /><span
-                  >AI 预评未接入。本版所有正式评分由教师发布。</span
-                >
-              </div>
+              </details>
+              <p class="sidebar-trust-note"><ShieldCheck :size="13" /><span>教师批注与 AI 建议分开呈现。正式质量分仅由任课教师确认。</span></p>
             </aside>
           </div>
           <div class="task-requirements">
@@ -2261,6 +2262,8 @@ onBeforeUnmount(() => {
                 type="datetime-local"
                 required
             /></label>
+            <div class="publish-ai-setting"><div><strong><Sparkles :size="15" />AI 修改建议</strong><p>{{ form.aiFeedbackEnabled ? '学生编辑页显示 AI 反馈入口' : '学生编辑页不显示 AI 反馈区块' }}</p></div><button type="button" class="policy-switch" role="switch" :aria-checked="!!form.aiFeedbackEnabled" aria-label="AI 修改建议" @click="form.aiFeedbackEnabled = !form.aiFeedbackEnabled"><span></span></button></div>
+            <p class="form-note ai-setting-note">可在发布后按作业随时调整。当前模型服务尚未配置；开启入口不会生成建议，也不会发送学生正文。</p>
             <p class="form-note">
               发布后锁定四维 11 项量规 four-dim-v1。本版截止后不接受新提交。
             </p></template
