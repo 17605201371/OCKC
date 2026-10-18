@@ -3994,6 +3994,9 @@ summary:focus-visible {
 .sidebar-version-history[open] .history-chevron { transform: rotate(90deg); }
 .sidebar-version-history summary > span { background: var(--surface); border-radius: 4px; padding: 0 5px; font-size: 10px; }
 .ai-status-error { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted); border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
+.assignment-ai-policy { grid-column: 2 / -1; min-width: 0; }
+.assignment-ai-policy > div { min-width: 0; }
+.assignment-ai-policy svg, .assignment-ai-policy .policy-switch, .assignment-ai-policy .small-label { flex-shrink: 0; }
 .assignment-ai-policy, .publish-ai-setting { display: flex; justify-content: space-between; align-items: center; gap: 15px; padding: 13px 0; border-top: 1px solid var(--border); margin-top: 12px; }
 .assignment-ai-policy > div > span, .publish-ai-setting strong { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
 .assignment-ai-policy small, .publish-ai-setting p { display: block; margin-top: 4px; font-size: 11px; color: var(--muted); }
@@ -4014,3 +4017,48 @@ summary:focus-visible {
 .feedback-sticky-header { position: sticky; top: -16px; z-index: 3; margin: -16px -16px 18px; padding: 16px 16px 0; background: var(--paper); border-bottom: 1px solid var(--border); }
 .creation-workspace .feedback-sticky-header .panel-title { position: static; background: transparent; padding-bottom: 8px; }
 .feedback-sticky-header .feedback-jump-nav { margin: 0; padding-bottom: 10px; border: 0; }
+
+/* Workflow additions share the course visual system, not a separate dashboard theme. */
+.notification-trigger { position: relative; margin-right: 3px; }
+.notification-dot { position: absolute; right: -3px; top: -4px; display: flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; padding: 0 4px; font-size: 9px; line-height: 1; border-radius: 20px; background: var(--blue); color: var(--paper); border: 2px solid var(--paper); }
+.notification-overlay { position: fixed; inset: 0; z-index: 200; background: #0003; display: flex; justify-content: flex-end; }
+.notification-drawer { width: 440px; height: 100%; background: var(--paper); color: var(--text); border-left: 1px solid var(--border); display: flex; flex-direction: column; box-shadow: -8px 0 35px #0000000c; }
+.notification-drawer > header { display: flex; justify-content: space-between; align-items: center; padding: 24px 24px 18px; border-bottom: 1px solid var(--border); }
+.notification-drawer h2 { font-size: 20px; margin: 3px 0 0; }
+.notification-drawer h2 > span { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 8px; }
+.notification-toolbar { display: flex; align-items: center; gap: 13px; padding: 8px 24px 0; border-bottom: 1px solid var(--border); }
+.notification-toolbar .list-tabs { gap: 18px; flex: 1; border: 0; margin: 0; padding: 0; }
+.notification-toolbar .list-tabs button { padding: 11px 0; font-size: 12px; }
+.notification-toolbar > .text-btn { font-size: 11px; display: flex; align-items: center; gap: 4px; }
+.notification-items { flex: 1; overflow-y: auto; padding: 4px 24px 20px; scrollbar-width: thin; }
+.notification-item { padding: 17px 0; border-bottom: 1px solid var(--line-soft); position: relative; }
+.notification-item.unread::before { content: ''; position: absolute; left: -12px; top: 46px; height: 5px; width: 5px; border-radius: 50%; background: var(--blue); }
+.notification-item-meta { display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--muted); }
+.notification-item.unread .notification-item-meta > span { color: var(--blue); }
+.notification-open { display: flex; align-items: start; justify-content: space-between; gap: 12px; width: 100%; text-align: left; padding: 6px 0; }
+.notification-open strong { font-size: 13px; font-weight: 550; line-height: 1.7; }
+.notification-open svg { flex-shrink: 0; margin-top: 4px; color: var(--subtle); }
+.notification-open:hover { color: var(--blue); }
+.notification-item > p { color: var(--muted); font-size: 11px; margin: 0; }
+.notification-item .mark-read { font-size: 10px; margin-top: 8px; }
+.notification-drawer > footer { border-top: 1px solid var(--border); color: var(--muted); padding: 15px 24px; font-size: 10px; display: flex; align-items: center; gap: 6px; }
+.notification-empty { text-align: center; padding: 80px 15px; color: var(--muted); }
+.notification-empty h3 { font-size: 15px; color: var(--text); margin-top: 12px; }
+.notification-empty p { font-size: 12px; line-height: 1.8; }
+.notice-error { color: var(--red); background: var(--red-soft); font-size: 12px; margin: 12px 24px; padding: 10px; border-radius: 6px; }
+.review-form { border: 0; padding: 0; margin: 0; min-width: 0; }
+.review-form:disabled { opacity: .65; }
+.review-save-state { padding: 11px 12px; margin-bottom: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; font-size: 11px; }
+.review-save-state > span { display: block; color: var(--text); }
+.review-save-state small { display: block; color: var(--muted); font-size: 10px; line-height: 1.8; margin-top: 4px; }
+.review-save-state.failed { border-color: var(--red); }
+.review-recovery { font-size: 11px; border: 1px solid var(--border); border-left: 2px solid var(--orange); border-radius: 5px; padding: 12px; margin-bottom: 10px; line-height: 1.8; }
+.review-recovery p { color: var(--muted); margin: 5px 0; }
+.review-recovery button { font-size: 10px; margin-right: 10px; }
+.deadline-badge { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 4px; font-size: 10px; line-height: 1.7; background: var(--surface); color: var(--muted); font-weight: 400; white-space: nowrap; vertical-align: middle; }
+.deadline-badge.due_soon { background: var(--orange-soft); color: var(--orange); }
+.deadline-badge.closed { background: var(--surface-2); color: var(--muted); }
+.deadline-banner { display: flex; align-items: center; gap: 8px; padding: 12px 15px; margin: 0 0 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; color: var(--muted); }
+.deadline-banner.due_soon { color: var(--orange); background: var(--orange-soft); }
+.assignment-card .meta-line { flex-wrap: wrap; }
+.assignment-foot button:disabled, .work-row:disabled { opacity: .55; cursor: not-allowed; }

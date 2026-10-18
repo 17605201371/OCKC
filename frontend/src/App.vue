@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent } from "vue";
+import { ref, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent, nextTick } from "vue";
 import {
   BookOpen,
   LayoutDashboard,
@@ -44,6 +44,12 @@ const Editor = defineAsyncComponent(() => import("./Editor.vue"));
 import ProgressPage from "./ProgressPage.vue";
 import QualitySummary from "./QualitySummary.vue";
 import AiFeedback from "./AiFeedback.vue";
+import NotificationCenter from "./NotificationCenter.vue";
+import { useReviewDraft } from "./useReviewDraft";
+import { dueState, dueLabel } from "./deadlines";
+const clockNow = ref(Date.now()), serverOffset = ref(0);
+let deadlineTimer: ReturnType<typeof setInterval>;
+const deadlineNow = computed(() => clockNow.value + serverOffset.value);
 const aiSidebarVisible = ref(false);
 import { api, login, ApiFailure } from "./api";
 const me = ref<any>(null),
@@ -143,6 +149,21 @@ const isTeacher = computed(() => course.value?.role === "TEACHER");
 const isStaff = computed(() =>
   ["TEACHER", "ASSISTANT"].includes(course.value?.role),
 );
+function reviewSnapshot() { return { items: grading.value.map(i => ({code:i.code,score:i.score === '' || i.score == null ? null : Number(i.score),status:i.status,reason:i.reason || ''})), summary:summary.value, gateReason:gateReason.value }; }
+function applyReviewData(data:any) { grading.value = allItems.map(i => ({...i,score:data.items?.find((x:any)=>x.code===i.code)?.score ?? null,status:data.items?.find((x:any)=>x.code===i.code)?.status || 'SCORED',reason:data.items?.find((x:any)=>x.code===i.code)?.reason || ''})); summary.value=data.summary || '';gateReason.value=data.gateReason || ''; }
+const review = useReviewDraft(reviewSnapshot, applyReviewData, () => page.value === 'grading' && isTeacher.value, () => me.value?.id);
+const reviewPublishing=ref(false);
+async function reloadReview() { await run(async()=>{version.value=await api(`/submissions/${version.value.id}`);applyReviewData({items:version.value.evaluation?.details,summary:version.value.evaluation?.summary,gateReason:version.value.evaluation?.gate_reason});await review.load(version.value.id);}); }
+async function restoreReview(data:any) { if(confirm('将这份草稿恢复到当前评分表单？恢复后请重新核对各项分数与总评；不会直接发布正式评价。'))await review.restore(data); }
+async function navigateNotice(n:any) {
+  if(!await flushBeforeLeave())throw new Error('请先保存或处理当前评分/写作草稿，再打开消息。');
+  if(!courses.value.some(c=>c.id===n.course_id))throw new Error('已无法访问这门课程，请刷新工作空间。');
+  cid.value=n.course_id;await refreshCourse();
+  if(n.target_type==='evidence') {
+    const e=evidences.value.find(e=>e.id===n.target_id);if(!e)throw new Error('此证据当前不可访问。');page.value='evidence';await nextTick();document.querySelector(`[data-evidence-id="${n.target_id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});
+  } else if(n.target_type==='publication'&&isTeacher.value&&pending.value.some(p=>p.submission_id===n.target_id)) {page.value='community';await nextTick();document.querySelector('.approval-card')?.scrollIntoView({behavior:'smooth'});}
+  else {if(!await openVersion(n.target_id,isTeacher.value && ['SUBMISSION','FEEDBACK_REPLY'].includes(n.kind)))throw new Error('无法打开关联提交，请检查当前权限。');if(n.anchor_id){await nextTick();focusAnchor(n.anchor_id);}}
+}
 const nav = computed(() => [
   { id: "home", name: "学习工作台", icon: LayoutDashboard },
   {
@@ -265,6 +286,8 @@ async function refreshCourse() {
       : Promise.resolve([]),
   ]);
   assignments.value = a;
+  if(a[0]?.server_now) serverOffset.value = Date.parse(a[0].server_now) - Date.now();
+  clockNow.value=Date.now();
   publications.value = p;
   evidences.value = e;
   queue.value = q;
@@ -298,17 +321,11 @@ async function selectCourse(id: number) {
   });
   menu.value = false;
 }
-const filteredAssignments = computed(() =>
-  assignments.value.filter(
-    (a) =>
-      assignmentFilter.value === "all" ||
-      (assignmentFilter.value === "submitted"
-        ? !!a.version_no
-        : assignmentFilter.value === "started"
-          ? !!a.entry_id
-          : !a.entry_id),
-  ),
-);
+const filteredAssignments = computed(() => assignments.value.filter(a => {
+  if(assignmentFilter.value==='dueSoon')return dueState(a.due_at,deadlineNow.value)==='DUE_SOON';
+  if(assignmentFilter.value==='closed')return dueState(a.due_at,deadlineNow.value)==='CLOSED';
+  return assignmentFilter.value==='all'||(assignmentFilter.value==='submitted'?!!a.version_no:assignmentFilter.value==='started'?!!a.entry_id:!a.entry_id);
+}));
 const filteredQueue = computed(() =>
   queue.value.filter(
     (q) =>
@@ -427,6 +444,7 @@ async function go(target: string) {
   window.scrollTo(0, 0);
 }
 async function flushBeforeLeave() {
+  if (page.value === "grading" && isTeacher.value && !await review.flush()) { error.value = review.state.error || "评分草稿尚未保存，请先处理保存失败或冲突。"; return false; }
   if (uploadingMedia.value) { notify("图片上传中，请稍候再离开"); return false; }
   if (page.value === "editor" && dirty.value) return await saveDraft();
   return true;
@@ -595,14 +613,15 @@ async function submit() {
     notify(`已提交 v${v.version_no}，等待教师评审`);
   });
 }
-async function openVersion(sid: number, review = false) {
+async function openVersion(sid: number, asReview = false) {
   if (!(await flushBeforeLeave())) return;
+  let succeeded=false;
   await run(async () => {
     version.value = await api(`/submissions/${sid}`);
     selectedAnchor.value = "";
-    page.value = review ? "grading" : "reader";
+    page.value = asReview ? "grading" : "reader";
     feedbackTab.value = "feedback";
-    if (review) {
+    if (asReview) {
       const details = version.value.evaluation?.details;
       grading.value = allItems.map((i) => ({
         ...i,
@@ -613,9 +632,11 @@ async function openVersion(sid: number, review = false) {
       }));
       summary.value = version.value.evaluation?.summary || "";
       gateReason.value = version.value.evaluation?.gate_reason || "";
+      if(isTeacher.value) await review.load(sid);
     }
-    window.scrollTo(0, 0);
+    window.scrollTo(0, 0);succeeded=true;
   });
+  return succeeded;
 }
 function anchorOptions(doc: any) {
   const out: { id: string; text: string }[] = [];
@@ -781,6 +802,7 @@ async function modalSubmit() {
 }
 async function publishGrade() {
   await run(async () => {
+    if(!review.state.loaded || review.state.stale || review.state.backup || review.state.conflict)throw new Error('请先处理评分草稿的加载、恢复或冲突提示。');
     if (!previewScore.value)
       throw new Error("请填写完整的四维评分，待核验项不得发布");
     if (!summary.value.trim()) throw new Error("请填写总评与下一步建议");
@@ -790,6 +812,9 @@ async function publishGrade() {
       )
     )
       return;
+    reviewPublishing.value=true;
+    try {
+    if(!await review.flush())throw new Error(review.state.error || '请先保存评分草稿');
     await api(`/submissions/${version.value.id}/evaluations`, "POST", {
       items: grading.value.map((i) => ({
         code: i.code,
@@ -799,11 +824,14 @@ async function publishGrade() {
       })),
       summary: summary.value,
       gateReason: gateReason.value,
-      expectedRevision: version.value.evaluation?.revision_no || 0,
+      expectedRevision: review.state.baseRevision,
     });
+    review.published();
     version.value = await api(`/submissions/${version.value.id}`);
+    await review.load(version.value.id);
     await refreshCourse();
     notify("正式评价已发布并留存历史记录");
+    } finally { reviewPublishing.value=false; }
   });
 }
 async function publicationRequest() {
@@ -841,13 +869,13 @@ async function viewVerification(ev: any) {
   });
 }
 function beforeUnload(e: BeforeUnloadEvent) {
-  if (dirty.value || uploadingMedia.value) {
+  if (dirty.value || uploadingMedia.value || review.state.dirty || review.state.saving) {
     e.preventDefault();
     e.returnValue = "";
   }
 }
 function keydown(e: KeyboardEvent) {
-  if (e.defaultPrevented || document.querySelector("dialog[open]")) return;
+  if (e.defaultPrevented || document.querySelector("dialog[open],.notification-overlay")) return;
   if (e.key === "Tab" && (modal.value || commandOpen.value)) {
     const dialog = document.querySelector<HTMLElement>(
       commandOpen.value ? ".command-dialog" : ".modal",
@@ -886,6 +914,7 @@ function keydown(e: KeyboardEvent) {
   }
 }
 onMounted(async () => {
+  deadlineTimer=setInterval(()=>{clockNow.value=Date.now()},30000);
   window.addEventListener("beforeunload", beforeUnload);
   window.addEventListener("keydown", keydown);
   try {
@@ -898,7 +927,7 @@ onMounted(async () => {
   }
 });
 onBeforeUnmount(() => {
-  clearTimeout(saveTimer);
+  clearTimeout(saveTimer);clearInterval(deadlineTimer);
   window.removeEventListener("beforeunload", beforeUnload);
   window.removeEventListener("keydown", keydown);
 });
@@ -1080,6 +1109,7 @@ onBeforeUnmount(() => {
           <Search :size="16" /><span>搜索页面、作业、条目</span><kbd>⌘K</kbd>
         </button>
         <div class="top-actions">
+          <NotificationCenter :key="me.id" :user-id="me.id" :navigate="navigateNotice" />
           <span class="privacy"><ShieldCheck :size="15" />课程内可见</span
           ><span class="role-label">{{
             isTeacher ? "教师" : isStaff ? "助教" : "学生"
@@ -1127,6 +1157,7 @@ onBeforeUnmount(() => {
           :publications="publications"
           :evidences="evidences"
           :staff="isStaff"
+          :now="deadlineNow"
           :teacher="isTeacher"
           :home-entry="homeEntry"
           :home-submission="homeSubmission"
@@ -1159,6 +1190,8 @@ onBeforeUnmount(() => {
                 ['started', '已开始'],
                 ['submitted', '已提交'],
                 ['unstarted', '未开始'],
+                ['dueSoon', '即将截止'],
+                ['closed', '已截止'],
               ]"
               :key="key"
               :class="{ active: assignmentFilter === key }"
@@ -1182,6 +1215,7 @@ onBeforeUnmount(() => {
               <p>{{ a.requirements }}</p>
               <div class="meta-line">
                 <Clock :size="16" />{{ fmt(a.due_at) }} 截止
+                <span class="deadline-badge" :class="dueState(a.due_at,deadlineNow).toLowerCase()">{{ dueLabel(dueState(a.due_at,deadlineNow)) }}</span>
               </div>
               <div class="assignment-ai-policy">
                 <div><span><Sparkles :size="14" />AI 修改建议</span><small>{{ a.ai_feedback_enabled ? '已开放入口 · 服务待配置' : '未开放 · 学生端不显示' }}</small></div>
@@ -1192,10 +1226,11 @@ onBeforeUnmount(() => {
                 <span class="muted">{{ a.rubric_version }}</span
                 ><button
                   class="text-btn"
+                  :disabled="!isStaff && !a.entry_id && dueState(a.due_at,deadlineNow)==='CLOSED'"
                   @click="isStaff ? go('review') : openAssignment(a)"
                 >
                   {{
-                    isStaff ? "查看提交" : a.entry_id ? "继续编辑" : "开始作答"
+                    isStaff ? "查看提交" : dueState(a.due_at,deadlineNow)==='CLOSED' ? (a.entry_id ? '查看与整理' : '已截止') : a.entry_id ? "继续编辑" : "开始作答"
                   }}<ArrowUpRight :size="16" />
                 </button>
               </div>
@@ -1334,7 +1369,7 @@ onBeforeUnmount(() => {
                 class="badge"
                 :class="q.q_final === null ? 'orange' : 'green'"
                 >{{
-                  q.q_final === null ? "待评审" : `${number(q.q_final)} 分`
+                  q.q_final === null ? (q.review_draft_updated_at ? "待评审 · 有草稿" : "待评审") : `${number(q.q_final)} 分`
                 }}</span
               ><span class="row-time">{{ fmt(q.created_at) }}</span
               ><ChevronRight :size="18" />
@@ -1453,7 +1488,7 @@ onBeforeUnmount(() => {
             <span class="small-label">作者不可自核验</span>
           </div>
           <div class="evidence-list">
-            <article v-for="e in evidences" :key="e.id" class="evidence-card">
+            <article v-for="e in evidences" :key="e.id" class="evidence-card" :data-evidence-id="e.id">
               <div class="card-top">
                 <span class="source-label"
                   ><LinkIcon :size="18" />{{ e.source_title }}</span
@@ -1557,13 +1592,14 @@ onBeforeUnmount(() => {
                 <Save :size="17" />保存草稿</button
               ><button
                 class="btn primary"
-                :disabled="saving || busy || conflicted || uploadingMedia"
+                :disabled="saving || busy || conflicted || uploadingMedia || (currentAssignment && dueState(currentAssignment.due_at,deadlineNow)==='CLOSED')"
                 @click="submit"
               >
-                <Send :size="17" />提交评审
+                <Send :size="17" />{{ currentAssignment && dueState(currentAssignment.due_at,deadlineNow)==='CLOSED' ? '作业已截止' : '提交评审' }}
               </button>
             </div>
           </div>
+          <div v-if="currentAssignment && dueState(currentAssignment.due_at,deadlineNow)!=='OPEN'" class="deadline-banner" :class="dueState(currentAssignment.due_at,deadlineNow).toLowerCase()"><Clock :size="16" /><span>{{ dueState(currentAssignment.due_at,deadlineNow)==='CLOSED' ? '本作业已截止。已有草稿仍可整理和保存，但不能提交新版本。' : '本作业将在 24 小时内截止，请及时保存并提交评审。' }}</span></div>
           <div v-if="backup" class="backup-banner">
             <AlertCircle :size="18" />发现未同步的本地备份。<button
               class="text-btn"
@@ -1800,7 +1836,7 @@ onBeforeUnmount(() => {
                   page === "grading" ? "四维评分" : "质量与版本"
                 }}</button
               ><template v-if="page === 'reader' && version.author_id === me.id"
-                ><button
+                ><button class="btn secondary" @click="openAssignment(assignments.find(a=>a.id===version.assignment_id))"><PenLine :size="16" />继续修订</button><button
                   v-if="
                     !version.publication.length ||
                     version.publication[0].state === 'WITHDRAWN'
@@ -1822,6 +1858,8 @@ onBeforeUnmount(() => {
                   }}
                 </button></template
               ><button
+                v-if="page === 'grading' && isTeacher"
+                class="btn secondary" :disabled="review.state.saving || reviewPublishing || !review.state.loaded || !!review.state.stale || !!review.state.backup || review.state.conflict" @click="review.save()"><Save :size="16" />保存评分草稿</button><button
                 v-if="page === 'grading' && isTeacher"
                 class="btn primary"
                 :disabled="busy"
@@ -1973,6 +2011,10 @@ onBeforeUnmount(() => {
                 <h2>四维评分</h2>
                 <span class="badge blue">教师确认</span>
               </div>
+              <div v-if="isTeacher" class="review-save-state" :class="{failed:review.state.error}" aria-live="polite"><span>{{ review.state.loading ? '正在加载评分草稿…' : review.state.saving ? '正在保存评分草稿…' : review.state.error ? '评分草稿未保存' : review.state.dirty ? '有未保存的评分修改' : review.state.savedAt ? '评分草稿已保存 · ' + fmt(review.state.savedAt) : '修改后自动保存评分草稿' }}</span><small>仅你可见；发布后学生才会看到评分和总评。</small></div>
+              <div v-if="review.state.error && isTeacher" class="review-recovery" role="alert"><p>{{ review.state.error }}</p><button class="text-btn" @click="review.state.conflict || !review.state.loaded ? reloadReview() : review.save()">{{ review.state.conflict || !review.state.loaded ? '重新加载并合并' : '重试保存' }}</button></div>
+              <div v-if="review.state.stale && isTeacher" class="review-recovery"><strong>正式评价已更新</strong><p>有一份基于旧评价的评分草稿。请先选择恢复并复核，或放弃旧草稿。</p><button class="text-btn" @click="restoreReview(review.state.stale)">恢复旧草稿并复核</button><button class="text-btn muted" @click="review.discardStale()">放弃旧草稿</button></div>
+              <div v-if="review.state.backup && isTeacher" class="review-recovery"><strong>发现本机未同步的评分备份</strong><p>可恢复后继续核对；不会直接覆盖正式评价。</p><button class="text-btn" @click="restoreReview(review.state.backup)">恢复本机评分备份</button><button class="text-btn muted" @click="review.discardBackup()">使用服务端草稿</button></div>
               <div class="grading-preview">
                 <span>综合质量 · 四维等权</span
                 ><strong
@@ -1987,6 +2029,7 @@ onBeforeUnmount(() => {
                   }}
                 </p>
               </div>
+              <fieldset class="review-form" :disabled="!isTeacher || reviewPublishing || review.state.loading || !review.state.loaded || !!review.state.stale || !!review.state.backup || review.state.conflict">
               <details
                 v-for="d in rubric"
                 :key="d.d"
@@ -2097,6 +2140,7 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </div>
+              </fieldset>
             </aside>
             <aside v-else v-show="panelVisible" class="feedback-sidebar">
               <div class="panel-title">

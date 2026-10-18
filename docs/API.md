@@ -28,3 +28,16 @@
 - 401：未登录；403：无权限或无效 CSRF；409：版本冲突/重复操作；422：规则不满足。
 - 400：参数格式错误。500 不回传堆栈或 SQL，返回 traceId 供运维排查。
 - 本阶段没有开放注册、任意文件上传、AI 调用或外部来源抓取 API。
+
+## 工作流增量
+
+| 方法 | 路径（均以 /api 开头） | 权限/要点 |
+|---|---|---|
+| GET | /notifications?unread=false&before={id} | 本人当前有权接收的消息；游标分页 |
+| PUT | /notifications/{id}/read | 本人可见消息标记已读 |
+| PUT | /notifications/read-all | 本人当前可见消息全部已读 |
+| GET/PUT/DELETE | /submissions/{id}/review-draft | 当前任课教师本人的私有评分草稿；助教和学生不可读写 |
+
+评分草稿 PUT 传 `items, summary, gateReason, revision, baseEvaluationRevision`，DELETE 传 `revision`；409 表示草稿或正式评价已变化，需要显式恢复/合并。草稿不产生正式分数或学生通知。
+
+作业列表增加 `server_now` 与 `due_status`（OPEN / DUE_SOON / CLOSED）；截止后不允许开始新作品或提交新版本，但已有作品仍可保存草稿、读取历史。详细载荷与边界见 [WORKFLOW.md](WORKFLOW.md)。
