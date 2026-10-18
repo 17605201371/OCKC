@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { dueState, dueLabel } from "./deadlines";
+import { assignmentState, dueLabel } from "./deadlines";
 import { computed } from "vue";
 import {
   ArrowUpRight,
@@ -189,7 +189,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
           <span class="course-dot"></span><span>{{ course.title }}</span
           ><span>·</span><span>{{ staff ? "当前待办" : "知识帖任务" }}</span
           ><span v-if="!staff" class="hero-due"
-            >· {{ date(featured.due_at) }} 截止 <span class="deadline-badge" :class="dueState(featured.due_at,now).toLowerCase()">{{ dueLabel(dueState(featured.due_at,now)) }}</span></span
+            >· {{ date(featured.due_at) }} 截止 <span class="deadline-badge" :class="assignmentState(featured,now).toLowerCase()">{{ featured.manually_closed?'已结束':dueLabel(assignmentState(featured,now)) }}</span></span
           >
         </div>
         <h2>
@@ -232,9 +232,9 @@ const today = new Date().toLocaleDateString("zh-CN", {
           </p>
         </div>
         <div class="hero-actions">
-          <button class="btn primary" :disabled="!staff && !featured.entry_id && dueState(featured.due_at,now)==='CLOSED'" @click="openFeatured">
+          <button class="btn primary" :disabled="!staff && !featured.entry_id && assignmentState(featured,now)==='CLOSED'" @click="openFeatured">
             <component :is="staff ? PenLine : PenLine" :size="16" />{{
-              staff ? "开始批改" : dueState(featured.due_at,now)==='CLOSED' && !featured.entry_id ? "作业已截止" : homeEntry ? "继续创作" : "开始创作"
+              staff ? "开始批改" : assignmentState(featured,now)==='CLOSED' && !featured.entry_id ? "作业已截止" : homeEntry ? "继续创作" : "开始创作"
             }}</button
           ><button
             class="btn secondary"
@@ -367,13 +367,13 @@ const today = new Date().toLocaleDateString("zh-CN", {
               v-for="a in assignments.slice(0, 4)"
               :key="a.id"
               class="work-row"
-              :disabled="!a.entry_id && dueState(a.due_at,now)==='CLOSED'"
+              :disabled="!a.entry_id && assignmentState(a,now)==='CLOSED'"
               @click="emit('open-assignment', a)"
             >
               <span class="work-thumb"><FileText :size="23" /></span>
               <div>
                 <strong>{{ a.title }}</strong>
-                <p>{{ course.title }} · {{ date(a.due_at) }} 截止 <span class="deadline-badge" :class="dueState(a.due_at,now).toLowerCase()">{{ dueLabel(dueState(a.due_at,now)) }}</span></p>
+                <p>{{ course.title }} · {{ date(a.due_at) }} 截止 <span class="deadline-badge" :class="assignmentState(a,now).toLowerCase()">{{ a.manually_closed?'已结束':dueLabel(assignmentState(a,now)) }}</span></p>
               </div>
               <span
                 class="badge"

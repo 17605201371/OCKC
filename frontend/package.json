@@ -12,7 +12,8 @@
     "test:studio": "node ../scripts/studio-e2e.mjs",
     "test:sidebar": "node ../scripts/sidebar-e2e.mjs",
     "test:workflow": "node ../scripts/workflow-e2e.mjs",
-    "test:deadlines": "node ../scripts/deadline-test.mjs"
+    "test:deadlines": "node ../scripts/deadline-test.mjs",
+    "test:assignments": "node ../scripts/assignment-e2e.mjs"
   },
   "dependencies": {
     "@tiptap/core": "^3.32.0",

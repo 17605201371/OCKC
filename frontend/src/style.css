@@ -4062,3 +4062,35 @@ summary:focus-visible {
 .deadline-banner.due_soon { color: var(--orange); background: var(--orange-soft); }
 .assignment-card .meta-line { flex-wrap: wrap; }
 .assignment-foot button:disabled, .work-row:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Teacher assignment management shares the platform's semantic palette. */
+.assignment-manager { width:min(720px,calc(100vw - 48px)); max-height:calc(100vh - 64px); padding:0; color:var(--text); background:var(--paper); border:1px solid var(--border); border-radius:12px; box-shadow:0 20px 80px #0003; }
+.assignment-manager::backdrop { background:#0006; }
+.assignment-manager > header { display:flex; justify-content:space-between; align-items:center; padding:24px; border-bottom:1px solid var(--border); }
+.assignment-manager h2 { font-size:23px; margin-top:5px; }
+.assignment-manager-tabs { margin:0 24px; }
+.assignment-manager-tabs button { display:flex; align-items:center; gap:6px; }
+.assignment-manager-body { padding:20px 24px 24px; max-height:calc(100vh - 240px); overflow:auto; }
+.assignment-manager fieldset { border:0; padding:0; margin:0; min-width:0; display:grid; gap:16px; }
+.assignment-manager label { display:grid; gap:7px; font-size:13px; }
+.assignment-manager input,.assignment-manager textarea { width:100%; color:var(--text); background:var(--paper); border:1px solid var(--border); border-radius:6px; padding:10px 12px; font:inherit; line-height:1.6; }
+.assignment-manager textarea { resize:vertical; }
+.management-state { display:flex; justify-content:space-between; gap:16px; font-size:13px; padding:12px; background:var(--surface); border-radius:6px; }
+.management-state span,.management-help { color:var(--muted); }
+.management-help { font-size:12px; line-height:1.85; margin:12px 0 20px; }
+.assignment-manager footer { display:flex; justify-content:space-between; align-items:center; gap:12px; padding-top:22px; }
+.assignment-manager footer > div { display:flex; gap:14px; align-items:center; }
+.assignment-manager .notice-error { display:flex; gap:8px; align-items:flex-start; }
+.management-success { padding:12px; background:var(--surface); color:var(--blue-text); border-radius:6px; font-size:13px; margin-bottom:14px; }
+.assignment-change-list article { border:1px solid var(--border); border-radius:8px; padding:16px; margin-top:12px; font-size:13px; line-height:1.8; }
+.assignment-change-list article > div { display:flex; justify-content:space-between; gap:10px; }
+.assignment-change-list time,.assignment-change-list article > div > span { color:var(--muted); font-size:12px; }
+.assignment-change-list article > p { margin:10px 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.assignment-change-list summary { cursor:pointer; color:var(--blue-text); }
+.rule-comparison { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:12px; }
+.rule-comparison section { min-width:0; padding:12px; background:var(--surface); border-radius:5px; overflow-wrap:anywhere; }
+.rule-requirements { white-space:pre-wrap; max-height:170px; overflow:auto; }
+.assignment-foot .manage-assignment-btn { font-size:12px; padding:7px 10px; }
+.assignment-snapshot { margin:20px 0; padding:16px; border:1px solid var(--border); border-radius:8px; font-size:13px; }
+.assignment-snapshot summary { cursor:pointer; color:var(--muted); }
+.assignment-snapshot p { line-height:1.85; margin-top:10px; white-space:pre-wrap; }

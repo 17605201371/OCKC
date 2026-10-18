@@ -45,8 +45,11 @@ import ProgressPage from "./ProgressPage.vue";
 import QualitySummary from "./QualitySummary.vue";
 import AiFeedback from "./AiFeedback.vue";
 import NotificationCenter from "./NotificationCenter.vue";
+import AssignmentManager from "./AssignmentManager.vue";
+const managedAssignment=ref<any>(null);
+const ruleRefreshError=ref('');
 import { useReviewDraft } from "./useReviewDraft";
-import { dueState, dueLabel } from "./deadlines";
+import { assignmentState, dueLabel } from "./deadlines";
 const clockNow = ref(Date.now()), serverOffset = ref(0);
 let deadlineTimer: ReturnType<typeof setInterval>;
 const deadlineNow = computed(() => clockNow.value + serverOffset.value);
@@ -159,7 +162,8 @@ async function navigateNotice(n:any) {
   if(!await flushBeforeLeave())throw new Error('请先保存或处理当前评分/写作草稿，再打开消息。');
   if(!courses.value.some(c=>c.id===n.course_id))throw new Error('已无法访问这门课程，请刷新工作空间。');
   cid.value=n.course_id;await refreshCourse();
-  if(n.target_type==='evidence') {
+  if(n.target_type==='assignment'){page.value='assignments';assignmentFilter.value='all';await nextTick();document.querySelector(`[data-assignment-id="${n.target_id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});}
+  else if(n.target_type==='evidence') {
     const e=evidences.value.find(e=>e.id===n.target_id);if(!e)throw new Error('此证据当前不可访问。');page.value='evidence';await nextTick();document.querySelector(`[data-evidence-id="${n.target_id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});
   } else if(n.target_type==='publication'&&isTeacher.value&&pending.value.some(p=>p.submission_id===n.target_id)) {page.value='community';await nextTick();document.querySelector('.approval-card')?.scrollIntoView({behavior:'smooth'});}
   else {if(!await openVersion(n.target_id,isTeacher.value && ['SUBMISSION','FEEDBACK_REPLY'].includes(n.kind)))throw new Error('无法打开关联提交，请检查当前权限。');if(n.anchor_id){await nextTick();focusAnchor(n.anchor_id);}}
@@ -273,6 +277,14 @@ async function initialize() {
   if (cid.value) await refreshCourse();
   page.value = "home";
 }
+async function refreshAssignmentRules(){
+  if(!me.value||!cid.value)return;const id=cid.value;
+  try{const rows=await api(`/courses/${id}/assignments`);if(id!==cid.value||!me.value)return;assignments.value=rows;if(rows[0]?.server_now)serverOffset.value=Date.parse(rows[0].server_now)-Date.now();clockNow.value=Date.now();ruleRefreshError.value='';
+    if(page.value==='home'&&!isStaff.value){const eid=rows[0]?.entry_id;if(!eid){homeEntry.value=null;homeSubmission.value=null;}else if(homeEntry.value?.id!==eid){const e=await api(`/entries/${eid}`);const v=e.versions[0]?await api(`/submissions/${e.versions[0].id}`):null;if(id===cid.value&&me.value&&page.value==='home'&&assignments.value[0]?.entry_id===eid){homeEntry.value=e;homeSubmission.value=v;}}}
+  }
+  catch{ruleRefreshError.value='暂时无法刷新作业规则，请检查网络；提交资格仍以服务器校验为准。';}
+}
+async function assignmentManaged(){await refreshAssignmentRules();notify('作业管理变更已保存');}
 async function refreshCourse() {
   const [a, p, e, q, n] = await Promise.all([
     api(`/courses/${cid.value}/assignments`),
@@ -322,8 +334,8 @@ async function selectCourse(id: number) {
   menu.value = false;
 }
 const filteredAssignments = computed(() => assignments.value.filter(a => {
-  if(assignmentFilter.value==='dueSoon')return dueState(a.due_at,deadlineNow.value)==='DUE_SOON';
-  if(assignmentFilter.value==='closed')return dueState(a.due_at,deadlineNow.value)==='CLOSED';
+  if(assignmentFilter.value==='dueSoon')return assignmentState(a,deadlineNow.value)==='DUE_SOON';
+  if(assignmentFilter.value==='closed')return assignmentState(a,deadlineNow.value)==='CLOSED';
   return assignmentFilter.value==='all'||(assignmentFilter.value==='submitted'?!!a.version_no:assignmentFilter.value==='started'?!!a.entry_id:!a.entry_id);
 }));
 const filteredQueue = computed(() =>
@@ -914,7 +926,8 @@ function keydown(e: KeyboardEvent) {
   }
 }
 onMounted(async () => {
-  deadlineTimer=setInterval(()=>{clockNow.value=Date.now()},30000);
+  deadlineTimer=setInterval(()=>{clockNow.value=Date.now();void refreshAssignmentRules()},30000);
+  window.addEventListener("focus",refreshAssignmentRules);
   window.addEventListener("beforeunload", beforeUnload);
   window.addEventListener("keydown", keydown);
   try {
@@ -930,10 +943,12 @@ onBeforeUnmount(() => {
   clearTimeout(saveTimer);clearInterval(deadlineTimer);
   window.removeEventListener("beforeunload", beforeUnload);
   window.removeEventListener("keydown", keydown);
+  window.removeEventListener("focus",refreshAssignmentRules);
 });
 </script>
 
 <template>
+  <AssignmentManager v-if="managedAssignment && isTeacher" :assignment="managedAssignment" @close="managedAssignment=null" @changed="assignmentManaged" />
   <div v-if="loading" class="boot">
     <BookOpen :size="30" />
     <p>正在连接课程工作空间…</p>
@@ -1206,6 +1221,7 @@ onBeforeUnmount(() => {
               v-for="a in filteredAssignments"
               :key="a.id"
               class="assignment-card"
+              :data-assignment-id="a.id"
             >
               <div class="card-top">
                 <span class="file-icon"><FileText :size="22" /></span
@@ -1215,22 +1231,22 @@ onBeforeUnmount(() => {
               <p>{{ a.requirements }}</p>
               <div class="meta-line">
                 <Clock :size="16" />{{ fmt(a.due_at) }} 截止
-                <span class="deadline-badge" :class="dueState(a.due_at,deadlineNow).toLowerCase()">{{ dueLabel(dueState(a.due_at,deadlineNow)) }}</span>
+                <span class="deadline-badge" :class="assignmentState(a,deadlineNow).toLowerCase()">{{ a.manually_closed ? '已结束' : dueLabel(assignmentState(a,deadlineNow)) }}</span>
               </div>
               <div class="assignment-ai-policy">
                 <div><span><Sparkles :size="14" />AI 修改建议</span><small>{{ a.ai_feedback_enabled ? '已开放入口 · 服务待配置' : '未开放 · 学生端不显示' }}</small></div>
                 <button v-if="isTeacher" class="policy-switch" role="switch" :aria-checked="!!a.ai_feedback_enabled" :aria-label="`AI 修改建议：${a.title}`" :disabled="busy" @click="toggleAssignmentAi(a)"><span></span></button>
                 <span v-else class="small-label">{{ a.ai_feedback_enabled ? '已开启' : '未开启' }}</span>
               </div>
-              <div class="assignment-foot">
+              <div class="assignment-foot"><button v-if="isTeacher" class="btn secondary manage-assignment-btn" @click="managedAssignment={...a}"><SlidersHorizontal :size="14"/>管理作业</button>
                 <span class="muted">{{ a.rubric_version }}</span
                 ><button
                   class="text-btn"
-                  :disabled="!isStaff && !a.entry_id && dueState(a.due_at,deadlineNow)==='CLOSED'"
+                  :disabled="!isStaff && !a.entry_id && assignmentState(a,deadlineNow)==='CLOSED'"
                   @click="isStaff ? go('review') : openAssignment(a)"
                 >
                   {{
-                    isStaff ? "查看提交" : dueState(a.due_at,deadlineNow)==='CLOSED' ? (a.entry_id ? '查看与整理' : '已截止') : a.entry_id ? "继续编辑" : "开始作答"
+                    isStaff ? "查看提交" : assignmentState(a,deadlineNow)==='CLOSED' ? (a.entry_id ? '查看与整理' : '已截止') : a.entry_id ? "继续编辑" : "开始作答"
                   }}<ArrowUpRight :size="16" />
                 </button>
               </div>
@@ -1592,14 +1608,15 @@ onBeforeUnmount(() => {
                 <Save :size="17" />保存草稿</button
               ><button
                 class="btn primary"
-                :disabled="saving || busy || conflicted || uploadingMedia || (currentAssignment && dueState(currentAssignment.due_at,deadlineNow)==='CLOSED')"
+                :disabled="saving || busy || conflicted || uploadingMedia || (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED')"
                 @click="submit"
               >
-                <Send :size="17" />{{ currentAssignment && dueState(currentAssignment.due_at,deadlineNow)==='CLOSED' ? '作业已截止' : '提交评审' }}
+                <Send :size="17" />{{ currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED' ? (currentAssignment?.manually_closed?'作业已结束':'作业已截止') : '提交评审' }}
               </button>
             </div>
           </div>
-          <div v-if="currentAssignment && dueState(currentAssignment.due_at,deadlineNow)!=='OPEN'" class="deadline-banner" :class="dueState(currentAssignment.due_at,deadlineNow).toLowerCase()"><Clock :size="16" /><span>{{ dueState(currentAssignment.due_at,deadlineNow)==='CLOSED' ? '本作业已截止。已有草稿仍可整理和保存，但不能提交新版本。' : '本作业将在 24 小时内截止，请及时保存并提交评审。' }}</span></div>
+          <p v-if="ruleRefreshError" class="notice-error" role="alert">{{ ruleRefreshError }}</p>
+          <div v-if="currentAssignment && assignmentState(currentAssignment,deadlineNow)!=='OPEN'" class="deadline-banner" :class="assignmentState(currentAssignment,deadlineNow).toLowerCase()"><Clock :size="16" /><span>{{ assignmentState(currentAssignment,deadlineNow)==='CLOSED' ? (currentAssignment.manually_closed?'教师已结束本作业。已有草稿仍可整理和保存，但不能提交新版本。':'本作业已截止。已有草稿仍可整理和保存，但不能提交新版本。') : '本作业将在 24 小时内截止，请及时保存并提交评审。' }}</span></div>
           <div v-if="backup" class="backup-banner">
             <AlertCircle :size="18" />发现未同步的本地备份。<button
               class="text-btn"
@@ -1910,6 +1927,7 @@ onBeforeUnmount(() => {
                   ><span>{{ version.author_name }}</span
                   ><span>v{{ version.version_no }}</span>
                 </div>
+                <details class="assignment-snapshot"><summary>提交时的任务规则{{ version.assignmentSnapshot ? ' · r'+version.assignmentSnapshot.management_revision : ' · 未记录' }}</summary><template v-if="version.assignmentSnapshot"><p><strong>{{ version.assignmentSnapshot.title }}</strong></p><p>{{ version.assignmentSnapshot.requirements }}</p><p>{{ fmt(version.assignmentSnapshot.due_at) }} 截止 · {{ version.assignmentSnapshot.rubric_version }}</p><p class="muted">本规则快照随该提交保存，后续调整不改写本记录。</p></template><p v-else class="muted">此历史提交早于任务快照功能，未保存当时的规则；不使用当前规则冒充历史记录。</p></details>
                 <Editor
                   :highlight-id="selectedAnchor"
                   :model-value="version.content"

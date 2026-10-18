@@ -5,7 +5,7 @@ import { api } from './api';
 const props=defineProps<{userId:number;navigate:(notice:any)=>Promise<void>}>();
 const open=ref(false), unreadOnly=ref(false), rows=ref<any[]>([]), unread=ref(0), loading=ref(false), error=ref(''), hasMore=ref(false), cursor=ref<number|null>(null), acting=ref(false);
 const trigger=ref<HTMLButtonElement>(),dialog=ref<HTMLElement>();let timer:ReturnType<typeof setInterval>,generation=0;
-const kindName:Record<string,string>={SUBMISSION:'待评审',EVALUATION:'正式评价',FEEDBACK:'教师批注',FEEDBACK_REPLY:'反馈回应',EVIDENCE:'证据核验',EVIDENCE_DISPUTED:'争议裁定',PUBLICATION_REQUEST:'发布审核',PUBLICATION_RESULT:'发布结果'};
+const kindName:Record<string,string>={ASSIGNMENT_CHANGE:'作业变更',SUBMISSION:'待评审',EVALUATION:'正式评价',FEEDBACK:'教师批注',FEEDBACK_REPLY:'反馈回应',EVIDENCE:'证据核验',EVIDENCE_DISPUTED:'争议裁定',PUBLICATION_REQUEST:'发布审核',PUBLICATION_RESULT:'发布结果'};
 function time(value:string){return new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}
 async function load(more=false){const gen=++generation;loading.value=true;error.value='';try{const q=new URLSearchParams({unread:String(unreadOnly.value)});if(more&&cursor.value)q.set('before',String(cursor.value));const data=await api('/notifications?'+q);if(gen!==generation)return;rows.value=more?[...rows.value,...data.items]:data.items;unread.value=data.unreadCount;hasMore.value=data.hasMore;cursor.value=data.nextCursor;}catch(e:any){if(gen===generation)error.value=e.message;}finally{if(gen===generation)loading.value=false;}}
 async function refreshCount(){try{const data=await api('/notifications?unread=true');unread.value=data.unreadCount;if(open.value&&!acting.value)await load();}catch{/* Existing page remains usable during a connection failure. */}}

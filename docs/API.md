@@ -41,3 +41,13 @@
 评分草稿 PUT 传 `items, summary, gateReason, revision, baseEvaluationRevision`，DELETE 传 `revision`；409 表示草稿或正式评价已变化，需要显式恢复/合并。草稿不产生正式分数或学生通知。
 
 作业列表增加 `server_now` 与 `due_status`（OPEN / DUE_SOON / CLOSED）；截止后不允许开始新作品或提交新版本，但已有作品仍可保存草稿、读取历史。详细载荷与边界见 [WORKFLOW.md](WORKFLOW.md)。
+
+## 作业管理增量
+
+| 方法 | 路径（均以 /api 开头） | 要点 |
+|---|---|---|
+| PUT | /assignments/{id} | 本课教师；title、requirements、dueAt、reason、revision |
+| POST | /assignments/{id}/state | 本课教师；action=CLOSE/REOPEN、reason、revision |
+| GET | /assignments/{id}/history | 本课教师；最近 100 次规则变更，含 before/after |
+
+写请求需 CSRF；规则修改使用 management_revision 乐观锁。新提交查询增加 assignmentSnapshot，旧提交可为 null。详见 [ASSIGNMENT-MANAGEMENT.md](ASSIGNMENT-MANAGEMENT.md)。
