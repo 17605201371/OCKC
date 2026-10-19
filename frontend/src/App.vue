@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent, nextTick } from "vue";
 import EvidenceWorkbench from "./EvidenceWorkbench.vue";
+import PublicationManager from "./PublicationManager.vue";
+const publicationManager=ref<InstanceType<typeof PublicationManager>>();
+async function publicationChanged(){const sid=version.value?.id,activeCourse=cid.value,activeUser=me.value?.id,epoch=accessEpoch;await refreshCourse();if(epoch!==accessEpoch||activeCourse!==cid.value||activeUser!==me.value?.id)return;if(sid&&version.value?.id===sid){const v=await api(`/submissions/${sid}`);if(epoch===accessEpoch&&activeCourse===cid.value&&activeUser===me.value?.id&&version.value?.id===sid)version.value=v;}if(epoch===accessEpoch&&activeUser===me.value?.id)notify("课程内发布处理已保存");}
 const evidenceFocus=ref<{id:number;nonce:number}>();
 async function openEvidence(id:number){if(!await flushBeforeLeave())return;evidenceFocus.value={id,nonce:Date.now()};page.value="evidence";}
 async function evidenceSubmission(d:any){if(await openVersion(d.id,d.review)){await nextTick();await focusAnchor(d.paragraphId);}}
@@ -888,34 +891,8 @@ async function publishGrade() {
     } finally { reviewPublishing.value=false; }
   });
 }
-async function publicationRequest() {
-  await run(async () => {
-    if (
-      !confirm("将此版本申请发布到本课程知识社区？需教师审核，不会向校外公开。")
-    )
-      return;
-    await api(`/submissions/${version.value.id}/publication`, "POST");
-    version.value = await api(`/submissions/${version.value.id}`);
-    notify("已提交课程内发布申请");
-  });
-}
-async function pubAction(id: number, action: string) {
-  await run(async () => {
-    if (
-      !confirm(
-        action === "APPROVE"
-          ? "确认向课程成员发布此指定版本？"
-          : "确认撤回此版本的社区展示？",
-      )
-    )
-      return;
-    await api(`/publications/${id}/actions`, "POST", { action, body: "" });
-    await refreshCourse();
-    if (version.value)
-      version.value = await api(`/submissions/${version.value.id}`);
-    notify(action === "APPROVE" ? "课程内发布成功" : "已撤回社区展示");
-  });
-}
+async function publicationRequest() {await publicationManager.value?.request(version.value.id,version.value.publication[0],version.value.title);}
+async function pubAction(id:number,action:string){await publicationManager.value?.open(id,action);}
 async function viewVerification(ev: any) {
   await run(async () => {
     const records = await api(`/evidence/${ev.id}/verifications`);
@@ -1414,6 +1391,7 @@ onBeforeUnmount(() => {
               v-for="q in filteredQueue"
               :key="q.id"
               class="review-row"
+              :disabled="busy" :aria-busy="busy"
               @click="openVersion(q.id, true)"
             >
               <span class="avatar">{{ q.author_name.slice(0, 1) }}</span>
@@ -1465,6 +1443,7 @@ onBeforeUnmount(() => {
               >{{ publications.length }} 篇课程内条目</span
             >
           </div>
+          <div id="publication-entry" class="publication-entry"></div>
           <section v-if="isTeacher && pending.length" class="approval-card">
             <div class="section-title">
               <h2>等待你的发布审核</h2>
@@ -1484,7 +1463,7 @@ onBeforeUnmount(() => {
                 查看</button
               ><button class="btn primary" @click="pubAction(p.id, 'APPROVE')">
                 同意发布</button
-              ><button class="text-btn" @click="pubAction(p.id, 'WITHDRAW')">
+              ><button class="text-btn" @click="pubAction(p.id, 'RETURN')">
                 退回
               </button>
             </div>
@@ -1823,11 +1802,11 @@ onBeforeUnmount(() => {
                 <PanelLeftClose :size="16" />{{
                   page === "grading" ? "四维评分" : "质量与版本"
                 }}</button
-              ><template v-if="page === 'reader' && version.author_id === me.id"
+              ><span v-if="page==='reader'" id="publication-entry"></span><template v-if="page === 'reader' && version.author_id === me.id"
                 ><button class="btn secondary" @click="openAssignment(assignments.find(a=>a.id===version.assignment_id))"><PenLine :size="16" />继续修订</button><button
                   v-if="
                     !version.publication.length ||
-                    version.publication[0].state === 'WITHDRAWN'
+                    ['WITHDRAWN','RETURNED'].includes(version.publication[0].state)
                   "
                   class="btn primary"
                   :disabled="!version.evaluation || busy"
@@ -2447,4 +2426,5 @@ onBeforeUnmount(() => {
       </div>
     </section>
   </div>
+  <div v-if="me && cid && ['community','reader'].includes(page)"><PublicationManager ref="publicationManager" :key="cid+'-'+me.id+'-'+page" :course-id="cid" :user-id="me.id" :role="course?.role||''" @changed="publicationChanged" @open-submission="openVersion" /></div>
 </template>

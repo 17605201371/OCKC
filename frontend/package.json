@@ -15,7 +15,8 @@
     "test:deadlines": "node ../scripts/deadline-test.mjs",
     "test:assignments": "node ../scripts/assignment-e2e.mjs",
     "test:members": "node ../scripts/members-e2e.mjs",
-    "test:evidence": "node ../scripts/evidence-e2e.mjs"
+    "test:evidence": "node ../scripts/evidence-e2e.mjs",
+    "test:publications": "node ../scripts/publication-e2e.mjs"
   },
   "dependencies": {
     "@tiptap/core": "^3.32.0",

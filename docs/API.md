@@ -75,3 +75,14 @@
 | POST | /evidence/{id}/decisions | 本课非作者；verdict=PASS/FAIL、必填reason<=2000字符、必填expectedCount>=0；教师裁定/同伴核验按当前身份处理 |
 
 counts为全课程全部提交版本的状态统计，不跟随列表筛选。未发布提交的全文权限不因review接口扩大。expectedCount与详情record_count一致；409表示历史已变化，请保留输入、刷新记录后重新判断。写操作需要CSRF。正式发分后422，作者自核与跨课程403。旧/verifications接口仍兼容；新历史多一个可空verifier_role，旧记录不回填虚构身份。详见 [EVIDENCE-WORKBENCH.md](EVIDENCE-WORKBENCH.md)。
+
+## 发布审核记录（V8）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/courses/{cid}/publication-records` | 当前成员；教师读本课全部记录，其他角色只读本人记录；不返回正文 |
+| GET | `/publications/{id}/review` | 当前本课作者或教师；指定版本元数据、最近理由和 events 历史 |
+| POST | `/submissions/{sid}/publication-request` | 作者；`{revision: integer>=0, reason: string<=2000}`，reason 可为空，首次 revision=0 |
+| POST | `/publications/{id}/decisions` | `{action: APPROVE|RETURN|WITHDRAW, revision: integer>=0, reason: nonblank string<=2000}`；通过/退回仅教师；撤回仅作者/教师 |
+
+新写接口需要 CSRF；状态/修订冲突为 409；无正式评价为 422。`RETURNED` 与 `WITHDRAWN` 可重新申请；每次改变追加事件。已公开列表和普通同伴的提交读取不暴露私有申请/审核理由。复评自动撤回待审核或已发布记录。旧端点保留兼容默认说明及行锁，但没有新端点的必填客户端修订号；新版 UI 不再使用它们。发布记录和历史目前全量按权限读取，分页为前端 20 行展示，并非服务端分页。详见 [发布流程](PUBLICATIONS.md)。
