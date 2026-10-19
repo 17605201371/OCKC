@@ -1,5 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent, nextTick } from "vue";
+import EvidenceWorkbench from "./EvidenceWorkbench.vue";
+const evidenceFocus=ref<{id:number;nonce:number}>();
+async function openEvidence(id:number){if(!await flushBeforeLeave())return;evidenceFocus.value={id,nonce:Date.now()};page.value="evidence";}
+async function evidenceSubmission(d:any){if(await openVersion(d.id,d.review)){await nextTick();await focusAnchor(d.paragraphId);}}
+
 import {
   BookOpen,
   LayoutDashboard,
@@ -167,9 +172,9 @@ async function navigateNotice(n:any) {
   if(n.target_type==='course'){page.value='home';}
   else if(n.target_type==='assignment'){page.value='assignments';assignmentFilter.value='all';await nextTick();document.querySelector(`[data-assignment-id="${n.target_id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});}
   else if(n.target_type==='evidence') {
-    const e=evidences.value.find(e=>e.id===n.target_id);if(!e)throw new Error('此证据当前不可访问。');page.value='evidence';await nextTick();document.querySelector(`[data-evidence-id="${n.target_id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});
+    await openEvidence(n.target_id);
   } else if(n.target_type==='publication'&&isTeacher.value&&pending.value.some(p=>p.submission_id===n.target_id)) {page.value='community';await nextTick();document.querySelector('.approval-card')?.scrollIntoView({behavior:'smooth'});}
-  else {if(!await openVersion(n.target_id,isTeacher.value && ['SUBMISSION','FEEDBACK_REPLY'].includes(n.kind)))throw new Error('无法打开关联提交，请检查当前权限。');if(n.anchor_id){await nextTick();focusAnchor(n.anchor_id);}}
+  else {if(!await openVersion(n.target_id,isTeacher.value && ['SUBMISSION','FEEDBACK_REPLY'].includes(n.kind)))throw new Error('无法打开关联提交，请检查当前权限。');if(n.anchor_id){await nextTick();await focusAnchor(n.anchor_id);}}
 }
 const nav = computed(() => [
   { id: "home", name: "学习工作台", icon: LayoutDashboard },
@@ -467,6 +472,7 @@ function dimensionScore(key: string) {
 }
 async function go(target: string) {
   if (!(await flushBeforeLeave())) return;
+  if(target==="evidence")evidenceFocus.value=undefined;
   page.value = target;
   menu.value = false;
   query.value = "";
@@ -714,16 +720,20 @@ const activeOutlineId = computed(() => {
   if (entry.value?.content && selectedParagraph.value) walk(entry.value.content);
   return found ? current : headings[0].id;
 });
-function focusAnchor(id: string, original = "") {
-  const nodes = [...document.querySelectorAll<HTMLElement>("[data-block-id]")];
-  const el = nodes.find((x) => x.dataset.blockId === id);
-  if (el) {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-    selectedAnchor.value = id;
-  } else {
-    error.value = `原段落已删除或拆分，请对照历史原文：${original || id}`;
+async function focusAnchor(id: string, original = "") {
+  const epoch=accessEpoch,activePage=page.value,activeId=page.value==='editor'?entry.value?.id:version.value?.id;
+  const current=()=>epoch===accessEpoch&&page.value===activePage&&(page.value==='editor'?entry.value?.id:version.value?.id)===activeId;
+  const find=()=>[...document.querySelectorAll<HTMLElement>("[data-block-id]")].find(x=>x.dataset.blockId===id);
+  await nextTick();let el=find();
+  const doc=page.value==='editor'?entry.value?.content:version.value?.content;
+  if(!el&&anchorOptions(doc).some(a=>a.id===id)){
+    await new Promise<void>(resolve=>{let done=false;const finish=()=>{if(done)return;done=true;observer.disconnect();clearTimeout(timer);resolve();};const observer=new MutationObserver(()=>{if(!current()||find())finish();});const timer=setTimeout(finish,3000);observer.observe(document.body,{childList:true,subtree:true});if(find()||!current())finish();});el=find();
   }
+  if(!current())return false;
+  if(el){selectedAnchor.value=id;if(error.value.startsWith('原段落已删除或拆分'))error.value='';await nextTick();el.scrollIntoView({behavior:'smooth',block:'center'});return true;}
+  error.value=`原段落已删除或拆分，请对照历史原文：${original||id}`;return false;
 }
+
 function showModal(kind: string, data: Record<string, any> = {}) {
   modal.value = kind;
   form.value = {
@@ -1528,80 +1538,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-else-if="page === 'evidence'" class="page">
-          <div class="page-heading">
-            <div>
-              <span class="eyebrow">来源与论断</span>
-              <h1>证据核验</h1>
-              <p>核对原始来源、引用内容与论断之间的支持关系。</p>
-            </div>
-            <span class="small-label">作者不可自核验</span>
-          </div>
-          <div class="evidence-list">
-            <article v-for="e in evidences" :key="e.id" class="evidence-card" :data-evidence-id="e.id">
-              <div class="card-top">
-                <span class="source-label"
-                  ><LinkIcon :size="18" />{{ e.source_title }}</span
-                ><span
-                  class="badge"
-                  :class="
-                    e.state === 'PASS'
-                      ? 'green'
-                      : e.state === 'FAIL'
-                        ? 'red'
-                        : 'orange'
-                  "
-                  >{{
-                    (
-                      {
-                        PENDING: "待核验",
-                        PASS: "已通过",
-                        FAIL: "未通过",
-                        DISPUTED: "有争议，待教师裁定",
-                      } as any
-                    )[e.state]
-                  }}</span
-                >
-              </div>
-              <h3>{{ e.claim_text }}</h3>
-              <blockquote>{{ e.excerpt }}</blockquote>
-              <p class="muted">
-                {{ e.author_name }} · {{ e.title }} · v{{ e.version_no }}
-              </p>
-              <a
-                v-if="e.source_url"
-                :href="e.source_url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-btn"
-                >打开来源<ArrowUpRight :size="15"
-              /></a>
-              <div class="evidence-actions">
-                <button class="btn secondary" @click="viewVerification(e)">
-                  <History :size="16" />查看核验记录</button
-                ><button
-                  v-if="e.author_id !== me.id"
-                  class="btn secondary"
-                  @click="
-                    showModal('verify', {
-                      id: e.id,
-                      sourceTitle: e.source_title,
-                    })
-                  "
-                >
-                  <ShieldCheck :size="17" />{{
-                    isTeacher ? "核验 / 裁定" : "核对这条证据"
-                  }}</button
-                ><span v-else class="muted">你的证据，等待其他成员核验</span>
-              </div>
-            </article>
-            <div v-if="!evidences.length" class="empty card">
-              <ShieldCheck :size="32" />
-              <h2>暂无证据核验任务</h2>
-              <p>学生提交带来源的知识帖后，将在这里生成核验记录。</p>
-            </div>
-          </div>
-        </section>
+        <EvidenceWorkbench v-else-if="page==='evidence'" :key="cid" :course-id="cid" :user-id="me.id" :role="course?.role||''" :assignments="assignments" :focus="evidenceFocus" @changed="refreshCourse" @open-submission="evidenceSubmission" />
 
         <section v-else-if="page === 'editor' && entry" class="editing-page knowledge-workbench">
           <div class="editor-heading">
@@ -2011,6 +1948,7 @@ onBeforeUnmount(() => {
                   class="reader-source"
                 >
                   <strong>{{ e.source_title }}</strong>
+                  <button class="text-btn" :disabled="busy" @click="openEvidence(e.id)">进入核验工作台<ArrowUpRight :size="14"/></button>
                   <p>{{ e.claim_text }}</p>
                   <blockquote>{{ e.excerpt }}</blockquote>
                   <div class="evidence-actions">

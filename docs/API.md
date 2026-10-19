@@ -65,3 +65,13 @@
 | GET | /courses/{cid}/members/history | 最近100条变更，操作者、目标账号、前后身份、原因与时间 |
 
 写请求需要 CSRF；stale revision/重复成员409，非法身份/无变化/教师保护422，成员不存在404。revision 是整个课程名单版本，不是单成员版本。移出后，旧作者也不能通过原草稿/提交/图片接口继续访问；改为助教的原作者不可继续学生写操作。详细边界见 [MEMBERS.md](MEMBERS.md)。
+
+## 证据工作台增量
+
+| 方法 | 路径（均以 /api 开头） | 要点 |
+|---|---|---|
+| GET | /courses/{cid}/evidence-workbench | 本课成员；q最多80字符；state空/PENDING/PASS/FAIL/DISPUTED；relation=ALL/MINE/TODO/DONE；assignmentId=0为全部；page>=1，每页20条；返回items/counts/total/page/pageSize |
+| GET | /evidence/{id}/review | 本课成员；证据、只含引用段落的paragraph_text、records、record_count、can_verify/blocked_reason/locked/my_verified/can_read_submission |
+| POST | /evidence/{id}/decisions | 本课非作者；verdict=PASS/FAIL、必填reason<=2000字符、必填expectedCount>=0；教师裁定/同伴核验按当前身份处理 |
+
+counts为全课程全部提交版本的状态统计，不跟随列表筛选。未发布提交的全文权限不因review接口扩大。expectedCount与详情record_count一致；409表示历史已变化，请保留输入、刷新记录后重新判断。写操作需要CSRF。正式发分后422，作者自核与跨课程403。旧/verifications接口仍兼容；新历史多一个可空verifier_role，旧记录不回填虚构身份。详见 [EVIDENCE-WORKBENCH.md](EVIDENCE-WORKBENCH.md)。
