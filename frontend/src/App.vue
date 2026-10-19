@@ -42,6 +42,8 @@ import {
 import HomeDashboard from "./HomeDashboard.vue";
 const Editor = defineAsyncComponent(() => import("./Editor.vue"));
 import ProgressPage from "./ProgressPage.vue";
+import MembersPage from "./MembersPage.vue";
+const accessBackup=ref<any>(null),accessMessage=ref('');
 import QualitySummary from "./QualitySummary.vue";
 import AiFeedback from "./AiFeedback.vue";
 import NotificationCenter from "./NotificationCenter.vue";
@@ -162,7 +164,8 @@ async function navigateNotice(n:any) {
   if(!await flushBeforeLeave())throw new Error('请先保存或处理当前评分/写作草稿，再打开消息。');
   if(!courses.value.some(c=>c.id===n.course_id))throw new Error('已无法访问这门课程，请刷新工作空间。');
   cid.value=n.course_id;await refreshCourse();
-  if(n.target_type==='assignment'){page.value='assignments';assignmentFilter.value='all';await nextTick();document.querySelector(`[data-assignment-id="${n.target_id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});}
+  if(n.target_type==='course'){page.value='home';}
+  else if(n.target_type==='assignment'){page.value='assignments';assignmentFilter.value='all';await nextTick();document.querySelector(`[data-assignment-id="${n.target_id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});}
   else if(n.target_type==='evidence') {
     const e=evidences.value.find(e=>e.id===n.target_id);if(!e)throw new Error('此证据当前不可访问。');page.value='evidence';await nextTick();document.querySelector(`[data-evidence-id="${n.target_id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});
   } else if(n.target_type==='publication'&&isTeacher.value&&pending.value.some(p=>p.submission_id===n.target_id)) {page.value='community';await nextTick();document.querySelector('.approval-card')?.scrollIntoView({behavior:'smooth'});}
@@ -180,6 +183,7 @@ const nav = computed(() => [
   { id: "evidence", name: "证据核验", icon: ShieldCheck },
   { id: "progress", name: isStaff.value ? "教学进展" : "学习轨迹", icon: TrendingUp },
   { id: "rubric", name: "课程量规", icon: SlidersHorizontal },
+  ...(isTeacher.value ? [{id:'members',name:'课程成员',icon:Users}] : []),
 ]);
 const navName = computed(
   () =>
@@ -272,20 +276,33 @@ async function doLogin() {
   }
 }
 async function initialize() {
+  accessBackup.value=null;accessMessage.value='';
   courses.value = await api("/courses");
   cid.value = courses.value[0]?.id || 0;
   if (cid.value) await refreshCourse();
   page.value = "home";
 }
+let accessEpoch=0;
+function accessChanged(message:string){
+  accessEpoch++;
+  if(page.value==='editor'&&entry.value){const copy={title:entry.value.title,content:entry.value.content,evidence:entry.value.evidence,revision:entry.value.revision};accessBackup.value=copy;try{localStorage.setItem(`community-draft-${me.value.id}-${entry.value.id}`,JSON.stringify(copy));}catch{}}
+  clearTimeout(saveTimer);dirty.value=false;entry.value=null;latest.value=null;version.value=null;homeEntry.value=null;homeSubmission.value=null;assignments.value=[];queue.value=[];evidences.value=[];publications.value=[];pending.value=[];managedAssignment.value=null;menu.value=false;modal.value='';commandOpen.value=false;accessMessage.value=message;page.value='access';
+}
+function downloadAccessBackup(){if(!accessBackup.value)return;const url=URL.createObjectURL(new Blob([JSON.stringify(accessBackup.value,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='knowledge-draft-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+async function resumeCourses(){await run(async()=>{courses.value=await api('/courses');if(!courses.value.length){accessMessage.value='当前没有可访问的课程，请联系任课教师。';return;}accessBackup.value=null;cid.value=courses.value[0].id;await refreshCourse();page.value='home';});}
+let ruleRefreshSequence=0;
 async function refreshAssignmentRules(){
-  if(!me.value||!cid.value)return;const id=cid.value;
-  try{const rows=await api(`/courses/${id}/assignments`);if(id!==cid.value||!me.value)return;assignments.value=rows;if(rows[0]?.server_now)serverOffset.value=Date.parse(rows[0].server_now)-Date.now();clockNow.value=Date.now();ruleRefreshError.value='';
+  if(!me.value||!cid.value)return;const id=cid.value,uid=me.value.id,oldRole=course.value?.role,g=++ruleRefreshSequence;
+  try{const available=await api('/courses');if(g!==ruleRefreshSequence||id!==cid.value||uid!==me.value?.id)return;const active=available.find((c:any)=>c.id===id);courses.value=available;
+    if(!active||active.role!==oldRole){accessChanged(!active?'你已不再是当前课程成员，课程内容已收起；已有作品和评价记录不会删除。':'你的课程身份已调整，请重新进入课程以使用新的权限。');return;}
+    if(page.value==='access')return;
+    const rows=await api(`/courses/${id}/assignments`);if(g!==ruleRefreshSequence||id!==cid.value||uid!==me.value?.id)return;assignments.value=rows;if(rows[0]?.server_now)serverOffset.value=Date.parse(rows[0].server_now)-Date.now();clockNow.value=Date.now();ruleRefreshError.value='';
     if(page.value==='home'&&!isStaff.value){const eid=rows[0]?.entry_id;if(!eid){homeEntry.value=null;homeSubmission.value=null;}else if(homeEntry.value?.id!==eid){const e=await api(`/entries/${eid}`);const v=e.versions[0]?await api(`/submissions/${e.versions[0].id}`):null;if(id===cid.value&&me.value&&page.value==='home'&&assignments.value[0]?.entry_id===eid){homeEntry.value=e;homeSubmission.value=v;}}}
-  }
-  catch{ruleRefreshError.value='暂时无法刷新作业规则，请检查网络；提交资格仍以服务器校验为准。';}
+  }catch(e:any){if(g!==ruleRefreshSequence||id!==cid.value||uid!==me.value?.id)return;if(e.status===403)accessChanged('当前课程权限已变化，请重新进入可访问的课程。');else ruleRefreshError.value='暂时无法刷新课程权限与作业规则，请检查网络；所有操作仍以服务器校验为准。';}
 }
 async function assignmentManaged(){await refreshAssignmentRules();notify('作业管理变更已保存');}
 async function refreshCourse() {
+  const activeCourse=cid.value,activeUser=me.value?.id,epoch=accessEpoch;
   const [a, p, e, q, n] = await Promise.all([
     api(`/courses/${cid.value}/assignments`),
     api(`/courses/${cid.value}/publications`),
@@ -297,6 +314,7 @@ async function refreshCourse() {
       ? api(`/courses/${cid.value}/publications?pending=true`)
       : Promise.resolve([]),
   ]);
+  if(activeCourse!==cid.value||activeUser!==me.value?.id||epoch!==accessEpoch)return;
   assignments.value = a;
   if(a[0]?.server_now) serverOffset.value = Date.parse(a[0].server_now) - Date.now();
   clockNow.value=Date.now();
@@ -308,9 +326,10 @@ async function refreshCourse() {
   homeSubmission.value = null;
   const current = a[0]?.entry_id ? a[0] : null;
   if (!isStaff.value && current) {
-    homeEntry.value = await api(`/entries/${current.entry_id}`);
-    const v = homeEntry.value.versions[0];
-    if (v) homeSubmission.value = await api(`/submissions/${v.id}`);
+    const e=await api(`/entries/${current.entry_id}`);
+    const v=e.versions[0]?await api(`/submissions/${e.versions[0].id}`):null;
+    if(activeCourse!==cid.value||activeUser!==me.value?.id||epoch!==accessEpoch)return;
+    homeEntry.value=e;homeSubmission.value=v;
   }
 }
 async function changeCourse(ev: Event) {
@@ -466,6 +485,7 @@ async function logout() {
   await run(async () => {
     await api("/auth/logout", "POST");
     me.value = null;
+    accessBackup.value=null;accessMessage.value='';
     courses.value = [];
     toast.value = "";
     page.value = "home";
@@ -474,21 +494,26 @@ async function logout() {
 async function openAssignment(a: any) {
   await run(async () => {
     if (!(await flushBeforeLeave())) return;
-    entry.value = await api(`/assignments/${a.id}/entries`, "POST");
+    const epoch=accessEpoch,uid=me.value?.id,courseId=cid.value;
+    const e=await api(`/assignments/${a.id}/entries`, "POST");
+    if(epoch!==accessEpoch||uid!==me.value?.id||courseId!==cid.value)return;
+    entry.value=e;
     await loadEditorState();
+    if(epoch!==accessEpoch||uid!==me.value?.id||entry.value?.id!==e.id)return;
     page.value = "editor";
     menu.value = false;
   });
 }
 async function loadEditorState() {
+  if(!entry.value)return;const activeEntry=entry.value,uid=me.value?.id,epoch=accessEpoch;
   dirty.value = false;
   conflicted.value = false;
   selectedAnchor.value = "";
   selectedParagraph.value = "";
   savedAt.value = entry.value.updated_at;
-  latest.value = entry.value.versions.length
-    ? await api(`/submissions/${entry.value.versions[0].id}`)
-    : null;
+  const v=activeEntry.versions.length?await api(`/submissions/${activeEntry.versions[0].id}`):null;
+  if(epoch!==accessEpoch||uid!==me.value?.id||entry.value?.id!==activeEntry.id)return;
+  latest.value=v;
   try {
     backup.value = JSON.parse(
       localStorage.getItem(
@@ -548,10 +573,12 @@ async function saveDraft(): Promise<boolean> {
     evidence: entry.value.evidence,
   });
   const data = { ...JSON.parse(snapshot), revision: entry.value.revision };
+  const activeEntry=entry.value.id,activeUser=me.value.id,epoch=accessEpoch;
   saving.value = true;
   inFlight = (async () => {
     try {
-      const saved = await api(`/entries/${entry.value.id}/draft`, "PUT", data);
+      const saved = await api(`/entries/${activeEntry}/draft`, "PUT", data);
+      if(entry.value?.id!==activeEntry||me.value?.id!==activeUser||epoch!==accessEpoch)return false;
       if (error.value.startsWith('有证据关联的正文已删除')) error.value = '';
       entry.value.revision = saved.revision;
       entry.value.updated_at = saved.updated_at;
@@ -571,8 +598,10 @@ async function saveDraft(): Promise<boolean> {
       }
       return true;
     } catch (e: any) {
+      if(epoch!==accessEpoch||activeUser!==me.value?.id)return false;
       error.value = e.message;
       if (e.status === 409) conflicted.value = true;
+      if (e.status === 403) void refreshAssignmentRules();
       return false;
     } finally {
       saving.value = false;
@@ -603,7 +632,8 @@ async function submit() {
       )
     )
       return;
-    const storageKey = `community-submit-${me.value.id}-${entry.value.id}`;
+    if(!entry.value||page.value!=='editor')return;const activeEntry=entry.value.id,activeUser=me.value.id,epoch=accessEpoch;
+    const storageKey = `community-submit-${activeUser}-${activeEntry}`;
     let operation: any = null;
     try {
       operation = JSON.parse(localStorage.getItem(storageKey) || "null");
@@ -618,8 +648,10 @@ async function submit() {
       { revision: entry.value.revision },
       k,
     );
+    if(entry.value?.id!==activeEntry||me.value?.id!==activeUser||epoch!==accessEpoch)return;
     localStorage.removeItem(storageKey);
-    entry.value = await api(`/entries/${entry.value.id}`);
+    const refreshed=await api(`/entries/${activeEntry}`);
+    if(entry.value?.id!==activeEntry||me.value?.id!==activeUser||epoch!==accessEpoch)return;entry.value=refreshed;
     await loadEditorState();
     await refreshCourse();
     notify(`已提交 v${v.version_no}，等待教师评审`);
@@ -1183,6 +1215,8 @@ onBeforeUnmount(() => {
           @select-course="selectCourse"
         />
 
+        <MembersPage v-else-if="page==='members' && isTeacher" :key="cid" :course-id="cid" @changed="refreshAssignmentRules" />
+        <section v-else-if="page==='access'" class="page access-changed-page"><div class="card"><ShieldCheck :size="30"/><h1>课程权限已变化</h1><p>{{ accessMessage }}</p><p v-if="accessBackup">刚才编辑的内容已保留在本机，可先下载备份。重新加入课程后，可在原作品中核对恢复。</p><div class="button-row"><button v-if="accessBackup" class="btn secondary" @click="downloadAccessBackup"><Save :size="16"/>下载本机草稿备份</button><button class="btn primary" @click="resumeCourses">重新进入可用课程</button></div></div></section>
         <section v-else-if="page === 'assignments'" class="page">
           <div class="page-heading">
             <div>
@@ -1191,8 +1225,8 @@ onBeforeUnmount(() => {
               <p>从任务要求出发，明确这次创作需要完成什么。</p>
             </div>
             <div v-if="isTeacher" class="button-row">
-              <button class="btn secondary" @click="showModal('member')">
-                <Users :size="17" />添加成员</button
+              <button class="btn secondary" @click="go('members')">
+                <Users :size="17" />成员管理</button
               ><button class="btn primary" @click="showModal('assignment')">
                 <Plus :size="17" />发布作业
               </button>
@@ -1242,7 +1276,7 @@ onBeforeUnmount(() => {
                 <span class="muted">{{ a.rubric_version }}</span
                 ><button
                   class="text-btn"
-                  :disabled="!isStaff && !a.entry_id && assignmentState(a,deadlineNow)==='CLOSED'"
+                  :disabled="busy || (!isStaff && !a.entry_id && assignmentState(a,deadlineNow)==='CLOSED')"
                   @click="isStaff ? go('review') : openAssignment(a)"
                 >
                   {{

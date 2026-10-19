@@ -10,8 +10,8 @@ import static cn.course.community.ApiError.fail;
 import static cn.course.community.Store.now;
 @Service
 public class CommunityService {
- final Store s;final ObjectMapper json;final NotificationService notices;
- CommunityService(Store s,ObjectMapper json,NotificationService notices){this.s=s;this.json=json;this.notices=notices;}
+ final Store s;final ObjectMapper json;final NotificationService notices;final MemberManagement members;
+ CommunityService(Store s,ObjectMapper json,NotificationService notices,MemberManagement members){this.s=s;this.json=json;this.notices=notices;this.members=members;}
  String encode(Object value){try{return json.writeValueAsString(value);}catch(Exception e){throw fail(400,"内容无法序列化");}}
  JsonNode decode(Object value){try{return json.readTree((String)value);}catch(Exception e){throw new IllegalStateException(e);}}
  public Map<String,Object> assignment(long id){return s.one("SELECT * FROM assignment WHERE id=?",id);}
@@ -37,7 +37,8 @@ public class CommunityService {
   return Map.of("entries",entries,"staff",staff,"assignmentCount",s.db.queryForObject("SELECT COUNT(*) FROM assignment WHERE course_id=?",Integer.class,cid));
  }
  @Transactional public Map<String,Object> createCourse(String title,String description,long uid){long id=s.insert("INSERT INTO course(title,description) VALUES(?,?)",title,description);s.db.update("INSERT INTO course_member(course_id,user_id,role) VALUES(?,?,'TEACHER')",id,uid);s.audit(uid,"COURSE_CREATE","course",id);return s.one("SELECT * FROM course WHERE id=?",id);}
- @Transactional public void addMember(long cid,String email,String role,long uid){s.teacher(cid,uid);if(!List.of("STUDENT","ASSISTANT").contains(role))throw fail(422,"仅可添加学生或助教");long target=s.uid(email);if(s.db.queryForObject("SELECT COUNT(*) FROM course_member WHERE course_id=? AND user_id=?",Integer.class,cid,target)>0)throw fail(409,"该用户已是课程成员");s.db.update("INSERT INTO course_member(course_id,user_id,role) VALUES(?,?,?)",cid,target,role);s.audit(uid,"MEMBER_ADD","course",cid);}
+ @Transactional public void addMember(long cid,String email,String role,long uid){members.add(cid,email,role,uid,null,"演示初始化或教师添加已有账号");}
+ @Transactional public void addMember(long cid,String email,String role,long uid,Integer revision,String reason){members.add(cid,email,role,uid,revision,reason);}
  @Transactional public Map<String,Object> createAssignment(long cid,String title,String requirements,String due,boolean aiEnabled,long uid){s.teacher(cid,uid);Instant deadline;try{deadline=Instant.parse(due);}catch(Exception e){throw fail(422,"截止时间格式错误");}if(deadline.isBefore(Instant.now()))throw fail(422,"截止时间须晚于当前时间");long id=s.insert("INSERT INTO assignment(course_id,title,requirements,due_at,rubric_version,created_at,ai_feedback_enabled) VALUES(?,?,?,?,'four-dim-v1',?,?)",cid,title,requirements,deadline.toString(),now(),aiEnabled);s.audit(uid,"ASSIGNMENT_CREATE","assignment",id);return assignment(id);}
  @Transactional public Map<String,Object> setAiPolicy(long aid,boolean enabled,long uid){
   var a=assignment(aid);s.teacher(s.id(a,"course_id"),uid);
@@ -104,9 +105,9 @@ public class CommunityService {
  private String text(JsonNode n){StringBuilder b=new StringBuilder(n.path("text").asText());
   if(n.path("type").asText().equals("figure"))b.append("[图片] ").append(n.path("attrs").path("alt").asText()).append(" ").append(n.path("attrs").path("caption").asText()).append(" ").append(n.path("attrs").path("source").asText());
   if(n.path("type").asText().equals("mathBlock"))b.append(n.path("attrs").path("latex").asText());for(var c:n.path("content"))b.append(text(c));return b.toString();}
- @Transactional public Map<String,Object> save(long eid,ApiController.DraftRequest req,long uid){var e=entry(eid);own(e,uid);validateContent(req.content());for(String src:mediaSources(req.content())){if(s.db.queryForObject("SELECT COUNT(*) FROM entry_media WHERE id=? AND entry_id=?",Integer.class,src.substring("/api/media/".length()),eid)!=1)throw fail(422,"正文图片不属于当前作品，请重新上传");}if(req.evidence()==null||req.evidence().size()>30)throw fail(422,"每篇最多挂载 30 条证据");var ids=anchors(req.content());for(var v:req.evidence()){if(!ids.containsKey(v.paragraphId()))throw fail(422,"证据引用的段落不存在");if(!v.sourceUrl().isBlank()&&!v.sourceUrl().matches("https?://[^\\s]+"))throw fail(422,"证据链接必须使用 http 或 https");}
+ @Transactional public Map<String,Object> save(long eid,ApiController.DraftRequest req,long uid){var e=entry(eid);own(e,uid);s.student(s.id(e,"course_id"),uid);validateContent(req.content());for(String src:mediaSources(req.content())){if(s.db.queryForObject("SELECT COUNT(*) FROM entry_media WHERE id=? AND entry_id=?",Integer.class,src.substring("/api/media/".length()),eid)!=1)throw fail(422,"正文图片不属于当前作品，请重新上传");}if(req.evidence()==null||req.evidence().size()>30)throw fail(422,"每篇最多挂载 30 条证据");var ids=anchors(req.content());for(var v:req.evidence()){if(!ids.containsKey(v.paragraphId()))throw fail(422,"证据引用的段落不存在");if(!v.sourceUrl().isBlank()&&!v.sourceUrl().matches("https?://[^\\s]+"))throw fail(422,"证据链接必须使用 http 或 https");}
   int changed=s.db.update("UPDATE entry SET title=?,draft_json=?,evidence_json=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?",req.title(),encode(req.content()),encode(req.evidence()),now(),eid,req.revision());if(changed!=1)throw fail(409,"草稿已被另一窗口修改。当前输入仍在本页，请先复制，再重新加载后合并");return getEntry(eid,uid);}
- @Transactional public Map<String,Object> submit(long eid,int revision,String key,long uid){var e=entry(eid);own(e,uid);s.one("SELECT id FROM entry WHERE id=? FOR UPDATE",eid);e=entry(eid);
+ @Transactional public Map<String,Object> submit(long eid,int revision,String key,long uid){var e=entry(eid);own(e,uid);s.student(s.id(e,"course_id"),uid);s.one("SELECT id FROM entry WHERE id=? FOR UPDATE",eid);e=entry(eid);
   var repeated=s.db.queryForList("SELECT id FROM submission WHERE entry_id=? AND idempotency_key=?",eid,key);if(!repeated.isEmpty())return submission(s.id(repeated.getFirst(),"id"));
   var rule=s.one("SELECT * FROM assignment WHERE id=? FOR UPDATE",e.get("assignment_id"));
   if(Boolean.TRUE.equals(rule.get("manually_closed")))throw fail(422,"教师已结束作业；已有草稿仍可保存，但不能提交新版本");

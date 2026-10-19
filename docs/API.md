@@ -12,8 +12,8 @@
 | GET/POST | /courses/{id}/assignments | 课程成员读、教师发布 |
 | POST | /assignments/{id}/entries | 学生开始或继续本人作品 |
 | GET | /entries/{id} | 作者或任课教师读取草稿、历史 |
-| PUT | /entries/{id}/draft | 作者；revision、content、title、evidence |
-| POST | /entries/{id}/submissions | 作者；body revision；Idempotency-Key |
+| PUT | /entries/{id}/draft | 当前本课学生作者；revision、content、title、evidence |
+| POST | /entries/{id}/submissions | 当前本课学生作者；body revision；Idempotency-Key |
 | GET | /submissions/{id} | 作者、教师/助教，或课程内获批社区版本 |
 | GET | /courses/{id}/review-queue | 教师/助教；当前及历史提交 |
 | POST | /submissions/{id}/evaluations | 教师；11 项、summary、gateReason、expectedRevision |
@@ -51,3 +51,17 @@
 | GET | /assignments/{id}/history | 本课教师；最近 100 次规则变更，含 before/after |
 
 写请求需 CSRF；规则修改使用 management_revision 乐观锁。新提交查询增加 assignmentSnapshot，旧提交可为 null。详见 [ASSIGNMENT-MANAGEMENT.md](ASSIGNMENT-MANAGEMENT.md)。
+
+## 课程成员管理增量
+
+以下接口仅本课任课教师可用，名单含邮箱，学生/助教/跨课账号不可读取。
+
+| 方法 | 路径（均以 /api 开头） | 要点 |
+|---|---|---|
+| GET | /courses/{cid}/members?q=&role=&page=1 | 角色 STUDENT/ASSISTANT/TEACHER 或空；搜索最多80字符；每页20条；返回 members、counts、total、page、pageSize、revision |
+| POST | /courses/{cid}/members | 已有账号 email、role=STUDENT/ASSISTANT、revision、reason；不创建账号；旧添加客户端可省略 revision |
+| POST | /courses/{cid}/members/{uid}/role | role=STUDENT/ASSISTANT、必填 reason、revision；不允许教师交接 |
+| POST | /courses/{cid}/members/{uid}/remove | 必填 reason、revision；只移出成员关系，不删除历史数据 |
+| GET | /courses/{cid}/members/history | 最近100条变更，操作者、目标账号、前后身份、原因与时间 |
+
+写请求需要 CSRF；stale revision/重复成员409，非法身份/无变化/教师保护422，成员不存在404。revision 是整个课程名单版本，不是单成员版本。移出后，旧作者也不能通过原草稿/提交/图片接口继续访问；改为助教的原作者不可继续学生写操作。详细边界见 [MEMBERS.md](MEMBERS.md)。

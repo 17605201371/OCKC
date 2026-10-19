@@ -1,0 +1,32 @@
+package cn.course.community;
+import java.util.*;
+import java.security.Principal;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
+import static cn.course.community.ApiError.fail;
+@Service
+public class MemberManagement {
+ final Store s;final NotificationService notices;MemberManagement(Store s,NotificationService notices){this.s=s;this.notices=notices;}
+ public record Change(@NotNull @Pattern(regexp="STUDENT|ASSISTANT") String role,@NotBlank @Size(max=1000) String reason,@NotNull @Min(0) Integer revision){}
+ public record Remove(@NotBlank @Size(max=1000) String reason,@NotNull @Min(0) Integer revision){}
+ Map<String,Object> access(long cid,long uid,boolean lock){var c=s.one("SELECT id,roster_revision FROM course WHERE id=?"+(lock?" FOR UPDATE":""),cid);s.teacher(cid,uid);return c;}
+ void revision(Map<String,Object> c,Integer expected){if(expected!=null&&((Number)c.get("roster_revision")).intValue()!=expected)throw fail(409,"成员列表已变化。当前输入仍保留，请刷新列表并核对后再操作");}
+ void allowedRole(String role){if(!Set.of("STUDENT","ASSISTANT").contains(String.valueOf(role)))throw fail(422,"仅可设置学生或助教身份，不能通过此入口授予教师权限");}
+ void event(long cid,long target,long actor,String action,String before,String after,String reason){s.db.update("UPDATE course SET roster_revision=roster_revision+1 WHERE id=?",cid);int rev=s.db.queryForObject("SELECT roster_revision FROM course WHERE id=?",Integer.class,cid);s.db.update("INSERT INTO course_member_change(course_id,revision_no,target_id,actor_id,action_type,before_role,after_role,reason,created_at) VALUES(?,?,?,?,?,?,?,?,?)",cid,rev,target,actor,action,before,after,reason,Store.now());s.audit(actor,"MEMBER_"+action,"course",cid);if(after!=null)notices.send(target,cid,"MEMBERSHIP_CHANGE","MEMBER",action.equals("ADD")?"你已被加入课程":"你的课程身份已更新","course",cid,"",actor);}
+ @Transactional public void add(long cid,String email,String role,long uid,Integer expected,String reason){allowedRole(role);var c=access(cid,uid,true);revision(c,expected);var rows=s.db.queryForList("SELECT id FROM app_user WHERE LOWER(email)=?",email.trim().toLowerCase(Locale.ROOT));if(rows.size()!=1)throw fail(422,"未找到可唯一匹配的已有账号，请核对邮箱；本入口不会创建账号");long target=s.id(rows.getFirst(),"id");if(s.db.queryForObject("SELECT COUNT(*) FROM course_member WHERE course_id=? AND user_id=?",Integer.class,cid,target)>0)throw fail(409,"该账号已是课程成员，请勿重复添加");s.db.update("INSERT INTO course_member(course_id,user_id,role) VALUES(?,?,?)",cid,target,role);event(cid,target,uid,"ADD",null,role,reason==null||reason.isBlank()?"教师添加已有账号":reason.trim());}
+ @Transactional public void change(long cid,long target,long uid,Change r){allowedRole(r.role());var c=access(cid,uid,true);revision(c,r.revision());var m=s.one("SELECT role FROM course_member WHERE course_id=? AND user_id=?",cid,target);if(target==uid||"TEACHER".equals(m.get("role")))throw fail(422,"不能调整任课教师或自己的身份；本入口不支持教师交接");if(m.get("role").equals(r.role()))throw fail(422,"成员身份未变化");s.db.update("UPDATE course_member SET role=? WHERE course_id=? AND user_id=?",r.role(),cid,target);event(cid,target,uid,"ROLE",(String)m.get("role"),r.role(),r.reason().trim());}
+ @Transactional public void remove(long cid,long target,long uid,Remove r){var c=access(cid,uid,true);revision(c,r.revision());var m=s.one("SELECT role FROM course_member WHERE course_id=? AND user_id=?",cid,target);if(target==uid||"TEACHER".equals(m.get("role")))throw fail(422,"不能移出任课教师或自己；本入口不支持教师交接");s.db.update("DELETE FROM course_member WHERE course_id=? AND user_id=?",cid,target);event(cid,target,uid,"REMOVE",(String)m.get("role"),null,r.reason().trim());}
+ public Map<String,Object> list(long cid,long uid,String q,String role,int page){var c=access(cid,uid,false);if(q.length()>80||page<1||page>100000||!Set.of("","STUDENT","ASSISTANT","TEACHER").contains(role))throw fail(400,"成员查询参数不正确");String where=" m.course_id=?";var args=new ArrayList<Object>();args.add(cid);if(!role.isEmpty()){where+=" AND m.role=?";args.add(role);}if(!q.isBlank()){where+=" AND (LOWER(u.display_name) LIKE ? ESCAPE '!' OR LOWER(u.email) LIKE ? ESCAPE '!')";String term="%"+q.trim().toLowerCase(Locale.ROOT).replace("!","!!").replace("%","!%").replace("_","!_")+"%";args.add(term);args.add(term);}int total=s.db.queryForObject("SELECT COUNT(*) FROM course_member m JOIN app_user u ON u.id=m.user_id WHERE"+where,Integer.class,args.toArray());args.add(20);args.add((page-1)*20);var rows=s.db.queryForList("SELECT u.id,u.display_name,u.email,m.role FROM course_member m JOIN app_user u ON u.id=m.user_id WHERE"+where+" ORDER BY CASE m.role WHEN 'TEACHER' THEN 0 WHEN 'ASSISTANT' THEN 1 ELSE 2 END,u.id LIMIT ? OFFSET ?",args.toArray());var counts=s.db.queryForList("SELECT role,COUNT(*) AS total FROM course_member WHERE course_id=? GROUP BY role",cid);return Map.of("members",rows,"total",total,"page",page,"pageSize",20,"revision",c.get("roster_revision"),"counts",counts);}
+ public List<Map<String,Object>> history(long cid,long uid){access(cid,uid,false);return s.db.queryForList("SELECT h.*,a.display_name AS actor_name,t.display_name AS target_name,t.email AS target_email FROM course_member_change h JOIN app_user a ON a.id=h.actor_id JOIN app_user t ON t.id=h.target_id WHERE h.course_id=? ORDER BY h.revision_no DESC LIMIT 100",cid);}
+}
+@RestController @RequestMapping("/api/courses/{cid}/members")
+class MemberManagementController {
+ final Store s;final MemberManagement m;MemberManagementController(Store s,MemberManagement m){this.s=s;this.m=m;}
+ @GetMapping public Object list(@PathVariable long cid,@RequestParam(defaultValue="") String q,@RequestParam(defaultValue="") String role,@RequestParam(defaultValue="1") int page,Principal p){return m.list(cid,s.uid(p.getName()),q,role,page);}
+ @GetMapping("/history") public Object history(@PathVariable long cid,Principal p){return m.history(cid,s.uid(p.getName()));}
+ @PostMapping("/{target}/role") public Object change(@PathVariable long cid,@PathVariable long target,@Valid @RequestBody MemberManagement.Change r,Principal p){m.change(cid,target,s.uid(p.getName()),r);return Map.of("ok",true);}
+ @PostMapping("/{target}/remove") public Object remove(@PathVariable long cid,@PathVariable long target,@Valid @RequestBody MemberManagement.Remove r,Principal p){m.remove(cid,target,s.uid(p.getName()),r);return Map.of("ok",true);}
+}

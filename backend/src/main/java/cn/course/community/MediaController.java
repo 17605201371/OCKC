@@ -17,7 +17,7 @@ public class MediaController {
  @org.springframework.transaction.annotation.Transactional
  @PostMapping("/entries/{eid}/media")
  public Map<String,Object> upload(@PathVariable long eid,@RequestParam("file") MultipartFile file,Principal p)throws IOException {
-  long uid=s.uid(p.getName());var e=service.entry(eid);service.own(e,uid);s.one("SELECT id FROM entry WHERE id=? FOR UPDATE",eid);
+  long uid=s.uid(p.getName());var e=service.entry(eid);service.own(e,uid);s.student(s.id(e,"course_id"),uid);s.one("SELECT id FROM entry WHERE id=? FOR UPDATE",eid);
   if(file.isEmpty()||file.getSize()>5*1024*1024)throw fail(422,"图片须小于 5 MB");
   // Cap both asset count and storage per entry; old versions retain their original images.
   if(s.db.queryForObject("SELECT COUNT(*) FROM entry_media WHERE entry_id=?",Integer.class,eid)>=60)throw fail(422,"每篇最多保留 60 张图片（含历史版本）");

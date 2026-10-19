@@ -12,7 +12,7 @@ public class ApiController {
  ApiController(Store s,CommunityService service){this.s=s;this.service=service;}
  long uid(Principal p){return s.uid(p.getName());}
  public record CourseRequest(@NotBlank @Size(max=120) String title,@NotNull @Size(max=1000) String description){}
- public record MemberRequest(@NotBlank @Email @Size(max=160) String email,@Pattern(regexp="STUDENT|ASSISTANT") String role){}
+ public record MemberRequest(@NotBlank @Email @Size(max=160) String email,@NotNull @Pattern(regexp="STUDENT|ASSISTANT") String role,@Min(0) Integer revision,@Size(max=1000) String reason){}
  public record AssignmentRequest(@NotBlank @Size(max=160) String title,@NotBlank @Size(max=4000) String requirements,@NotBlank String dueAt,Boolean aiFeedbackEnabled){}
  public record AiPolicyRequest(@NotNull Boolean enabled){}
  public record EvidenceInput(@NotBlank @Size(max=80) String paragraphId,@NotBlank @Size(max=300) String sourceTitle,@NotNull @Size(max=2000) String sourceUrl,@NotBlank @Size(max=4000) String excerpt,@NotBlank @Size(max=2000) String claim){}
@@ -26,7 +26,7 @@ public class ApiController {
  @GetMapping("/auth/me") public Map<String,Object> me(Principal p){return s.one("SELECT id,email,display_name FROM app_user WHERE email=?",p.getName());}
  @GetMapping("/courses") public Object courses(Principal p){return service.courses(uid(p));}
  @PostMapping("/courses") public Object createCourse(@Valid @RequestBody CourseRequest r,Principal p){long u=uid(p);if(s.db.queryForObject("SELECT COUNT(*) FROM course_member WHERE user_id=? AND role='TEACHER'",Integer.class,u)==0)throw ApiError.fail(403,"创建课程需要已有教师身份");return service.createCourse(r.title(),r.description(),u);}
- @PostMapping("/courses/{cid}/members") public Object member(@PathVariable long cid,@Valid @RequestBody MemberRequest r,Principal p){service.addMember(cid,r.email(),r.role(),uid(p));return Map.of("ok",true);}
+ @PostMapping("/courses/{cid}/members") public Object member(@PathVariable long cid,@Valid @RequestBody MemberRequest r,Principal p){service.addMember(cid,r.email(),r.role(),uid(p),r.revision(),r.reason());return Map.of("ok",true);}
  @GetMapping("/courses/{cid}/progress") public Object progress(@PathVariable long cid,Principal p){return service.progress(cid,uid(p));}
  @GetMapping("/courses/{cid}/assignments") public Object assignments(@PathVariable long cid,Principal p){return service.assignments(cid,uid(p));}
  @PostMapping("/courses/{cid}/assignments") public Object createAssignment(@PathVariable long cid,@Valid @RequestBody AssignmentRequest r,Principal p){return service.createAssignment(cid,r.title(),r.requirements(),r.dueAt(),Boolean.TRUE.equals(r.aiFeedbackEnabled()),uid(p));}
