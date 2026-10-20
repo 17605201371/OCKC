@@ -13,7 +13,7 @@ public class ApiController {
  long uid(Principal p){return s.uid(p.getName());}
  public record CourseRequest(@NotBlank @Size(max=120) String title,@NotNull @Size(max=1000) String description){}
  public record MemberRequest(@NotBlank @Email @Size(max=160) String email,@NotNull @Pattern(regexp="STUDENT|ASSISTANT") String role,@Min(0) Integer revision,@Size(max=1000) String reason){}
- public record AssignmentRequest(@NotBlank @Size(max=160) String title,@NotBlank @Size(max=4000) String requirements,@NotBlank String dueAt,Boolean aiFeedbackEnabled){}
+ public record AssignmentRequest(@NotBlank @Size(max=160) String title,@NotBlank @Size(max=4000) String requirements,@NotBlank String dueAt,Boolean aiFeedbackEnabled,@Min(0) Long rubricId){}
  public record AiPolicyRequest(@NotNull Boolean enabled){}
  public record EvidenceInput(@NotBlank @Size(max=80) String paragraphId,@NotBlank @Size(max=300) String sourceTitle,@NotNull @Size(max=2000) String sourceUrl,@NotBlank @Size(max=4000) String excerpt,@NotBlank @Size(max=2000) String claim){}
  public record DraftRequest(@NotBlank @Size(max=160) String title,@NotNull JsonNode content,@Min(0) int revision,@NotNull @Size(max=30) List<@Valid EvidenceInput> evidence){}
@@ -29,7 +29,7 @@ public class ApiController {
  @PostMapping("/courses/{cid}/members") public Object member(@PathVariable long cid,@Valid @RequestBody MemberRequest r,Principal p){service.addMember(cid,r.email(),r.role(),uid(p),r.revision(),r.reason());return Map.of("ok",true);}
  @GetMapping("/courses/{cid}/progress") public Object progress(@PathVariable long cid,Principal p){return service.progress(cid,uid(p));}
  @GetMapping("/courses/{cid}/assignments") public Object assignments(@PathVariable long cid,Principal p){return service.assignments(cid,uid(p));}
- @PostMapping("/courses/{cid}/assignments") public Object createAssignment(@PathVariable long cid,@Valid @RequestBody AssignmentRequest r,Principal p){return service.createAssignment(cid,r.title(),r.requirements(),r.dueAt(),Boolean.TRUE.equals(r.aiFeedbackEnabled()),uid(p));}
+ @PostMapping("/courses/{cid}/assignments") public Object createAssignment(@PathVariable long cid,@Valid @RequestBody AssignmentRequest r,Principal p){return service.createAssignment(cid,r.title(),r.requirements(),r.dueAt(),Boolean.TRUE.equals(r.aiFeedbackEnabled()),r.rubricId(),uid(p));}
  @PutMapping("/assignments/{aid}/ai-policy") public Object aiPolicy(@PathVariable long aid,@Valid @RequestBody AiPolicyRequest r,Principal p){return service.setAiPolicy(aid,r.enabled(),uid(p));}
  @GetMapping("/entries/{eid}/ai-feedback") public Object aiFeedback(@PathVariable long eid,Principal p){return service.aiFeedback(eid,uid(p));}
  @PostMapping("/assignments/{aid}/entries") public Object start(@PathVariable long aid,Principal p){return service.start(aid,uid(p));}

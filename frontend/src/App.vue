@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent, nextTick } from "vue";
+import { useTheme } from "./theme";
 import EvidenceWorkbench from "./EvidenceWorkbench.vue";
 import PublicationManager from "./PublicationManager.vue";
+import ReviewWorkbench from "./ReviewWorkbench.vue";
+import {defaultReviewQuery,reviewParams,reviewAdvanceBlocked,type ReviewQuery} from "./reviewQuery";
+const reviewFilters=ref<ReviewQuery>(defaultReviewQuery()),reviewNavScope=ref<ReviewQuery|null>(null),reviewQueueSummary=ref<any>(null),nextReviewBusy=ref(false),nextReviewMessage=ref('');
+async function openReviewRow(value:any){reviewFilters.value={...value.filters};if(await openVersion(value.id,true,true))reviewNavScope.value={...value.filters};}
+async function nextReview(){if(nextReviewBusy.value||busy.value)return;nextReviewBusy.value=true;nextReviewMessage.value='';try{if(reviewAdvanceBlocked(review.state,isTeacher.value)){error.value='请先处理评分草稿的加载、恢复或冲突提示，再切换提交。';return;}if(!await flushBeforeLeave())return;const id=cid.value,uid=me.value?.id,epoch=accessEpoch,sid=version.value?.id,scope={...(reviewNavScope.value||defaultReviewQuery())};const params=reviewParams(scope,true);params.set('excludeId',String(sid));const result=await api(`/courses/${id}/review-workbench/next?${params}`);if(id!==cid.value||uid!==me.value?.id||epoch!==accessEpoch||page.value!=='grading'||version.value?.id!==sid)return;if(!result.item){nextReviewMessage.value='当前队列范围没有其他待评审提交。可返回队列调整筛选。';return;}await openVersion(result.item.id,true,true);reviewNavScope.value=scope;}catch(e:any){error.value=e.message||'无法读取下一份提交，当前评分仍保留';}finally{nextReviewBusy.value=false;}}
 const publicationManager=ref<InstanceType<typeof PublicationManager>>();
 async function publicationChanged(){const sid=version.value?.id,activeCourse=cid.value,activeUser=me.value?.id,epoch=accessEpoch;await refreshCourse();if(epoch!==accessEpoch||activeCourse!==cid.value||activeUser!==me.value?.id)return;if(sid&&version.value?.id===sid){const v=await api(`/submissions/${sid}`);if(epoch===accessEpoch&&activeCourse===cid.value&&activeUser===me.value?.id&&version.value?.id===sid)version.value=v;}if(epoch===accessEpoch&&activeUser===me.value?.id)notify("课程内发布处理已保存");}
 const evidenceFocus=ref<{id:number;nonce:number}>();
 async function openEvidence(id:number){if(!await flushBeforeLeave())return;evidenceFocus.value={id,nonce:Date.now()};page.value="evidence";}
+async function progressFeedback(d:any){if(await openVersion(d.submissionId,isStaff.value)){await nextTick();await focusAnchor(d.paragraphId);}}
 async function evidenceSubmission(d:any){if(await openVersion(d.id,d.review)){await nextTick();await focusAnchor(d.paragraphId);}}
 
 import {
@@ -16,6 +23,7 @@ import {
   SlidersHorizontal,
   PanelLeftClose,
   LogOut,
+  Settings,
   ArrowUpRight,
   ArrowLeft,
   Plus,
@@ -51,10 +59,32 @@ import HomeDashboard from "./HomeDashboard.vue";
 const Editor = defineAsyncComponent(() => import("./Editor.vue"));
 import ProgressPage from "./ProgressPage.vue";
 import MembersPage from "./MembersPage.vue";
-const accessBackup=ref<any>(null),accessMessage=ref('');
+const accessBackup=ref<any>(null),accessMessage=ref(''),backupDownloadRequired=ref(false);
 import QualitySummary from "./QualitySummary.vue";
 import AiFeedback from "./AiFeedback.vue";
 import NotificationCenter from "./NotificationCenter.vue";
+import AccountSettings from "./AccountSettings.vue";
+import RubricWorkbench from "./RubricWorkbench.vue";
+import RubricViewer from "./RubricViewer.vue";
+const rubricWorkbench=ref<InstanceType<typeof RubricWorkbench>>();
+const rubricFocus=ref<any>(null),rubricFocusSource=ref('');
+const assignmentRubrics=ref<any[]>([]),assignmentRubricError=ref(''),assignmentRubricLoading=ref(false);
+let assignmentRubricGeneration=0;
+async function loadAssignmentRubrics(){const g=++assignmentRubricGeneration,activeCid=cid.value,uid=me.value?.id;assignmentRubricLoading.value=true;assignmentRubricError.value='';assignmentRubrics.value=[];try{const data=await api(`/courses/${activeCid}/rubrics`);if(g!==assignmentRubricGeneration||activeCid!==cid.value||uid!==me.value?.id||modal.value!=='assignment')return;assignmentRubrics.value=data.items.filter((r:any)=>r.state==='ENABLED');form.value.rubricId=String(data.defaultId);}catch(e:any){if(g===assignmentRubricGeneration)assignmentRubricError.value=e.message;}finally{if(g===assignmentRubricGeneration)assignmentRubricLoading.value=false;}}
+async function openRubric(){const fromVersion=['reader','grading'].includes(page.value),snapshot=fromVersion?version.value?.rubricSnapshot:entry.value?.rubric,source=fromVersion?version.value?.rubricSnapshotSource:'';if(!await flushBeforeLeave())return;rubricFocus.value=snapshot?JSON.parse(JSON.stringify(snapshot)):null;rubricFocusSource.value=source||'';page.value='rubric';}
+function gradingCriterion(code:string){return version.value?.rubricSnapshot?.criteria?.find((i:any)=>i.code===code);}
+
+const accountOpen=ref(false);
+async function openAccount(){if(await flushBeforeLeave())accountOpen.value=true;}
+function profileUpdated(data:any){if(me.value?.id===data.id)me.value={...me.value,...data};}
+function sessionExpired(event:Event){sessionEnded((event as CustomEvent).detail);}
+function sessionEnded(message="密码已修改，请使用新密码重新登录。本机草稿备份仍保留。"){
+ if(!me.value)return;const uid=me.value.id,eid=entry.value?.id,reviewRecovery=review.suspend(),rubricRecovery=rubricWorkbench.value?.sessionBackup();accessChanged(message);
+ backupDownloadRequired.value=false;if(accessBackup.value&&eid){try{backupDownloadRequired.value=localStorage.getItem(`community-draft-${uid}-${eid}`)!==JSON.stringify(accessBackup.value);}catch{backupDownloadRequired.value=true;}}
+ if(reviewRecovery&&!reviewRecovery.persisted){accessBackup.value={type:'review-draft',submissionId:reviewRecovery.submissionId,...reviewRecovery.data};backupDownloadRequired.value=true;}
+ if(rubricRecovery&&!rubricRecovery.persisted){accessBackup.value={type:'rubric-draft',...rubricRecovery.data};backupDownloadRequired.value=true;}
+ accountOpen.value=false;me.value=null;courses.value=[];cid.value=0;page.value="home";loginError.value=backupDownloadRequired.value?'登录已失效；本机存储不可用，请先下载未同步草稿，再重新登录。':message;password.value="";resetApiSession();
+}
 import AssignmentManager from "./AssignmentManager.vue";
 const managedAssignment=ref<any>(null);
 const ruleRefreshError=ref('');
@@ -64,7 +94,7 @@ const clockNow = ref(Date.now()), serverOffset = ref(0);
 let deadlineTimer: ReturnType<typeof setInterval>;
 const deadlineNow = computed(() => clockNow.value + serverOffset.value);
 const aiSidebarVisible = ref(false);
-import { api, login, ApiFailure } from "./api";
+import { api, login, ApiFailure, resetApiSession } from "./api";
 const me = ref<any>(null),
   courses = ref<any[]>([]),
   cid = ref(0),
@@ -81,7 +111,6 @@ const homeEntry = ref<any>(null),
   commandOpen = ref(false),
   commandQuery = ref(""),
   assignmentFilter = ref("all"),
-  reviewFilter = ref("all"),
   publicationSort = ref("recent");
 const page = ref("home"),
   loading = ref(true),
@@ -204,9 +233,9 @@ const navName = computed(
 const currentAssignment = computed(() =>
   assignments.value.find((a) => a.id === entry.value?.assignment_id),
 );
-const pendingQueue = computed(() =>
-  queue.value.filter((q) => q.q_final === null),
-);
+const pendingQueue = computed(() => queue.value.filter((q) => q.q_final === null));
+const pendingReviewCount=computed(()=>reviewQueueSummary.value?.pending_count??pendingQueue.value.length);
+watch([()=>cid.value,()=>me.value?.id,()=>course.value?.role],()=>{reviewFilters.value=defaultReviewQuery();reviewNavScope.value=null;reviewQueueSummary.value=null;nextReviewMessage.value='';});
 const myWork = computed(() => assignments.value.filter((a) => a.entry_id));
 const filteredPubs = computed(() => {
   const rows = publications.value.filter(p => (p.title + p.author_name).toLowerCase().includes(query.value.toLowerCase()));
@@ -271,16 +300,23 @@ async function run(fn: () => Promise<void>) {
   }
 }
 async function doLogin() {
+  if(backupDownloadRequired.value){password.value="";loginError.value="请先下载未同步草稿备份；当前浏览器无法持久保存，重新登录会切换工作区。";return;}
   loginError.value = "";
   busy.value = true;
+  // Do not expose navigation until the authenticated workspace is ready.
+  loading.value = true;
   try {
     me.value = await login(email.value, password.value);
     password.value = "";
     await initialize();
   } catch (e: any) {
+    me.value = null;
+    courses.value = [];
+    cid.value = 0;
     loginError.value = e.message;
   } finally {
     busy.value = false;
+    loading.value = false;
   }
 }
 async function initialize() {
@@ -293,11 +329,12 @@ async function initialize() {
 let accessEpoch=0;
 function accessChanged(message:string){
   accessEpoch++;
+  if(page.value==='rubric'){const recovery=rubricWorkbench.value?.sessionBackup();if(recovery){accessBackup.value={type:'rubric-draft',...recovery.data};if(!recovery.persisted)backupDownloadRequired.value=true;}}
   if(page.value==='editor'&&entry.value){const copy={title:entry.value.title,content:entry.value.content,evidence:entry.value.evidence,revision:entry.value.revision};accessBackup.value=copy;try{localStorage.setItem(`community-draft-${me.value.id}-${entry.value.id}`,JSON.stringify(copy));}catch{}}
   clearTimeout(saveTimer);dirty.value=false;entry.value=null;latest.value=null;version.value=null;homeEntry.value=null;homeSubmission.value=null;assignments.value=[];queue.value=[];evidences.value=[];publications.value=[];pending.value=[];managedAssignment.value=null;menu.value=false;modal.value='';commandOpen.value=false;accessMessage.value=message;page.value='access';
 }
-function downloadAccessBackup(){if(!accessBackup.value)return;const url=URL.createObjectURL(new Blob([JSON.stringify(accessBackup.value,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='knowledge-draft-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-async function resumeCourses(){await run(async()=>{courses.value=await api('/courses');if(!courses.value.length){accessMessage.value='当前没有可访问的课程，请联系任课教师。';return;}accessBackup.value=null;cid.value=courses.value[0].id;await refreshCourse();page.value='home';});}
+function downloadAccessBackup(){if(!accessBackup.value)return;const url=URL.createObjectURL(new Blob([JSON.stringify(accessBackup.value,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='knowledge-draft-backup.json';a.click();backupDownloadRequired.value=false;setTimeout(()=>URL.revokeObjectURL(url),1000);}
+async function resumeCourses(){if(backupDownloadRequired.value){notify('请先下载未同步草稿备份');return;}await run(async()=>{courses.value=await api('/courses');if(!courses.value.length){accessMessage.value='当前没有可访问的课程，请联系任课教师。';return;}accessBackup.value=null;cid.value=courses.value[0].id;await refreshCourse();page.value='home';});}
 let ruleRefreshSequence=0;
 async function refreshAssignmentRules(){
   if(!me.value||!cid.value)return;const id=cid.value,uid=me.value.id,oldRole=course.value?.role,g=++ruleRefreshSequence;
@@ -316,7 +353,7 @@ async function refreshCourse() {
     api(`/courses/${cid.value}/publications`),
     api(`/courses/${cid.value}/evidence`),
     isStaff.value
-      ? api(`/courses/${cid.value}/review-queue`)
+      ? api(`/courses/${cid.value}/review-workbench/dashboard`)
       : Promise.resolve([]),
     isTeacher.value
       ? api(`/courses/${cid.value}/publications?pending=true`)
@@ -328,7 +365,8 @@ async function refreshCourse() {
   clockNow.value=Date.now();
   publications.value = p;
   evidences.value = e;
-  queue.value = q;
+  queue.value = Array.isArray(q)?q:q.items;
+  reviewQueueSummary.value=Array.isArray(q)?null:q.summary;
   pending.value = n;
   homeEntry.value = null;
   homeSubmission.value = null;
@@ -365,16 +403,6 @@ const filteredAssignments = computed(() => assignments.value.filter(a => {
   if(assignmentFilter.value==='closed')return assignmentState(a,deadlineNow.value)==='CLOSED';
   return assignmentFilter.value==='all'||(assignmentFilter.value==='submitted'?!!a.version_no:assignmentFilter.value==='started'?!!a.entry_id:!a.entry_id);
 }));
-const filteredQueue = computed(() =>
-  queue.value.filter(
-    (q) =>
-      (reviewFilter.value === "all" ||
-        (reviewFilter.value === "pending"
-          ? q.q_final == null
-          : q.q_final != null)) &&
-      (!query.value || (q.title + q.author_name).includes(query.value)),
-  ),
-);
 const commandItems = computed(() => {
   const items: any[] = [
     ...nav.value.map((n) => ({
@@ -429,31 +457,11 @@ async function activateCommand(item: any) {
     isStaff.value ? await go("review") : await openAssignment(item.data);
   else await openVersion(item.id);
 }
-const theme = ref("system");
-try {
-  theme.value = localStorage.getItem("ockc-theme") || "system";
-} catch {}
-function applyTheme() {
-  document.documentElement.dataset.theme = theme.value;
-  try {
-    localStorage.setItem("ockc-theme", theme.value);
-  } catch {}
-}
+const { theme, cycle: cycleAppearance } = useTheme();
 function cycleTheme() {
-  theme.value =
-    theme.value === "system"
-      ? "light"
-      : theme.value === "light"
-        ? "dark"
-        : "system";
-  applyTheme();
-  notify(
-    ({ system: "跟随系统外观", light: "浅色外观", dark: "深色外观" } as any)[
-      theme.value
-    ],
-  );
+  cycleAppearance();
+  notify(({ system: "跟随系统外观", light: "浅色外观", dark: "深色外观" })[theme.value]);
 }
-applyTheme();
 watch(page, () => {
   sidebarCollapsed.value = ["editor", "grading", "reader"].includes(page.value);
   panelVisible.value = true;
@@ -476,6 +484,7 @@ function dimensionScore(key: string) {
 async function go(target: string) {
   if (!(await flushBeforeLeave())) return;
   if(target==="evidence")evidenceFocus.value=undefined;
+  if(target==='rubric'){rubricFocus.value=null;rubricFocusSource.value='';}
   page.value = target;
   menu.value = false;
   query.value = "";
@@ -484,6 +493,7 @@ async function go(target: string) {
   window.scrollTo(0, 0);
 }
 async function flushBeforeLeave() {
+  if(page.value==="rubric"&&rubricWorkbench.value&&!rubricWorkbench.value.canLeave())return false;
   if (page.value === "grading" && isTeacher.value && !await review.flush()) { error.value = review.state.error || "评分草稿尚未保存，请先处理保存失败或冲突。"; return false; }
   if (uploadingMedia.value) { notify("图片上传中，请稍候再离开"); return false; }
   if (page.value === "editor" && dirty.value) return await saveDraft();
@@ -493,6 +503,7 @@ async function logout() {
   if (!(await flushBeforeLeave())) return;
   await run(async () => {
     await api("/auth/logout", "POST");
+    review.suspend();resetApiSession();accessEpoch++;
     me.value = null;
     accessBackup.value=null;accessMessage.value='';
     courses.value = [];
@@ -666,11 +677,14 @@ async function submit() {
     notify(`已提交 v${v.version_no}，等待教师评审`);
   });
 }
-async function openVersion(sid: number, asReview = false) {
+async function openVersion(sid: number, asReview = false, keepReviewScope=false) {
   if (!(await flushBeforeLeave())) return;
   let succeeded=false;
   await run(async () => {
-    version.value = await api(`/submissions/${sid}`);
+    const activeCourse=cid.value,activeUser=me.value?.id,epoch=accessEpoch;
+    const loadedVersion=await api(`/submissions/${sid}`);
+    if(activeCourse!==cid.value||activeUser!==me.value?.id||epoch!==accessEpoch)return;
+    version.value=loadedVersion;if(!keepReviewScope)reviewNavScope.value=null;nextReviewMessage.value='';
     selectedAnchor.value = "";
     page.value = asReview ? "grading" : "reader";
     feedbackTab.value = "feedback";
@@ -744,6 +758,7 @@ function showModal(kind: string, data: Record<string, any> = {}) {
     requirements: "",
     dueAt: "",
     aiFeedbackEnabled: false,
+    rubricId: "",
     sourceTitle: "",
     sourceUrl: "",
     excerpt: "",
@@ -763,6 +778,7 @@ function showModal(kind: string, data: Record<string, any> = {}) {
     role: "STUDENT",
     ...data,
   };
+  if(kind==='assignment')void loadAssignmentRubrics();
   setTimeout(
     () =>
       document
@@ -788,14 +804,16 @@ async function modalSubmit() {
   await run(async () => {
     const f = form.value;
     if (modal.value === "assignment") {
-      await api(`/courses/${cid.value}/assignments`, "POST", {
+      if(assignmentRubricLoading.value||assignmentRubricError.value||!assignmentRubrics.value.some(r=>String(r.id)===f.rubricId))throw new Error("请先读取并选择可用量规版本");
+      const created=await api(`/courses/${cid.value}/assignments`, "POST", {
         title: f.title,
         requirements: f.requirements,
         dueAt: new Date(f.dueAt).toISOString(),
         aiFeedbackEnabled: f.aiFeedbackEnabled,
+        rubricId:Number(f.rubricId),
       });
       await refreshCourse();
-      notify("作业已发布，量规锁定为 four-dim-v1");
+      notify(`作业已创建，量规锁定为 ${created.rubric_version}`);
     }
     if (modal.value === "course") {
       const c = await api("/courses", "POST", {
@@ -945,6 +963,7 @@ function keydown(e: KeyboardEvent) {
   }
 }
 onMounted(async () => {
+  window.addEventListener("ockc-session-expired",sessionExpired);
   deadlineTimer=setInterval(()=>{clockNow.value=Date.now();void refreshAssignmentRules()},30000);
   window.addEventListener("focus",refreshAssignmentRules);
   window.addEventListener("beforeunload", beforeUnload);
@@ -959,6 +978,7 @@ onMounted(async () => {
   }
 });
 onBeforeUnmount(() => {
+  window.removeEventListener("ockc-session-expired",sessionExpired);
   clearTimeout(saveTimer);clearInterval(deadlineTimer);
   window.removeEventListener("beforeunload", beforeUnload);
   window.removeEventListener("keydown", keydown);
@@ -967,6 +987,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <AccountSettings v-if="accountOpen && me" :key="me.id" @close="accountOpen=false" @updated="profileUpdated" @password-changed="sessionEnded()" />
   <AssignmentManager v-if="managedAssignment && isTeacher" :assignment="managedAssignment" @close="managedAssignment=null" @changed="assignmentManaged" />
   <div v-if="loading" class="boot">
     <BookOpen :size="30" />
@@ -1017,6 +1038,7 @@ onBeforeUnmount(() => {
         <p v-if="loginError" class="error-note" role="alert">
           {{ loginError }}
         </p>
+        <button v-if="accessBackup" type="button" class="btn secondary full" @click="downloadAccessBackup"><Save :size="16"/>下载未同步草稿备份</button>
         <button class="btn primary full" :disabled="busy">
           {{ busy ? "正在登录…" : "登录工作空间" }}<ArrowUpRight :size="18" />
         </button>
@@ -1055,8 +1077,8 @@ onBeforeUnmount(() => {
             :is="n.id === 'community' ? Layers : n.icon"
             :size="18"
           /><span>{{ n.id === "home" ? "首页" : n.name }}</span
-          ><small v-if="n.id === 'review' && pendingQueue.length">{{
-            pendingQueue.length
+          ><small v-if="n.id === 'review' && pendingReviewCount">{{
+            pendingReviewCount
           }}</small>
         </button>
       </nav>
@@ -1094,6 +1116,7 @@ onBeforeUnmount(() => {
                   : "课程学生"
             }}</span>
           </div>
+          <button class="icon-btn" title="账号设置" aria-label="打开账号设置" @click="openAccount"><Settings :size="17" /></button>
           <button
             class="icon-btn"
             title="退出登录"
@@ -1150,7 +1173,7 @@ onBeforeUnmount(() => {
           }}</span
           ><button
             class="icon-btn theme-toggle"
-            aria-label="切换页面外观"
+            :aria-label="`切换页面外观（当前${theme === 'system' ? '跟随系统' : theme === 'light' ? '浅色' : '深色'}）`"
             :title="
               theme === 'system'
                 ? '跟随系统：点击切换浅色'
@@ -1188,6 +1211,7 @@ onBeforeUnmount(() => {
           :courses="courses"
           :assignments="assignments"
           :queue="queue"
+          :queue-summary="reviewQueueSummary"
           :publications="publications"
           :evidences="evidences"
           :staff="isStaff"
@@ -1287,150 +1311,11 @@ onBeforeUnmount(() => {
           </button>
         </section>
 
-        <section v-else-if="page === 'rubric'" class="page">
-          <div class="page-heading">
-            <div>
-              <span class="eyebrow">课程评价标准</span>
-              <h1>四维评价，共同的尺度。</h1>
-              <p>每一次评分和反馈，都回到同一套可追溯的课程量规。</p>
-            </div>
-            <span class="badge green"
-              ><CheckCircle2 :size="15" />four-dim-v1</span
-            >
-          </div>
-          <div class="rubric-explainer">
-            <SlidersHorizontal :size="24" />
-            <div>
-              <strong>维度内取有效指标平均，四维等权计算综合分。</strong>
-              <p>
-                N/A 不计零分；待核验不发布正式
-                Q。严重缺陷由教师确认后，综合分最高为 89。
-              </p>
-            </div>
-          </div>
-          <div class="rubric-grid">
-            <article v-for="d in rubric" :key="d.d" class="rubric-card">
-              <div class="rubric-card-title">
-                <span>{{ d.d }}</span>
-                <div>
-                  <h2>{{ d.name }}</h2>
-                  <p>{{ d.desc }}</p>
-                </div>
-                <strong>25<small>%</small></strong>
-              </div>
-              <div
-                v-for="[code, name] in d.items"
-                :key="code"
-                class="rubric-item"
-              >
-                <code>{{ code }}</code
-                ><strong>{{ name }}</strong
-                ><span>0–100</span>
-              </div>
-            </article>
-          </div>
-          <div class="card rubric-bands">
-            <h3>四个评价区间</h3>
-            <div>
-              <span><strong>90–100</strong> 优</span
-              ><span><strong>75–89</strong> 良</span
-              ><span><strong>60–74</strong> 合格</span
-              ><span><strong>0–59</strong> 待改进</span>
-            </div>
-            <p>
-              分数由教师按二级指标确认，AI
-              不参与最终成绩。本开发版固定量规，学科判分锚例与量规发布功能尚待后续实现。
-            </p>
-          </div>
-        </section>
+        <RubricWorkbench v-else-if="page === 'rubric'" ref="rubricWorkbench" :key="cid+'-'+me.id+'-'+course?.role+'-'+(rubricFocus?'snapshot-'+rubricFocus.code:'catalog')" :course-id="cid" :teacher="isTeacher" :user-id="me.id" :initial-snapshot="rubricFocus" :initial-source="rubricFocusSource" />
 
-        <ProgressPage v-else-if="page === 'progress'" :course-id="cid" :staff="isStaff" @open-version="openVersion($event, isStaff)" @assignments="go('assignments')" />
+        <ProgressPage v-else-if="page === 'progress'" :key="cid+'-'+me.id+'-'+course?.role" :course-id="cid" :course-label="course?.title||''" :staff="isStaff" :user-id="me.id" @open-version="openVersion($event, isStaff)" @open-feedback="progressFeedback" @assignments="go('assignments')" />
 
-        <section v-else-if="page === 'review'" class="page">
-          <div class="page-heading">
-            <div>
-              <span class="eyebrow">教师评审工作区</span>
-              <h1>批改中心</h1>
-              <p>
-                {{ pendingQueue.length }}
-                份提交等待评审。先理解变化，再给出关键反馈。
-              </p>
-            </div>
-            <span class="small-label">{{ course.title }}</span>
-          </div>
-          <div class="review-toolbar">
-            <div class="list-tabs" role="group" aria-label="评审筛选">
-              <button
-                v-for="[key, label] in [
-                  ['all', '全部提交'],
-                  ['pending', '待评审'],
-                  ['graded', '已评价'],
-                ]"
-                :key="key"
-                :class="{ active: reviewFilter === key }"
-                @click="reviewFilter = key"
-              >
-                {{ label
-                }}<span v-if="key === 'pending'">{{
-                  pendingQueue.length
-                }}</span>
-              </button>
-            </div>
-            <label class="search-box"
-              ><Search :size="16" /><input
-                v-model="query"
-                aria-label="搜索评审提交"
-                placeholder="搜索作品或学生"
-            /></label>
-          </div>
-          <div class="list-card">
-            <div class="queue-column-head">
-              <span>作品 / 作者</span><span>评价状态</span><span>提交时间</span>
-            </div>
-            <button
-              v-for="q in filteredQueue"
-              :key="q.id"
-              class="review-row"
-              :disabled="busy" :aria-busy="busy"
-              @click="openVersion(q.id, true)"
-            >
-              <span class="avatar">{{ q.author_name.slice(0, 1) }}</span>
-              <div>
-                <strong>{{ q.title }}</strong>
-                <p>
-                  {{ q.author_name }} · {{ q.assignment_title }} · v{{
-                    q.version_no
-                  }}
-                </p>
-              </div>
-              <span
-                class="badge"
-                :class="q.q_final === null ? 'orange' : 'green'"
-                >{{
-                  q.q_final === null ? (q.review_draft_updated_at ? "待评审 · 有草稿" : "待评审") : `${number(q.q_final)} 分`
-                }}</span
-              ><span class="row-time">{{ fmt(q.created_at) }}</span
-              ><ChevronRight :size="18" />
-            </button>
-            <div v-if="!filteredQueue.length" class="empty">
-              <CheckCircle2 :size="32" />
-              <h2>
-                {{
-                  query.trim() || reviewFilter !== "all"
-                    ? "没有匹配的提交"
-                    : "暂时没有提交"
-                }}
-              </h2>
-              <p>
-                {{
-                  query.trim() || reviewFilter !== "all"
-                    ? "试试其他关键词，或切换到全部提交。"
-                    : "学生提交评审后将在此显示。"
-                }}
-              </p>
-            </div>
-          </div>
-        </section>
+        <ReviewWorkbench v-else-if="page === 'review' && isStaff" :key="cid+'-'+me.id+'-'+course?.role" :course-id="cid" :teacher="isTeacher" :course-label="course.title" :filters="reviewFilters" :busy="busy" @filters="reviewFilters=$event" @open="openReviewRow" />
 
         <section v-else-if="page === 'community'" class="page">
           <div class="page-heading">
@@ -1671,7 +1556,7 @@ onBeforeUnmount(() => {
               </div>
               <nav class="feedback-jump-nav" aria-label="反馈分区导航"><button @click="sidebarJump('sidebar-quality')">质量评分</button><button @click="sidebarJump('sidebar-teacher')">教师批注<span>{{ latest?.feedback?.length || 0 }}</span></button><button v-if="aiSidebarVisible" @click="sidebarJump('sidebar-ai')">AI 反馈</button></nav>
               </div>
-              <div id="sidebar-quality"><QualitySummary :evaluation="latest?.evaluation" :version="latest?.version_no" draft @rubric="go('rubric')" /></div>
+              <div id="sidebar-quality"><QualitySummary :evaluation="latest?.evaluation" :version="latest?.version_no" draft @rubric="openRubric" /></div>
               <section id="sidebar-teacher" class="sidebar-section teacher-feedback-section" aria-label="教师批注">
                 <header class="sidebar-section-heading"><h3><MessageSquare :size="15" />教师批注</h3><span class="small-label">{{ latest?.feedback?.length || 0 }} 条</span></header>
               <p v-if="latest?.evaluation?.summary" class="teacher-summary">
@@ -1771,10 +1656,12 @@ onBeforeUnmount(() => {
           v-else-if="(page === 'reader' || page === 'grading') && version"
           class="editing-page"
         >
+          <p v-if="page==='grading'&&nextReviewMessage" role="status" class="review-next-status">{{nextReviewMessage}}</p>
+          <p v-if="page==='grading'&&reviewNavScope" class="review-next-status muted">下一份沿用进入时的队列范围和排序，只选择无正式评价的提交；不会跳过草稿保存，也不会自动发布。</p>
           <div class="editor-heading">
             <div>
               <button
-                class="text-btn muted"
+                class="text-btn muted review-return-link"
                 @click="go(page === 'grading' ? 'review' : 'community')"
               >
                 <ArrowLeft :size="16" />{{
@@ -1788,6 +1675,7 @@ onBeforeUnmount(() => {
               </p>
             </div>
             <div class="button-row">
+              <button v-if="page==='grading'&&isStaff" class="btn secondary" :disabled="busy||nextReviewBusy||review.state.loading" @click="nextReview">{{nextReviewBusy?'正在核对下一份…':'下一份待评审'}}<ChevronRight :size="16"/></button>
               <button
                 class="btn secondary"
                 :class="{ pressed: outlineVisible }"
@@ -1877,6 +1765,7 @@ onBeforeUnmount(() => {
                   ><span>{{ version.author_name }}</span
                   ><span>v{{ version.version_no }}</span>
                 </div>
+                <details class="assignment-snapshot rubric-snapshot"><summary>提交时的量规 · {{version.rubric_version}}</summary><RubricViewer :snapshot="version.rubricSnapshot" :source="version.rubricSnapshotSource" /></details>
                 <details class="assignment-snapshot"><summary>提交时的任务规则{{ version.assignmentSnapshot ? ' · r'+version.assignmentSnapshot.management_revision : ' · 未记录' }}</summary><template v-if="version.assignmentSnapshot"><p><strong>{{ version.assignmentSnapshot.title }}</strong></p><p>{{ version.assignmentSnapshot.requirements }}</p><p>{{ fmt(version.assignmentSnapshot.due_at) }} 截止 · {{ version.assignmentSnapshot.rubric_version }}</p><p class="muted">本规则快照随该提交保存，后续调整不改写本记录。</p></template><p v-else class="muted">此历史提交早于任务快照功能，未保存当时的规则；不使用当前规则冒充历史记录。</p></details>
                 <Editor
                   :highlight-id="selectedAnchor"
@@ -1998,6 +1887,7 @@ onBeforeUnmount(() => {
                   }}
                 </p>
               </div>
+              <p class="notice">本提交量规：{{version.rubricSnapshot?.title}} · {{version.rubric_version}} <button class="text-btn" @click="openRubric">查看本提交量规</button></p>
               <fieldset class="review-form" :disabled="!isTeacher || reviewPublishing || review.state.loading || !review.state.loaded || !!review.state.stale || !!review.state.backup || review.state.conflict">
               <details
                 v-for="d in rubric"
@@ -2022,6 +1912,7 @@ onBeforeUnmount(() => {
                     ><code>{{ i.code }}</code
                     >{{ i.name }}</label
                   >
+                  <details class="grading-anchors"><summary>查看此指标评分锚点</summary><template v-if="gradingCriterion(i.code)?.description"><p>{{gradingCriterion(i.code).description}}</p><p v-for="[key,label] in [['excellent','优秀'],['good','良好'],['pass','基本达到'],['improve','待改进']]" :key="key"><strong>{{label}}：</strong>{{gradingCriterion(i.code)[key]}}</p></template><p v-else class="muted">该历史版本未记录单项锚点，不使用新增锚点冒充当时标准。</p></details>
                   <div class="grading-inputs">
                     <input
                       :id="'score-' + i.code"
@@ -2116,7 +2007,7 @@ onBeforeUnmount(() => {
                 <h2>质量与版本</h2>
                 <span class="badge">v{{ version.version_no }}</span>
               </div>
-              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" @rubric="go('rubric')" /><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
+              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" @rubric="openRubric" /><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
               <div v-else class="empty">
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>
@@ -2275,10 +2166,11 @@ onBeforeUnmount(() => {
                 type="datetime-local"
                 required
             /></label>
+            <label>作业量规版本<select v-model="form.rubricId" required :disabled="assignmentRubricLoading || !!assignmentRubricError" aria-label="作业量规版本"><option value="" disabled>请选择已启用版本</option><option v-for="r in assignmentRubrics" :key="r.id" :value="String(r.id)">{{r.title}} · {{r.code}}</option></select></label><p v-if="assignmentRubricLoading" role="status">正在读取可用量规…</p><p v-if="assignmentRubricError" role="alert">{{assignmentRubricError}} <button type="button" class="text-btn" @click="loadAssignmentRubrics">重试读取量规</button></p>
             <div class="publish-ai-setting"><div><strong><Sparkles :size="15" />AI 修改建议</strong><p>{{ form.aiFeedbackEnabled ? '学生编辑页显示 AI 反馈入口' : '学生编辑页不显示 AI 反馈区块' }}</p></div><button type="button" class="policy-switch" role="switch" :aria-checked="!!form.aiFeedbackEnabled" aria-label="AI 修改建议" @click="form.aiFeedbackEnabled = !form.aiFeedbackEnabled"><span></span></button></div>
             <p class="form-note ai-setting-note">可在发布后按作业随时调整。当前模型服务尚未配置；开启入口不会生成建议，也不会发送学生正文。</p>
             <p class="form-note">
-              发布后锁定四维 11 项量规 four-dim-v1。本版截止后不接受新提交。
+              创建后锁定所选量规版本；更改课程默认不影响本作业。本版截止后不接受新提交。
             </p></template
           ></template
         ><template v-if="modal === 'member'"

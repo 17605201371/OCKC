@@ -1,0 +1,204 @@
+{
+  "releaseStatus": "local-only-not-deployed",
+  "generatedAt": "2026-10-20T06:45:25.473992+00:00",
+  "restoredSourceHashesVerified": 134,
+  "backend": {
+    "tests": 253,
+    "newReportTests": 27,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "frontend": {
+    "typecheckAndBuild": "PASS",
+    "unitChecks": {
+      "markdown": 11,
+      "deadlines": 9,
+      "theme": 4,
+      "reports": 9
+    },
+    "knownWarning": "Editor bundle exceeds Vite 500 kB warning threshold; not optimized in this round"
+  },
+  "browserSuites": {
+    "reports": {
+      "checks": 18,
+      "screenshots": 8,
+      "passed": true,
+      "checkDetails": [
+        "Student CSV download is UTF-8, clearly scoped to self and excludes other authors",
+        "Teacher exports all authorized course authors; failed downloads show an actionable retry without fake success",
+        "Published peers, foreign-course accounts and forged author filters cannot export private learning records",
+        "Entry report contains complete public feedback actions and current formal evaluation, never private teacher draft or raw draft body",
+        "Downloaded snapshot stays unchanged; an explicit regeneration reflects teacher-confirmed resolution",
+        "Latest pending v2 and prior graded v1 are separately labelled; ungraded is never zero or a fabricated new score",
+        "A wholly ungraded work has truthful missing-score and empty-feedback sections",
+        "Course CSV exports all 25 matching draft works across pages, not only the first 20 displayed cards",
+        "A real spreadsheet-formula title is neutralized as text and RFC-quoted in the downloaded CSV",
+        "Preview and standalone printable HTML safely escape an actual malicious title, execute no scripts and fetch no remote resources",
+        "Draft-only export is explicitly an empty submission record, not a completed or graded assignment",
+        "Report preview uses semantic dark surfaces and wraps without horizontal overflow at mobile and 1280px",
+        "Escape closes the nested report dialog and returns keyboard focus to its exact trigger",
+        "An empty filtered CSV still contains honest scope metadata and headers, with zero invented rows",
+        "Closing during CSV generation aborts the request and late responses cannot trigger downloads",
+        "Explicit oversized-range UI fixture presents the narrowing instruction; actual boundary is covered by backend database tests",
+        "Entry report read failure clears content and hides downloads until a successful explicit retry",
+        "A late report JSON response cannot resurrect a closed preview"
+      ]
+    },
+    "accounts": {
+      "checks": 18,
+      "screenshots": 7,
+      "passed": true,
+      "checkDetails": [
+        "Account read failure is recoverable without closing the modal",
+        "Email is read-only and no role/account administration is exposed",
+        "Server name validation retains unsaved input",
+        "Profile save updates the signed-in identity without changing course role",
+        "Stale-tab conflict cannot overwrite; explicit refresh preserves local input for review",
+        "Account modal uses semantic dark surfaces with no horizontal overflow at desktop/mobile widths",
+        "Closing clears secret fields; Escape returns focus to the settings trigger",
+        "Confirmation mismatch is rejected before sending a password request",
+        "Wrong current password keeps the session valid and clears all submitted secret fields",
+        "Opening settings cannot bypass a failed draft save",
+        "Successful password change ends the current session and explains reauthentication",
+        "Other old session expires at the next request, preserves unsynced local draft, and leaves unrelated users signed in",
+        "Old password is rejected; new password works; server draft is unchanged",
+        "Reauthentication offers explicit local draft recovery in the original entry",
+        "Profile and password-change timestamp persist across reauthentication",
+        "Session expiry with blocked localStorage does not falsely claim the draft is persisted",
+        "Re-login is guarded until the unpersisted in-memory draft is explicitly downloaded",
+        "Downloaded backup contains the unsynced draft and re-login can then complete"
+      ]
+    },
+    "workflow": {
+      "checks": 17,
+      "screenshots": 8,
+      "passed": true,
+      "checkDetails": [
+        "Incomplete teacher scoring draft autosaves without formal publication",
+        "Student cannot read private scoring draft; no provisional teacher grade leaks",
+        "Teacher draft restores after full page reload",
+        "Failed autosave survives reload as an explicit, recoverable local backup",
+        "Stale-tab optimistic conflict preserves input and blocks unsafe navigation",
+        "Conflict reload offers explicit local backup recovery rather than silent overwrite",
+        "Publishing checks complete scores and clears only the authoring teacher draft",
+        "Real evaluation event notifies student and navigates to the exact frozen submission",
+        "Student can continue own draft directly from a notification-linked frozen version",
+        "New teacher comment generates a private, paragraph-linked notification",
+        "Student reply routes teacher back to the relevant review",
+        "Publication request and approval produce two-way actionable notifications",
+        "Read-all and unread filter persist per user",
+        "Expired assignment allows saving existing draft while submit is disabled",
+        "Student without existing entry cannot start expired assignment",
+        "Upcoming deadline filter uses server-synchronized course clock",
+        "Desktop 1280px, dark surfaces and browser script error checks"
+      ]
+    },
+    "studio": {
+      "checks": 19,
+      "screenshots": 12,
+      "passed": true,
+      "checkDetails": [
+        "Three-column studio; headings-only outline",
+        "Real raster upload, rendered image, caption and source",
+        "Edit existing image caption",
+        "Figure evidence anchor",
+        "Selected image uses the correct toolbar evidence anchor",
+        "Deleting anchored content is blocked from autosave until restored; undo preserves anchors",
+        "LaTeX validation, live preview and rendered formula",
+        "Editable table and row operation",
+        "Callout block",
+        "Rich blocks persisted through draft API",
+        "Save/reload round-trip",
+        "Markdown export includes image reference, math, table",
+        "Rich document immutable submission",
+        "Student real-data progress page",
+        "Teacher reads frozen image, formula, table",
+        "Teacher course progress page",
+        "Teacher grades rich version and anchors feedback to image",
+        "Approval pins rich version; course peer can read image, formula and table without edit controls",
+        "No JavaScript errors"
+      ]
+    },
+    "progress": {
+      "checks": 13,
+      "screenshots": 9,
+      "passed": true,
+      "checkDetails": [
+        "Student sees only own progress; published peers and other-course users cannot inspect private trajectory",
+        "Ungraded work stays unscored rather than becoming a fabricated zero",
+        "Teacher filters by author and assignment with explicit score sorting",
+        "Only five recent nodes load on cards, while all 23 immutable versions are server-paged; latest graded score remains visible with the newest revision pending",
+        "Feedback history is paged; author adoption remains unresolved until a teacher confirms",
+        "Teacher confirmation updates aggregate and resolved-only feedback filter",
+        "Feedback jump opens its actual old submission and exact paragraph, not the latest draft",
+        "Teacher feedback follow-up jumps directly into the correct review paragraph",
+        "Twenty-row server paging covers all 22 matching drafts with no duplicated cards",
+        "Status-filter empty state does not change scope totals or turn drafts into submissions",
+        "Read failure clears stale cards and offers a working retry instead of stale private data",
+        "Late progress response cannot resurrect a page after navigation",
+        "Shared dark surfaces, keyboard Escape and 1280px desktop layout have no horizontal overflow or browser errors"
+      ]
+    },
+    "rubric": {
+      "checks": 22,
+      "screenshots": 10,
+      "passed": true,
+      "checkDetails": [
+        "Catalog failure is recoverable by explicit retry",
+        "Teacher can edit title, per-indicator explanation and four-band anchors without changing fixed codes",
+        "Students cannot see teacher draft, mutation controls or direct draft API",
+        "Stale-tab save conflict preserves input and dirty-navigation guard blocks leaving",
+        "Rejected version switch restores the selector and leaves unsaved content associated with its original version",
+        "Explicit conflict refresh retains current input and only then permits a new revision save",
+        "Failed save survives reload via explicit, user/course/version-scoped local recovery",
+        "Enabling requires reason, freezes the version, sets new-assignment default and leaves existing assignments untouched",
+        "Students can read enabled anchors but not teacher-only enable reason/history",
+        "Assignment creation shows enabled versions and sends the explicitly selected immutable binding",
+        "A real rich-document submission stores and displays its assignment-bound rubric snapshot",
+        "Teacher grading uses the submitted version’s anchors, not current course defaults",
+        "Grading rubric link opens pinned snapshot rather than silently substituting live configuration",
+        "Course navigation explicitly exits pinned snapshot mode and remounts the current catalog",
+        "Later enabled default leaves both old assignment binding and frozen submission packet byte-equivalent",
+        "Enable/default history is auditable and restricted to the teacher",
+        "Teacher can select a prior enabled/builtin default without editing immutable versions",
+        "Explicit legacy UI fixture identifies absent anchors; real database fallback is independently covered by backend tests",
+        "Dark semantic surfaces and mobile/1280 layouts have no horizontal overflow",
+        "Keyboard activation reloads catalog without pointer-only controls",
+        "Teacher session expiry with blocked storage preserves rubric input in memory rather than claiming it is persisted",
+        "Reauthentication is guarded until the unsynced rubric JSON is explicitly downloaded"
+      ]
+    },
+    "theme": {
+      "checks": 10,
+      "screenshots": 7,
+      "passed": true,
+      "checkDetails": [
+        "System-dark preference and browser theme color apply before the Vue bundle mounts under real CSP",
+        "System-dark editor heading, outer canvas and evidence pill no longer leak light backgrounds",
+        "Explicit light overrides a dark OS and survives OS changes",
+        "Explicit dark, live system following and saved preference reload agree with the accessible toggle label",
+        "Cross-tab preference changes and key removal update both palette and UI state",
+        "Image dialog, upload zone, figure border/caption/tools use dark surfaces without recoloring original pixels",
+        "Formula, table and callout surfaces share the neutral dark palette",
+        "Failed authenticated image offers retry while keeping source, caption and edit controls; retry recovers",
+        "Keyboard focus has a visible semantic outline and modal inputs remain dark",
+        "1280px desktop light/dark layouts have no horizontal overflow"
+      ]
+    }
+  },
+  "browserCheckGroups": 117,
+  "screenshots": 61,
+  "finalBuildReportRetest": {
+    "checks": 18,
+    "screenshots": 8,
+    "includedInTotals": true
+  },
+  "isolation": "Each browser suite used a fresh isolated loopback H2 database. No remote publish, push, deployment or online database writes.",
+  "fixtureNotes": [
+    "Browser 503 and delayed responses use explicit local fixtures.",
+    "CSV 2000-boundary and report version/feedback/action caps verified with real H2 service tests; browser 422 message uses a response fixture.",
+    "Malicious title, 25-row multi-page export, student new submission, private review draft, feedback actions and regrade checks use actual isolated application APIs.",
+    "Printable HTML was opened locally under print media; no scripts executed and no external requests were made. No server-generated PDF."
+  ]
+}

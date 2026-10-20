@@ -133,23 +133,23 @@ E2E_PASSWORD="$DEMO_PASSWORD" node scripts/ui-smoke.mjs
 - 有已证实严重缺陷时 `Qfinal = min(Qraw, 89)`；保留原分和门槛理由。
 - N/A 不计零分，需要理由；维度全空或仍有待核验时拒绝正式发布。
 - 正式评分只允许课程教师发布；助教只读队列及参与证据核验。
-- 本阶段固定 `four-dim-v1`，未实现量规的在线编辑与发布。
+- 四维等权和 11 项指标固定；本地已增加量规说明/学科判分锚点编辑、不可变启用版本与作业绑定，详见 [量规版本](docs/RUBRIC-VERSIONS.md)。尚未部署。
 
 ## 7. 当前未实现 / 后续计划
 
 - AI 模型网关、异步任务队列、模型评估与成本治理。
 - 对象存储、媒体回收与生产配额、授权教材自动比对、可视化公式输入（当前已支持 PNG/JPEG 上传与 LaTeX 排版）。
-- 移动端适配与移动端验收（本期仅 PC）。
+- 完整移动端适配与全流程验收（账号、量规、报告等专项已覆盖 390px，尚不代表全部流程完成移动端认证）。
 - 实时多人编辑、小组分工与协商、分步习题与题库。
-- 量规版本编辑、学科判分锚例、班级深度分析与成长报告导出（当前已支持基础学习轨迹/教学进展）。
+- 自定义权重/指标、跨课程量规共享、专家校准判分锚例、班级深度分析、异步大批量导出、XLSX 和服务器 PDF（已支持基础学习轨迹/教学进展及 CSV、作品报告 JSON/可打印 HTML）。
 - 账号注册/邀请/重置密码、完整管理后台、SSO、生产分布式会话。
-- 正式备份恢复工具、生产告警、合规审查和 200 会话压力测试。
+- 生产备份/异地容灾、生产告警、合规审查和 200 会话压力测试（现已提供 Linux 本地 H2 停机备份/核验/不覆盖恢复工具，不等同于生产运维方案）。
 
 请将本版本作为可运行的开发基线，不要直接对真实学生投入生产。后续按设计计划分阶段推进，而非把 16 周建设内容视为本次已全部完成。
 
 ## 8. CI 模板
 
-当前 GitHub 授权允许提交业务代码，但不允许写入 Actions 工作流。`docs/ci-template.yml` 提供 CI 模板；仓库维护者可将其复制为 `.github/workflows/ci.yml` 后启用。当前未在仓库启用、未宣称 GitHub Actions 已通过。
+本地源码含 `.github/workflows/ci.yml`，用于前端构建、序列化/截止策略/主题/报告单元检查及后端验证。`docs/ci-template.yml` 保留配置参考。本轮未向远程推送工作流，也未运行或宣称 GitHub Actions 在线通过；在线启用仍需维护者授权。
 
 ## 9. PC 在线演示部署
 
@@ -162,3 +162,37 @@ E2E_PASSWORD="$DEMO_PASSWORD" node scripts/ui-smoke.mjs
 ## 教学工作流增量
 
 消息提醒、教师评分草稿和截止策略见 [docs/WORKFLOW.md](docs/WORKFLOW.md)。旧数据不补造历史消息，评分草稿不等于正式评价。
+
+## 本地待发布增量：个人账号设置
+
+账号资料、安全改密、旧会话失效及草稿保护见 [docs/ACCOUNT-SETTINGS.md](docs/ACCOUNT-SETTINGS.md)。本轮只做本地开发与隔离验收，没有发布、部署或更新在线数据库。注册邀请、密码找回、邮箱变更和 SSO/MFA 尚未开放。
+
+轨迹、主题和消息说明分别见 [docs/PROGRESS-WORKBENCH.md](docs/PROGRESS-WORKBENCH.md)、[docs/THEME-AND-MEDIA.md](docs/THEME-AND-MEDIA.md)、[docs/NOTIFICATION-WORKBENCH.md](docs/NOTIFICATION-WORKBENCH.md)。源码连续性处理记录见 [docs/LOCAL-RECOVERY.md](docs/LOCAL-RECOVERY.md)。
+
+
+## 本地待发布增量：课程量规版本
+
+教师修订草稿、版本冻结、新作业默认选择、提交快照与历史兼容见 [量规版本](docs/RUBRIC-VERSIONS.md)。只配置说明与判分锚点，不改变四维等权计算；未发布、未更新在线版本。
+
+
+## 本地待发布增量：学习报告导出
+
+学生可下载本人作品的提交、当前正式评价及反馈记录；教师/助教可按既有课程权限导出全部匹配页的进展 CSV。作品报告支持 JSON 与独立可打印 HTML，不是全文备份，也不自动发布或分享。统计范围、空分与零分、复评修订和未解决反馈分别标注；超限明确拒绝，不截断。详见 [学习报告导出](docs/PROGRESS-REPORTS.md)。本轮未推送、部署或更新在线数据库。
+
+
+## 本地待发布增量：批改工作台
+
+新增服务端分页、多维筛选、真实范围统计、会话内位置保留及受评分草稿保存保护的“下一份待评审”；首页改用限量摘录与全课准确总数，助教继续只读。详见 [批改工作台](docs/REVIEW-WORKBENCH.md)。不批量发布、不领取锁定任务；仍未发布或更新在线版本。
+
+
+## 当前版本一次性收尾（本地，未发布）
+
+四项收尾与七类后续范围见 [完成状态](docs/COMPLETION-STATUS.md)，统一验收结果见 [最终本地验收](docs/VALIDATION-FINAL-LOCAL.md)。
+
+```bash
+python3 scripts/local_preflight.py --verify-source
+bash scripts/verify-local.sh --install
+node scripts/qa-local.mjs --isolated-local --jobs 3
+```
+
+配置安全检查、Linux H2 停机备份/恢复、敏感文件保护与运行边界见 [本地运行维护](docs/LOCAL-OPERATIONS.md)。上述命令不部署、不更新在线数据库。登录期间在工作区加载完成前不展示可操作导航，失败可重试，避免首次导航被初始化流程覆盖。
