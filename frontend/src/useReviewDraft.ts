@@ -37,7 +37,7 @@ export function useReviewDraft(snapshot: () => any, apply: (data: any) => void, 
         if(sid!==id)return false;
         state.revision=result.draft.revision;state.savedAt=result.draft.updated_at;baseline=text;state.dirty=serialize()!==text;
         if(!state.dirty)clearBackup();else{localBackup();timer=setTimeout(save,1200);}return true;
-      }catch(e:any){state.error=e.message||'评分草稿保存失败';state.conflict=e instanceof ApiFailure&&e.status===409;localBackup();return false;}
+      }catch(e:any){if(sid!==id)return false;state.error=e.message||'评分草稿保存失败';state.conflict=e instanceof ApiFailure&&e.status===409;localBackup();return false;}
       finally{state.saving=false;flight=null;}
     })();return flight;
   }
@@ -52,6 +52,7 @@ export function useReviewDraft(snapshot: () => any, apply: (data: any) => void, 
   }
   function discardBackup(){clearBackup();state.backup=null;}
   function published(){clearTimeout(timer);clearBackup();state.dirty=false;state.conflict=false;state.error='';state.loaded=false;}
+  function suspend(){let recovery:any=null;if(state.dirty&&sid){const data={snapshot:snapshot(),baseRevision:state.baseRevision,savedAt:new Date().toISOString()};let persisted=false;try{const text=JSON.stringify(data);localStorage.setItem(key(),text);persisted=localStorage.getItem(key())===text;}catch{}recovery={submissionId:sid,data,persisted};}clearTimeout(timer);sid=0;state.loaded=false;state.dirty=false;return recovery;}
   onBeforeUnmount(()=>clearTimeout(timer));
-  return {state,load,save,flush,restore,discardStale,discardBackup,published};
+  return {state,load,save,flush,restore,discardStale,discardBackup,published,suspend};
 }
