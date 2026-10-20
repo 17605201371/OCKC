@@ -10,6 +10,8 @@ import {
 import { useEditor, EditorContent } from "@tiptap/vue-3";
 import { TableKit } from '@tiptap/extension-table';
 import katex from 'katex';
+import FormulaBuilder from './FormulaBuilder.vue';
+import { formulaTemplates, formulaSourceError, MAX_FORMULA_LENGTH } from './formulaBuilder';
 import 'katex/dist/katex.min.css';
 import { Figure, MathBlock, Callout } from './richBlocks';
 import { uploadImage } from './api';
@@ -63,10 +65,27 @@ const imageFile = ref<HTMLInputElement>();
 const media = ref({ src: '', alt: '', caption: '', source: '' });
 const mediaError = ref(''), mediaBusy = ref(false), mathLatex = ref(''), mathError = ref('');
 let mediaPosition: number | null = null, mathPosition: number | null = null;
-const mathPreview = computed(() => {
-  try { return katex.renderToString(mathLatex.value || '\\text{在下方输入公式}', { displayMode: true, throwOnError: true, trust: false, maxExpand: 100, maxSize: 20 }); }
-  catch { return ''; }
+const mathMode = ref<'latex'|'visual'>('latex'), mathSession = ref(0);
+let mathContext: { editor: any; entryId: number|undefined; document: string; blockId?: string } | null = null;
+const mathValidation = computed(() => {
+  const sourceError=formulaSourceError(mathLatex.value);if(sourceError)return {html:'',error:sourceError};
+  try{return {html:katex.renderToString(mathLatex.value,{displayMode:true,throwOnError:true,trust:false,maxExpand:100,maxSize:20}),error:''};}
+  catch{return {html:'',error:'公式语法无法排版，请检查括号与 LaTeX 命令'};}
 });
+const mathPreview=computed(()=>mathValidation.value.html);
+function applyStructure(latex:string){mathLatex.value=latex;mathError.value='';mathMode.value='latex';}
+function selectMathTemplate(latex:string){if(mathLatex.value.trim()&&mathLatex.value!==latex&&!confirm('使用模板将替换当前公式输入，是否继续？'))return;applyStructure(latex);}
+function cycleMathFocus(event:KeyboardEvent){
+  const dialog=mathDialog.value;if(!dialog)return;
+  const fields=[...dialog.querySelectorAll<HTMLElement>('button,input,select,textarea,a[href],[tabindex]')].filter(el=>el.tabIndex>=0&&!el.hasAttribute('disabled')&&el.getClientRects().length>0);
+  if(!fields.length){event.preventDefault();dialog.focus();return;}
+  const first=fields[0],last=fields[fields.length-1],active=document.activeElement;
+  if(!fields.includes(active as HTMLElement)||(event.shiftKey&&active===first)||(!event.shiftKey&&active===last)){
+    event.preventDefault();(event.shiftKey?last:first).focus();
+  }
+}
+function mathClosed(){const ctx=mathContext;mathContext=null;const e=editor.value;if(ctx&&e===ctx.editor&&e?.isEditable&&!props.readonly)e.commands.focus();}
+
 function showImage(node?: any, pos?: number) {
   mediaPosition = typeof pos === 'number' ? pos : null;
   media.value = node ? { ...node.attrs } : { src: '', alt: '', caption: '', source: '' };
@@ -97,16 +116,25 @@ function insertImage() {
   mediaDialog.value?.close();
 }
 function showMath(node?: any, pos?: number) {
+  const e=editor.value;if(!e || !e.isEditable || props.readonly)return;
   mathPosition = typeof pos === 'number' ? pos : null; mathLatex.value = node?.attrs?.latex || ''; mathError.value = ''; bubble.value = false;
-  savedSelection = { from: editor.value!.state.selection.from, to: editor.value!.state.selection.to };
+  mathMode.value='latex';mathSession.value++;
+  savedSelection = { from: e.state.selection.from, to: e.state.selection.to };
+  mathContext={editor:e,entryId:props.entryId,document:JSON.stringify(e.getJSON()),blockId:node?.attrs?.blockId};
   nextTick(() => mathDialog.value?.showModal());
 }
 function insertMath() {
-  if (!mathLatex.value.trim() || !mathPreview.value) { mathError.value = '请填写有效的 LaTeX 公式'; return; }
-  const e = editor.value; if (!e) return;
+  if (mathValidation.value.error) { mathError.value = mathValidation.value.error; return; }
+  const e = editor.value,ctx=mathContext;
+  if (!e || !ctx || e!==ctx.editor || props.readonly || !e.isEditable || props.entryId!==ctx.entryId || JSON.stringify(e.getJSON())!==ctx.document) {
+    mathError.value='正文或编辑权限已变化，未写入公式。请关闭设置，核对正文后重新打开。';return;
+  }
+  if(mathPosition!==null){const target=e.state.doc.nodeAt(mathPosition);if(target?.type.name!=='mathBlock'||target.attrs.blockId!==ctx.blockId){mathError.value='原公式位置已变化，未覆盖正文，请重新打开公式设置。';return;}}
   e.view.dispatch(closeHistory(e.state.tr));
-  if (mathPosition !== null) e.chain().focus().setNodeSelection(mathPosition).updateAttributes('mathBlock', { latex: mathLatex.value }).run();
-  else e.chain().focus().setTextSelection(savedSelection).insertContent([{ type: 'mathBlock', attrs: { latex: mathLatex.value, blockId: crypto.randomUUID() } }, { type: 'paragraph', attrs: { blockId: crypto.randomUUID() } }]).run();
+  // Insert after the selected range: opening a formula must never silently delete selected prose.
+  const ok=mathPosition!==null ? e.chain().focus().setNodeSelection(mathPosition).updateAttributes('mathBlock', { latex: mathLatex.value.trim() }).run()
+    : e.chain().focus().setTextSelection(savedSelection.to).insertContent([{ type: 'mathBlock', attrs: { latex: mathLatex.value.trim(), blockId: crypto.randomUUID() } }, { type: 'paragraph', attrs: { blockId: crypto.randomUUID() } }]).run();
+  if(!ok){mathError.value='当前位置无法插入公式，请关闭设置后选择普通正文段落重试。';return;}
   e.view.dispatch(closeHistory(e.state.tr));
   mathDialog.value?.close();
 }
@@ -131,7 +159,7 @@ let dismissedSlash = "";
 const commands = [
   { id: 'image', label: '图片与图注', detail: '上传示意图，补充图注和来源', hint: '图片', icon: ImagePlus, terms: 'image photo tupian 图片' },
   { id: 'table', label: '表格', detail: '对照概念、过程与数据', hint: '3 × 3', icon: Table2, terms: 'table biaoge 表格' },
-  { id: 'math', label: '公式', detail: '用 LaTeX 排版公式与反应式', hint: 'LaTeX', icon: Sigma, terms: 'math formula gongshi 公式' },
+  { id: 'math', label: '公式', detail: '可视化结构或 LaTeX 排版公式与反应式', hint: '公式', icon: Sigma, terms: 'math formula gongshi 公式' },
   { id: 'callout', label: '提示块', detail: '突出关键结论或常见误区', hint: '提示', icon: Lightbulb, terms: 'callout note tishi 提示' },
   {
     id: "paragraph",
@@ -730,13 +758,19 @@ onBeforeUnmount(() => {
         </div>
         <div class="writer-dialog-foot"><button class="btn secondary" :disabled="mediaBusy" @click="mediaDialog?.close()">取消</button><button class="btn primary" :disabled="mediaBusy" @click="insertImage">{{ mediaPosition !== null ? '更新图片' : '插入图片' }}</button></div>
       </dialog>
-      <dialog ref="mathDialog" class="writer-dialog math-dialog">
-        <div class="writer-dialog-head"><h2>插入学科公式</h2><button class="icon-btn" aria-label="关闭公式设置" @click="mathDialog?.close()"><X :size="19" /></button></div>
-        <div class="writer-dialog-content"><div class="formula-preview" v-if="mathPreview" v-html="mathPreview"></div><p v-else class="formula-preview muted">输入有效公式后显示排版预览</p>
-          <label>LaTeX 公式<textarea v-model="mathLatex" rows="4" maxlength="2000" placeholder="例如：ATP \rightarrow ADP + P_i" /></label>
-          <div class="formula-examples"><span>快速示例</span><button @click="mathLatex = 'ATP \\rightarrow ADP + P_i'">ATP 转化</button><button @click="mathLatex = 'E = mc^2'">能量</button><button @click="mathLatex = '\\frac{a}{b}'">分式</button></div>
-          <p class="small-note">使用 KaTeX 支持的 LaTeX 语法；不执行脚本或加载外部资源。</p><p v-if="mathError" role="alert" class="writer-field-error">{{ mathError }}</p>
-        </div><div class="writer-dialog-foot"><button class="btn secondary" @click="mathDialog?.close()">取消</button><button class="btn primary" @click="insertMath">确认公式</button></div>
+      <dialog ref="mathDialog" class="writer-dialog math-dialog" aria-labelledby="writer-math-title" @close="mathClosed" @keydown.tab="cycleMathFocus">
+        <div class="writer-dialog-head"><h2 id="writer-math-title">{{mathPosition!==null?'编辑学科公式':'插入学科公式'}}</h2><button type="button" class="icon-btn" aria-label="关闭公式设置" @click="mathDialog?.close()"><X :size="19" /></button></div>
+        <div class="writer-dialog-content">
+          <div class="formula-mode" role="group" aria-label="公式输入方式"><button type="button" :aria-pressed="mathMode==='latex'" @click="mathMode='latex'">LaTeX 输入</button><button type="button" :aria-pressed="mathMode==='visual'" @click="mathMode='visual'">可视化输入</button></div>
+          <FormulaBuilder v-show="mathMode==='visual'" :key="mathSession" @apply="applyStructure" />
+          <div v-show="mathMode==='latex'">
+            <div class="formula-preview" v-if="mathPreview" aria-label="公式排版预览" v-html="mathPreview"></div><p v-else class="formula-preview muted">输入有效公式后显示排版预览</p>
+            <label>LaTeX 公式<textarea v-model="mathLatex" rows="4" :maxlength="MAX_FORMULA_LENGTH" placeholder="例如：ATP \rightarrow ADP + P_i" autofocus @input="mathError=''" /></label>
+            <p class="small-note">{{mathLatex.length}} / {{MAX_FORMULA_LENGTH}} 字符 · 确认后写入正文；取消或 Escape 不修改正文。</p>
+          </div>
+          <div class="formula-examples" role="group" aria-label="常用公式模板"><span>快速模板</span><button v-for="t in formulaTemplates" :key="t.id" type="button" @click="selectMathTemplate(t.latex)">{{t.label}}</button></div>
+          <p class="small-note">公式只做符号排版，不代表结论已核验。模板仅供编辑参考；不执行脚本或加载外部资源。</p><p v-if="mathError" role="alert" class="writer-field-error">{{mathError}}</p>
+        </div><div class="writer-dialog-foot"><button type="button" class="btn secondary" @click="mathDialog?.close()">取消</button><button type="button" class="btn primary" :disabled="mathMode==='visual'" @click="insertMath">{{mathPosition!==null?'更新公式':'确认公式'}}</button></div>
       </dialog>
       <div
         v-if="slash && !readonly"

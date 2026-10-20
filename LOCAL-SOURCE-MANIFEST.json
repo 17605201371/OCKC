@@ -1,23 +1,29 @@
 {
-  "releaseStatus": "source-pushed-to-feature-branch-not-merged-not-deployed",
-  "createdAt": "2026-10-20T09:21:41.275379+00:00",
+  "releaseStatus": "visual-formula-source-submitted-feature-branch-not-merged-not-deployed",
+  "createdAt": "2026-10-20T12:10:00.468808+00:00",
   "publicSourceBaseline": "5e20e4053ddc4e598e90dec8c0c480136123f3a7",
-  "restoredPreviousSourceFiles": 153,
+  "githubBaselineCommit": "b211fd590db6c7ac3d5ee5beebe24417cf6f492c",
+  "retainedPreviousManifestFiles": 162,
   "backendTests": 279,
-  "frontendUnitChecks": 39,
+  "frontendUnitChecks": 51,
+  "formulaUnitGroups": 12,
   "localToolTests": 18,
   "browserSuites": {
-    "accounts": {
-      "checks": 20,
-      "screenshots": 7
+    "formula": {
+      "checks": 17,
+      "screenshots": 4
+    },
+    "studio": {
+      "checks": 19,
+      "screenshots": 12
     },
     "review": {
       "checks": 18,
       "screenshots": 8
     },
-    "studio": {
-      "checks": 19,
-      "screenshots": 12
+    "accounts": {
+      "checks": 20,
+      "screenshots": 7
     },
     "theme": {
       "checks": 10,
@@ -43,10 +49,6 @@
       "checks": 13,
       "screenshots": 8
     },
-    "publications": {
-      "checks": 10,
-      "screenshots": 9
-    },
     "members": {
       "checks": 12,
       "screenshots": 8
@@ -54,10 +56,14 @@
     "evidence": {
       "checks": 13,
       "screenshots": 9
+    },
+    "publications": {
+      "checks": 10,
+      "screenshots": 9
     }
   },
-  "browserCheckGroups": 185,
-  "screenshots": 103,
+  "browserCheckGroups": 202,
+  "screenshots": 107,
   "databaseRecoveryChecks": 8,
   "files": [
     {
@@ -73,7 +79,7 @@
     {
       "path": ".gitignore",
       "sha256": "23a475acc8b84ca2eecd72f057d6ea034d35087dfe3015374702b4ad70de214b",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "Dockerfile",
@@ -82,7 +88,7 @@
     },
     {
       "path": "README.md",
-      "sha256": "ce4bd80b8429345315e4c9abd2aa263b1c58f3d9cdf94325f9ea14a784df362e",
+      "sha256": "8d930688bd54713c3e6c8163dc4169918fd4e0af7f98f9e37c6d01b3f48ae359",
       "changedFromPreviousLocalSnapshot": true
     },
     {
@@ -397,7 +403,7 @@
     },
     {
       "path": "docs/COMPLETION-STATUS.md",
-      "sha256": "7fd89b17c99de04fcdbd85c9d30ce8d1abdf9ebfc60fc13b7381eb309a99f330",
+      "sha256": "66cf3e47e1cef6d617dd43ba2ab99921ad238816513d22299f055d2327e4f361",
       "changedFromPreviousLocalSnapshot": true
     },
     {
@@ -412,17 +418,17 @@
     },
     {
       "path": "docs/GITHUB-HANDOFF.md",
-      "sha256": "760c9bd68b506c7333d70966a7117cc6484b95917d274bb3f48f20ae10c9970e",
+      "sha256": "5e15a64d79c42185f5a311e27d3844cff123322e719210eca15fc2406cc65d6f",
       "changedFromPreviousLocalSnapshot": true
     },
     {
       "path": "docs/LOCAL-OPERATIONS.md",
-      "sha256": "46842035ebbb818dfcc4aaded551be5149b96bb273b311a899523604d4911bc3",
+      "sha256": "c09d8ab2967ba8188a90819861ee855f4b96c43ceb886219905606671cd4da29",
       "changedFromPreviousLocalSnapshot": true
     },
     {
       "path": "docs/LOCAL-RECOVERY.md",
-      "sha256": "256da3524d5a51163df17c160e3b2f463689e8d0aae46a7ce2bb50a074963bd3",
+      "sha256": "217c47a98a0ace1df4e520bcdfe4eeeef5616aa438e513b51dc2106384c89e85",
       "changedFromPreviousLocalSnapshot": true
     },
     {
@@ -483,11 +489,21 @@
     {
       "path": "docs/VALIDATION-FINAL-LOCAL.json",
       "sha256": "630c71298e6784721415a55b46357f077d756ee5ae4d99a56db648dadf433ce9",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "docs/VALIDATION-FINAL-LOCAL.md",
       "sha256": "0eb1ed41e2f87d5040ac8fa3c646e8d1f0e3147594e4f3f43af775b8157db518",
+      "changedFromPreviousLocalSnapshot": false
+    },
+    {
+      "path": "docs/VALIDATION-FORMULAS-LOCAL.json",
+      "sha256": "9be7a07c6e1e7a8f834caec619589413b369646113182b92c7674406b03e643c",
+      "changedFromPreviousLocalSnapshot": true
+    },
+    {
+      "path": "docs/VALIDATION-FORMULAS-LOCAL.md",
+      "sha256": "9c798891885936921e10b8e0b52af0c055fdfc6cf3d5fd8815d3202779ea27ed",
       "changedFromPreviousLocalSnapshot": true
     },
     {
@@ -526,18 +542,23 @@
       "changedFromPreviousLocalSnapshot": false
     },
     {
+      "path": "docs/VISUAL-FORMULAS.md",
+      "sha256": "1fe2fc3317dc33d81d6ee9eec3bdc2f3bfe4d137c2e8f98988fd6e7222ca4515",
+      "changedFromPreviousLocalSnapshot": true
+    },
+    {
       "path": "docs/WORKFLOW.md",
       "sha256": "39e0600d9d81804e22a14e303f5f5fdd0bbaf0e51fbb9d59c2aa9470b2065ab6",
       "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "docs/WRITING-EDITOR.md",
-      "sha256": "7f9a8bdc2dab4b4f125e47ae31422bdd237f0ee32f52b23753df9bbd39ea7324",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "273e1f2baecef8e2e50febf02b8f624487587517f8b818f3b423532940370404",
+      "changedFromPreviousLocalSnapshot": true
     },
     {
       "path": "docs/ci-final-proposed.yml",
-      "sha256": "de01c853e62b8db4cc2dd9c141be5590d81f7df9f0baa1ae73ab29a476cce088",
+      "sha256": "00c06d88833512416bc85eb27e65f151737a6267279387db176f01595a0aac85",
       "changedFromPreviousLocalSnapshot": true
     },
     {
@@ -557,8 +578,8 @@
     },
     {
       "path": "frontend/package.json",
-      "sha256": "e24cf5e387cd5a807468d60117889379cd53f50b4580a522b140195c4cd8203f",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "9f3a2c7a93aad42f11f507267d30f7451a4af4a32d3d82a8ee612e937fbecea7",
+      "changedFromPreviousLocalSnapshot": true
     },
     {
       "path": "frontend/public/assets/theme-init.js",
@@ -578,7 +599,7 @@
     {
       "path": "frontend/src/App.vue",
       "sha256": "8068d8e9130469c74e28d20d535127f8d90c9a8136bf0bfcfa32dca76b9cd20a",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "frontend/src/AssignmentManager.vue",
@@ -587,8 +608,8 @@
     },
     {
       "path": "frontend/src/Editor.vue",
-      "sha256": "eccb7a8e41d65873e6c341bc8ef34b488aa201fa6cd358e262f5e5f25fcda2f0",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "2ad6051a2f684db73b47d99caee560f1188409d71e6da29e0a5c6aadd2a3c86a",
+      "changedFromPreviousLocalSnapshot": true
     },
     {
       "path": "frontend/src/EvidenceWorkbench.vue",
@@ -599,6 +620,11 @@
       "path": "frontend/src/FigureView.vue",
       "sha256": "be85ff4ff6ff9dfdabb7e95fa53be8691eb3bfd4e282109483ac210c43103af4",
       "changedFromPreviousLocalSnapshot": false
+    },
+    {
+      "path": "frontend/src/FormulaBuilder.vue",
+      "sha256": "903ff96dd7a32dc22e4780ff965de605d5cc07353af397e2ee48481c938ede96",
+      "changedFromPreviousLocalSnapshot": true
     },
     {
       "path": "frontend/src/HomeDashboard.vue",
@@ -666,6 +692,11 @@
       "changedFromPreviousLocalSnapshot": false
     },
     {
+      "path": "frontend/src/formulaBuilder.ts",
+      "sha256": "8a27c14045213f93aa6d8dd9a21c228c9aaa8be84b72f8bed6b18e911cd50963",
+      "changedFromPreviousLocalSnapshot": true
+    },
+    {
       "path": "frontend/src/main.ts",
       "sha256": "a9a77d229d3df173585188d0cfcdeb479cf61b5a0028b67353b4f5998c9e3ad9",
       "changedFromPreviousLocalSnapshot": false
@@ -692,8 +723,8 @@
     },
     {
       "path": "frontend/src/style.css",
-      "sha256": "0c7c5263118ef3352c700e68f260e382f92ab67a571fbf39b399fdfa16eb915d",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "01210f2de9159acc67c9bb050f170da5a7054192914d35349dfa703d4450e6a3",
+      "changedFromPreviousLocalSnapshot": true
     },
     {
       "path": "frontend/src/theme.ts",
@@ -723,7 +754,7 @@
     {
       "path": "scripts/accounts-e2e.mjs",
       "sha256": "0e25581d4f125612cc00f8075290cfe4ef3da30ce6d5ea97741108a089f4e6f5",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "scripts/api-e2e.py",
@@ -733,7 +764,7 @@
     {
       "path": "scripts/assignment-e2e.mjs",
       "sha256": "83ef63440bc89cf13cd01589f07cd6ea8f5034cc5638cf7cdb08f652121153e2",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "scripts/capture-feedback-demo.mjs",
@@ -761,19 +792,29 @@
       "changedFromPreviousLocalSnapshot": false
     },
     {
+      "path": "scripts/formula-e2e.mjs",
+      "sha256": "f724dce7efa8f93f2093cea4cb921b5b8985e7b381b5f26cbfdf4970560e81f6",
+      "changedFromPreviousLocalSnapshot": true
+    },
+    {
+      "path": "scripts/formula-unit.mjs",
+      "sha256": "8c897fc61e4f925f7f3caab83aa84c9aafbfd0273edca5fbb4be23e848c41ba6",
+      "changedFromPreviousLocalSnapshot": true
+    },
+    {
       "path": "scripts/local_maintenance.py",
       "sha256": "67abb6031494e4c992e41e0aa45151ac8411568d6f1f741ceb4f5cb2f171adda",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "scripts/local_preflight.py",
       "sha256": "45fd4817835bf7214d4753f6954cb2ef69cc609cc78e9d288076381cdf5e5e5a",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "scripts/local_tools_test.py",
       "sha256": "aff9b7120bd2bb744a092c66799eeab17da9a9b76b5bdaa498cd150db283a2ef",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "scripts/markdown-test.mjs",
@@ -797,7 +838,7 @@
     },
     {
       "path": "scripts/qa-local.mjs",
-      "sha256": "d98e6253475dbb106e65d0c2cf338307696f31939ac8f6b6aa07db0af6c5f8b4",
+      "sha256": "d2b49197d73dfd6d254456bf8678ed4eba8d592a6e5f98155899a969bb385382",
       "changedFromPreviousLocalSnapshot": true
     },
     {
@@ -828,7 +869,7 @@
     {
       "path": "scripts/run-local.sh",
       "sha256": "15729c045cee1850aedca26d7a0b5e263ac0d28de67b6c60921805ae6a2b1b0c",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromPreviousLocalSnapshot": false
     },
     {
       "path": "scripts/seed-studio-example.mjs",
@@ -862,7 +903,7 @@
     },
     {
       "path": "scripts/verify-local.sh",
-      "sha256": "fa04671432d8a182e629dd13ecdea9706039b32fb7bb5bd758d5679ccb6aed5d",
+      "sha256": "43e0d978d5eb854c298e6be879e6874a99d8a71aefecb35d67e8f885f1b74fb8",
       "changedFromPreviousLocalSnapshot": true
     },
     {
@@ -876,10 +917,7 @@
       "changedFromPreviousLocalSnapshot": false
     }
   ],
-  "githubSubmission": {
-    "branch": "feat/validated-pc-baseline",
-    "workflowWriteBlocked": true,
-    "workflowProposal": "docs/ci-final-proposed.yml",
-    "handoff": "docs/GITHUB-HANDOFF.md"
-  }
+  "githubIncrementPushed": true,
+  "workflowWriteBlocked": true,
+  "workflowProposal": "docs/ci-final-proposed.yml"
 }

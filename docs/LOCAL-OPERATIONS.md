@@ -13,7 +13,7 @@ bash scripts/verify-local.sh --install  # 已安装依赖可省略 --install
 
 预检只读配置，不输出密码值。拒绝公开监听地址、非文件 H2、危险/不支持的 JDBC 选项和无效端口；启用演示数据时要求显式设置至少 12 字符、最多 72 UTF-8 字节的演示密码。源码清单逐项校验文件，不是数字签名，不能证明来源可信。
 
-验证执行 Python 工具测试、五组前端单元检查、TypeScript/Vite 构建及 Maven verify。构建前清理两处静态资源，避免旧哈希资源混入 JAR。后端测试使用测试库，不读取应用运行库。
+验证执行 Python 工具测试、六组前端单元检查（含公式结构与输入边界）、TypeScript/Vite 构建及 Maven verify。构建前清理两处静态资源，避免旧哈希资源混入 JAR。后端测试使用测试库，不读取应用运行库。
 
 ## 2. 本地启动
 
@@ -33,7 +33,7 @@ node scripts/qa-local.mjs --isolated-local --jobs 3
 node scripts/qa-local.mjs --isolated-local --suites accounts,studio,assignments --jobs 2
 ```
 
-必须先成功构建 JAR。可用 `CHROMIUM_PATH` 指定浏览器、`JAVA_HOME` 指定 Java。脚本不接受现有站点或数据库地址，为每个专项创建随机回环端口和全新文件库；密码随机生成，不打印。覆盖 12 个浏览器专项及实际数据库恢复集成。运行中的测试会创建、评价和审核**隔离演示记录**，不涉及在线作品。报告在 `.qa/acceptance-*/summary.json`；数据库、日志、截图及下载也只保存在本机，不随源码交付。含有个人记录的真实验收产物应按敏感资料管理。
+必须先成功构建 JAR。可用 `CHROMIUM_PATH` 指定浏览器、`JAVA_HOME` 指定 Java。脚本不接受现有站点或数据库地址，为每个专项创建随机回环端口和全新文件库；密码随机生成，不打印。覆盖 13 个浏览器专项（含可视化公式）及实际数据库恢复集成。运行中的测试会创建、评价和审核**隔离演示记录**，不涉及在线作品。报告在 `.qa/acceptance-*/summary.json`；数据库、日志、截图及下载也只保存在本机，不随源码交付。含有个人记录的真实验收产物应按敏感资料管理。
 
 ## 4. Linux H2 停机备份与恢复
 

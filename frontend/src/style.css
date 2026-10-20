@@ -4141,3 +4141,18 @@ dialog.account-settings::backdrop{background:#0007;}
 
 /* Reader/review return links must not inherit the writer-only hidden back-link rule. */
 .editor-heading > div:first-child > .review-return-link{display:inline-flex;margin-bottom:8px}
+
+/* Visual formula composition uses semantic surfaces in both themes. */
+.math-dialog { width: min(720px, calc(100vw - 32px)); }
+.formula-mode { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px; }
+.formula-mode button { padding:8px 14px; border:1px solid var(--border); border-radius:8px; color:var(--muted); background:var(--paper); }
+.formula-mode button[aria-pressed="true"] { color:var(--blue); background:var(--blue-soft); border-color:var(--blue); }
+.formula-builder { border:1px solid var(--border); border-radius:10px; padding:14px; background:var(--surface); }
+.formula-builder select { display:block; width:100%; margin-top:7px; }
+.formula-builder-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+.formula-builder-fields label { min-width:0; }
+.formula-builder-fields input { width:100%; min-width:0; }
+.formula-examples { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:16px; }
+.formula-examples button { border:1px solid var(--border); border-radius:7px; padding:6px 9px; color:var(--blue); background:var(--paper); }
+.math-dialog .writer-dialog-foot { flex-wrap:wrap; }
+@media(max-width:520px) { .formula-builder-fields { grid-template-columns:1fr; gap:0; } .math-dialog .writer-dialog-content { padding:16px; } }

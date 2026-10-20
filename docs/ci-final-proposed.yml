@@ -19,7 +19,7 @@ jobs:
           cache: maven
       - run: npm ci && npm run build
         working-directory: frontend
-      - run: npm run test:markdown && npm run test:deadlines && npm run test:theme:unit && npm run test:reports:unit && npm run test:review:unit
+      - run: npm run test:markdown && npm run test:deadlines && npm run test:theme:unit && npm run test:reports:unit && npm run test:review:unit && npm run test:formula:unit
         working-directory: frontend
       - run: python3 -m unittest discover -s scripts -p 'local_tools_test.py'
       - run: mkdir -p backend/src/main/resources/static && cp -R frontend/dist/. backend/src/main/resources/static/
