@@ -1,5 +1,5 @@
 {
-  "releaseStatus": "local-only-not-deployed-not-published",
+  "releaseStatus": "source-pushed-to-feature-branch-not-merged-not-deployed",
   "createdAt": "2026-10-20T09:21:41.275379+00:00",
   "publicSourceBaseline": "5e20e4053ddc4e598e90dec8c0c480136123f3a7",
   "restoredPreviousSourceFiles": 153,
@@ -69,11 +69,6 @@
       "path": ".env.example",
       "sha256": "e6aa1b25d9979555453dfb55e0fa86012aa36621a9e1b563b588dce223bc2ab3",
       "changedFromPreviousLocalSnapshot": false
-    },
-    {
-      "path": ".github/workflows/ci.yml",
-      "sha256": "de01c853e62b8db4cc2dd9c141be5590d81f7df9f0baa1ae73ab29a476cce088",
-      "changedFromPreviousLocalSnapshot": true
     },
     {
       "path": ".gitignore",
@@ -416,6 +411,11 @@
       "changedFromPreviousLocalSnapshot": false
     },
     {
+      "path": "docs/GITHUB-HANDOFF.md",
+      "sha256": "760c9bd68b506c7333d70966a7117cc6484b95917d274bb3f48f20ae10c9970e",
+      "changedFromPreviousLocalSnapshot": true
+    },
+    {
       "path": "docs/LOCAL-OPERATIONS.md",
       "sha256": "46842035ebbb818dfcc4aaded551be5149b96bb273b311a899523604d4911bc3",
       "changedFromPreviousLocalSnapshot": true
@@ -534,6 +534,11 @@
       "path": "docs/WRITING-EDITOR.md",
       "sha256": "7f9a8bdc2dab4b4f125e47ae31422bdd237f0ee32f52b23753df9bbd39ea7324",
       "changedFromPreviousLocalSnapshot": false
+    },
+    {
+      "path": "docs/ci-final-proposed.yml",
+      "sha256": "de01c853e62b8db4cc2dd9c141be5590d81f7df9f0baa1ae73ab29a476cce088",
+      "changedFromPreviousLocalSnapshot": true
     },
     {
       "path": "docs/ci-template.yml",
@@ -870,5 +875,11 @@
       "sha256": "9f2a3c65c7d85939e81f8b429e3de1fb9cef81610586d772e914a216475753b5",
       "changedFromPreviousLocalSnapshot": false
     }
-  ]
+  ],
+  "githubSubmission": {
+    "branch": "feat/validated-pc-baseline",
+    "workflowWriteBlocked": true,
+    "workflowProposal": "docs/ci-final-proposed.yml",
+    "handoff": "docs/GITHUB-HANDOFF.md"
+  }
 }
