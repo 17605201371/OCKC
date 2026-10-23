@@ -1,37 +1,39 @@
 {
-  "releaseStatus": "visual-formula-source-submitted-feature-branch-not-merged-not-deployed",
-  "createdAt": "2026-10-20T12:10:00.468808+00:00",
-  "publicSourceBaseline": "5e20e4053ddc4e598e90dec8c0c480136123f3a7",
-  "githubBaselineCommit": "b211fd590db6c7ac3d5ee5beebe24417cf6f492c",
-  "retainedPreviousManifestFiles": 162,
+  "releaseStatus": "latest-page-usability-and-dimension-lines-submitted-feature-branch-draft-pr-not-merged",
+  "createdAt": "2026-10-23T06:04:52.061890+00:00",
+  "basedOnCommit": "5dc16ca71ea4e4c7c8bdee6ccd22e2afb09d3ca5",
+  "githubPushed": true,
   "backendTests": 279,
   "frontendUnitChecks": 51,
-  "formulaUnitGroups": 12,
   "localToolTests": 18,
   "browserSuites": {
+    "polish": {
+      "checks": 9,
+      "screenshots": 6
+    },
     "formula": {
       "checks": 17,
       "screenshots": 4
-    },
-    "studio": {
-      "checks": 19,
-      "screenshots": 12
     },
     "review": {
       "checks": 18,
       "screenshots": 8
     },
+    "studio": {
+      "checks": 19,
+      "screenshots": 12
+    },
     "accounts": {
       "checks": 20,
-      "screenshots": 7
-    },
-    "theme": {
-      "checks": 10,
       "screenshots": 7
     },
     "progress": {
       "checks": 13,
       "screenshots": 9
+    },
+    "theme": {
+      "checks": 10,
+      "screenshots": 7
     },
     "workflow": {
       "checks": 17,
@@ -62,862 +64,902 @@
       "screenshots": 9
     }
   },
-  "browserCheckGroups": 202,
-  "screenshots": 107,
+  "browserCheckGroups": 211,
+  "screenshots": 113,
   "databaseRecoveryChecks": 8,
+  "workflowProposal": "docs/ci-final-proposed.yml",
   "files": [
     {
       "path": ".dockerignore",
       "sha256": "6574f059a91511ac175e204d74a2326aa3afbaecfbf966c07898a560d0b3520d",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": ".env.example",
       "sha256": "e6aa1b25d9979555453dfb55e0fa86012aa36621a9e1b563b588dce223bc2ab3",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": ".gitignore",
       "sha256": "23a475acc8b84ca2eecd72f057d6ea034d35087dfe3015374702b4ad70de214b",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "Dockerfile",
       "sha256": "35266227b0b37d0be34cfcdc26130f7e0477b9467285fb38039df836744c9abf",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "README.md",
-      "sha256": "8d930688bd54713c3e6c8163dc4169918fd4e0af7f98f9e37c6d01b3f48ae359",
-      "changedFromPreviousLocalSnapshot": true
+      "sha256": "1f1b649e64a04f4d4016d89d68125c85d5dc913197c1a2b8acb8024d6722f73a",
+      "changedFromGithubParent": true
     },
     {
       "path": "backend/.mvn/wrapper/maven-wrapper.properties",
       "sha256": "90da0b8373999aed95eb5626f3bf7afa54aa9268db0bae81b0f0bebf1db0a13c",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/mvnw",
       "sha256": "7e6e5d26712efd78140f2f63dafe8d17028f6c5c97ac1f746a043110b7a1d9ad",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/mvnw.cmd",
       "sha256": "1ea18e87640c404d8602406b639eaa3e33def63f064fd8a8099aa52d173076a6",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/pom.xml",
       "sha256": "3e78627d82c3f40181c7f5fc245f551cfb3ddca803397c2496a93593ab3cc1c0",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/AccountController.java",
       "sha256": "ca441c86e6003f59c4598b34ba3f909dfed51ada6301b7055aac10027115b7b0",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/AccountPrincipal.java",
       "sha256": "1a1307b7b606a7862c66f2ca41e46bcb0c248ef75b9157af67d24d0997f817b6",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/AccountService.java",
       "sha256": "64dc41efbde0ec9985d545a838fdbe2efe5a0306208e280decace9b6887a4a90",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/ApiController.java",
       "sha256": "633a1732af50023a9e8a46a14866fe69024a4c4da57d9c6982bc84a8a2993c1f",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/ApiError.java",
       "sha256": "900767c0d361b7956bc4ec77b0b47f455496a6a2949e9b4a4e50176d1244500f",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/Application.java",
       "sha256": "511cd7c7963c9570b679b0a7f6abff3e0f1ff7228d80b899e1cdce31366a7cfd",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/AssignmentManagement.java",
       "sha256": "c0142642e115d15e8d8f397bb6d4edc24260008c0df08e4c97c584744d78d662",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/CommunityService.java",
       "sha256": "aded0474bb1349cc0132e8fe17144b1e790b0a637515c4d9f1ec47a595377a26",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/CredentialVersionFilter.java",
       "sha256": "7a9581263d43a9dd98c01fc38a8d5102f141ad1d47d2e1f5c3ef6c531ff4f909",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/DemoSeed.java",
       "sha256": "4f2b23752dfd149725e756614c51aef026b399bbee0b5660488de034f43e4da4",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/EvidenceWorkbench.java",
       "sha256": "37b477dd8d9a26189e935ab0c85de819cf09723928d93a2059772308ec532a73",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/LoginThrottle.java",
       "sha256": "3863560821726a83a31e0ce5b786ebd5ec9854e1b37b62c9a48c59fa10f45c8c",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/MediaController.java",
       "sha256": "839245be846619fe86e510de0cf3b035f4c100f4f1bf508202b378b822bd0881",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/MemberManagement.java",
       "sha256": "245423135bbca7b0d4233e20b0d22f80b06addfd03cc34d755567b8f6fcf1f6e",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/NotificationService.java",
       "sha256": "ebeb4dc2d8647c1170b0ded320604a95d23683d0adfccb209c3aeeee8130a2e1",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/ProgressReportController.java",
       "sha256": "dcb44e0f62f7d9d1fb70e442e68a99a7dacd28fbb0309731c5ece6e428b0e874",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/ProgressReports.java",
       "sha256": "7b1ae4fd9ae41b923abc5041e1e34101c8c6921d58a3056f4956d98d4edb3220",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/ProgressWorkbench.java",
       "sha256": "d372e2fad8f0d617d0a1555e5e382d808e656458c43b03eb19a2120f2414c956",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/QualityCalculator.java",
       "sha256": "166f4073a1bedfa2cf3cbb87ac33d4192598d8b94bf8ed090c8e7baa62e08ee7",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/ReviewDraftService.java",
       "sha256": "0293a58fe67d1bb79f6a4e5a2b4ce8c88a5dcc587f79624f5dc2ec80ea68e493",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/ReviewWorkbench.java",
       "sha256": "8ea95730ed028c51b2d2dc814bca7f81b94647fa0ea2240fde11abb1ef6fa1a4",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/RubricController.java",
       "sha256": "2e84e176eca705ff404ef993e21b6ed7f9590a313eece9b193b846220d850eff",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/RubricService.java",
       "sha256": "4dcbd75ab3ecf4e8c0c591a13c79346418baf755454a06d82af846585505156e",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/SecurityConfig.java",
       "sha256": "afec939e7a3c6c3e3241571bd42166718674e1d444cd510d0918d6d7cf13ddd3",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/Store.java",
       "sha256": "68d9a40e7445d0d01b73321be3fb1a9875b572fa2d11de7b3b457a64a300b520",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/java/cn/course/community/WorkflowController.java",
       "sha256": "d97340e869af2d42638c6729c49f5c487f0c1aa86c85ff13d42b42c2f734d9d3",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/application.yml",
       "sha256": "dde22c43df17de0db1d8e936298f5993c9bf8a8bfb27d03551bf58bf4540ece2",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V10__versioned_course_rubrics.sql",
       "sha256": "b632b1f56eadc1f797e61f000fd11a311c44556c62223f5928053268617512b9",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V1__initial.sql",
       "sha256": "cc42d691886fd49752d5a7e527826f311db6876b3956e895c59cb4d136abc385",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V2__entry_media.sql",
       "sha256": "26ee43e49dd0101f963e12dad24d03a6b0b341e088fec4a054575555d99edb5a",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V3__assignment_ai_policy.sql",
       "sha256": "3a1a58466bbeaaf3731a15d5f0f9215b1a6e87ef42b091bbfab2db05c404b44b",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V4__workflow_notifications_and_review_drafts.sql",
       "sha256": "7f719143be00c9cd3b8d2383f2785986e77425f172db3714a544708d73ac9bdc",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V5__assignment_management.sql",
       "sha256": "8e3e51fc82bc2ed4fc5aa85da7657390d988d37ffa23ac1beda4dedbe9ff0d94",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V6__course_membership_management.sql",
       "sha256": "7d676f552b76d1e3e2e90486888a89ad00bebf737effab6709881ac2c27d18a6",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V7__verification_role_snapshot.sql",
       "sha256": "e0f1ff63cad05a081cc1ae7260bad0453ae58fba7097a0525f268bb86a3abb5a",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V8__publication_history.sql",
       "sha256": "e7f1def236f71d5f7a375a729d5abd571597ec46fee30abdbaa7f82cc53e20df",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/main/resources/db/migration/V9__account_settings.sql",
       "sha256": "1ec776b8580ab1529f56613b1dbae786fe97415026aadfb1d42b48e5a230486c",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/AccountSettingsTest.java",
       "sha256": "c4037289940047cd234b253f2b517b94eaab18f918c038af29436912a653dc61",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/AiPolicyIntegrationTest.java",
       "sha256": "52711e0fb985ac05f610910a8cc330fef6e125fad8c95d0c00ccdb9f5e755ad7",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/ApiIntegrationTest.java",
       "sha256": "e1b0bf3a40d091d82b157eaf630b30c2b0a518a12f4a34faea63d2c199ad9ba4",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/AssignmentManagementTest.java",
       "sha256": "dc85af92dcd23e94a1cc050b9d882b4105a21f65470215395edd5430f55b0721",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/DocumentContentTest.java",
       "sha256": "0597f0879525188e738b87c35c8deeca55e30387fd7a82fc82870eba5bbee402",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/EvidenceWorkbenchTest.java",
       "sha256": "9113a8495f7adb6950f7f137e6092e31e67cc40ff49e613eee02ad5f8585b4d6",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/MediaIntegrationTest.java",
       "sha256": "de99f0a13688727ce74d71874f9bd4ca87ce46796bc04e51cf898050ed637a06",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/MemberManagementTest.java",
       "sha256": "631315c06772c45fff912da2eab8f0d91c51cd14f8797d94c96f498a9d51e956",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/NotificationWorkbenchTest.java",
       "sha256": "6ee21351650534ea538e0a66e0847e3b3ba64aa2d11ab7a2a511a7b7707f1387",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/ProgressReportsTest.java",
       "sha256": "bcddc82f2bf80e5145fec7c9e0df49548048f44c5f9c1bfc88b35f1fc39de766",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/ProgressWorkbenchTest.java",
       "sha256": "5bdda8a89dae9d84b4bee3b003c9b33c7adf77c481dfa27184ee9d39aac559a7",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/PublicationWorkflowTest.java",
       "sha256": "62d92f263da313d60c0720b78285b68c97cefabc35cbfa479b9dcf51d5de6ec8",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/QualityCalculatorTest.java",
       "sha256": "76e66746c9f44be6d653e45417925fb093fad21f8972bf2de56090a872e33383",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/ReviewWorkbenchTest.java",
       "sha256": "5647bdbc0617d28ff235c32cf717897884e20f2811d11818b99fbd833b1ede29",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/RubricServiceTest.java",
       "sha256": "81cb7e2608040c30f8a5c1bbc314d90374c521d9dc9f3e173145310616a08965",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "backend/src/test/java/cn/course/community/WorkflowIntegrationTest.java",
       "sha256": "439d0fdf6eb6f39c1f508baeaa6c6a6c807b2efc6c12082ba3a7a092be8300de",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "compose.yml",
       "sha256": "449ed8dc268e8d8b95871b7c8bed4a1a7ae6a64eeb08ad8bb9ed068cffb831f0",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/ACCOUNT-SETTINGS.md",
       "sha256": "b4d035b3aa3bd4934315df18e17628534adc93c4677bdeb472088b02a9f056b6",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/API.md",
       "sha256": "5d4354cd9e8f30938f7d0d83239b97da5d1267ec4355604c35a692f8da73eb58",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/ARCHITECTURE.md",
       "sha256": "a0a8904fd94599df5aa442f8241557f6e23a6eb0ed449568374ce82804845e03",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/ASSIGNMENT-MANAGEMENT.md",
       "sha256": "e8e7f3415967e07b00db2046dd4346ecd70359e96584b72c9e1a089858a8e1e0",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/COMPLETION-STATUS.md",
       "sha256": "66cf3e47e1cef6d617dd43ba2ab99921ad238816513d22299f055d2327e4f361",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
+    },
+    {
+      "path": "docs/DIMENSION-LINES.md",
+      "sha256": "cb2edeeb046aaa0d3895387aebc8fcd01c433a60a7fb4497e5c569c4b2cd6155",
+      "changedFromGithubParent": true
     },
     {
       "path": "docs/EVIDENCE-WORKBENCH.md",
       "sha256": "8eedab735a0b6e7a679251d1263338af6f494d03294cdc08e9bc1e2b17a2ab5a",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/FEEDBACK-SIDEBAR.md",
       "sha256": "8fffb070d61dd4c8c2e3489c142ef3f5fb08118d6f82b1396578dbe6e2ecbd48",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/GITHUB-HANDOFF.md",
-      "sha256": "5e15a64d79c42185f5a311e27d3844cff123322e719210eca15fc2406cc65d6f",
-      "changedFromPreviousLocalSnapshot": true
+      "sha256": "2b5d0056288a43180c42755c880b6ff86d7afd9244ac7b4f97eed2e26b178709",
+      "changedFromGithubParent": true
     },
     {
       "path": "docs/LOCAL-OPERATIONS.md",
       "sha256": "c09d8ab2967ba8188a90819861ee855f4b96c43ceb886219905606671cd4da29",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/LOCAL-RECOVERY.md",
       "sha256": "217c47a98a0ace1df4e520bcdfe4eeeef5616aa438e513b51dc2106384c89e85",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/MEMBERS.md",
       "sha256": "9e9b8a3c30e0e961023a00a39cf81e2012fb258e70e16a787568331cf3ca6032",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/NOTIFICATION-WORKBENCH.md",
       "sha256": "b83231af0649b4a88404a8991f5e5a610d039b181c7fba333db5e0e2f8de3d79",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
+    },
+    {
+      "path": "docs/PAGE-USABILITY.md",
+      "sha256": "66a246cdff2eb949d866a1c3d39a1672e91ae77277fec30cb3b4e816e5e8463d",
+      "changedFromGithubParent": true
     },
     {
       "path": "docs/PROGRESS-REPORTS.md",
       "sha256": "ac4c86eae8070cdc9c82959734d756ba4bc3cc17b6bcfeb4be94ed86c6e8bc3a",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/PROGRESS-WORKBENCH.md",
       "sha256": "3064c9728be10a79441017b1e36ccb8a082b6ddb05762ab7f23c5ebde114516c",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/PUBLICATIONS.md",
       "sha256": "e543d4a28e85cf61382c5099b082fc11c617431c14422673796ef3a869d6cfc6",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/RENDER-DEMO.md",
       "sha256": "e6619c0f6bdbe7424f508ca3df64845b3ebed91233d9267c881ead18d7cc9236",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/REVIEW-WORKBENCH.md",
       "sha256": "5b244df08abcf4bbabd8d5625a8bb3759bb34abf9c54b3a15f7f3c0deba682f9",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/RUBRIC-VERSIONS.md",
       "sha256": "0fa19f4a67160f83ddc176173957aed0310a3ee39f24770a162497c99a6bf3ab",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/THEME-AND-MEDIA.md",
       "sha256": "5068df32c15c8c9358a1cf1cfad685d38e8b7a63c70001ad30567a001d273f77",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/UI-REDESIGN.md",
       "sha256": "8b8da5cdee111910a1b0a59bd0119c5eec6709015c62bdb9849fa77861b53f7d",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION-ACCOUNTS-LOCAL.md",
       "sha256": "d859817032698aa39de9507b6a75d32ea775f00746ca5014f09669054f4f70c0",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
+    },
+    {
+      "path": "docs/VALIDATION-DIMENSION-LINES-LOCAL.json",
+      "sha256": "b7a03afbd05360bfa3e607c2de8fb1ae420170cd75a262b72bea3d2ef629fd07",
+      "changedFromGithubParent": true
     },
     {
       "path": "docs/VALIDATION-FINAL-LOCAL.json",
       "sha256": "630c71298e6784721415a55b46357f077d756ee5ae4d99a56db648dadf433ce9",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION-FINAL-LOCAL.md",
       "sha256": "0eb1ed41e2f87d5040ac8fa3c646e8d1f0e3147594e4f3f43af775b8157db518",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION-FORMULAS-LOCAL.json",
       "sha256": "9be7a07c6e1e7a8f834caec619589413b369646113182b92c7674406b03e643c",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION-FORMULAS-LOCAL.md",
       "sha256": "9c798891885936921e10b8e0b52af0c055fdfc6cf3d5fd8815d3202779ea27ed",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
+    },
+    {
+      "path": "docs/VALIDATION-PAGE-USABILITY-LOCAL.json",
+      "sha256": "2a76ecbd256ef3a8012b856ca343d883555e7e2b54eb57d63d5f17510f17df5b",
+      "changedFromGithubParent": true
+    },
+    {
+      "path": "docs/VALIDATION-PAGE-USABILITY-LOCAL.md",
+      "sha256": "5abe96074f99cbc3b25482b4bd8c382a1adb23877698417d4dd9d0dfd7f68f90",
+      "changedFromGithubParent": true
     },
     {
       "path": "docs/VALIDATION-REPORTS-LOCAL.json",
       "sha256": "03d2c09564f00ba601a6a0c4b3db12dd56c0d21f0020a404404d603585287ee0",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION-REPORTS-LOCAL.md",
       "sha256": "e962e1f6491b3e9ba3138734009e196915b5d20bdf217fd592ba1b8c7acda50f",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION-REVIEW-LOCAL.json",
       "sha256": "a47d5e6b61ce9c06385e5f2aa9545047704c5f152f5242a089a8e427674e3e29",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION-REVIEW-LOCAL.md",
       "sha256": "f6d8f0cf2f0f2ee828f40e29cd8e4c2c76c2df4ab6ae2b32ac57456746ff1be7",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION-RUBRICS-LOCAL.json",
       "sha256": "fecc2a8da5c47205ecbf15291f3f450820858179a51713bad761f9c04510adef",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION-RUBRICS-LOCAL.md",
       "sha256": "d08b500883715ed245fd1befd084dd241d8d1886f9fb496ba003c23520e1f7ee",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VALIDATION.md",
       "sha256": "3f5e4380f3e1cfd55de994b97c496c0823469dd0e8611733d78e72e237e5dad3",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/VISUAL-FORMULAS.md",
       "sha256": "1fe2fc3317dc33d81d6ee9eec3bdc2f3bfe4d137c2e8f98988fd6e7222ca4515",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/WORKFLOW.md",
       "sha256": "39e0600d9d81804e22a14e303f5f5fdd0bbaf0e51fbb9d59c2aa9470b2065ab6",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/WRITING-EDITOR.md",
       "sha256": "273e1f2baecef8e2e50febf02b8f624487587517f8b818f3b423532940370404",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/ci-final-proposed.yml",
       "sha256": "00c06d88833512416bc85eb27e65f151737a6267279387db176f01595a0aac85",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "docs/ci-template.yml",
       "sha256": "e5c4ac626ac0b62e466e88ed860f985c9ccf4da50a7ef1970fc1ed832e1b411f",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/index.html",
       "sha256": "8a9e3cafb5df69b729f9b181fab490198015628264c164983b9491b22c1656f5",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/package-lock.json",
       "sha256": "2d3531c8698c417ff35c4e44dd78dd3c714e0a839d699001f96a0fce227f4783",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/package.json",
       "sha256": "9f3a2c7a93aad42f11f507267d30f7451a4af4a32d3d82a8ee612e937fbecea7",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/public/assets/theme-init.js",
       "sha256": "63a41029676779489f6b52f2f8947a678e9bd95fe595bf572c129914f3b45390",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/AccountSettings.vue",
       "sha256": "9df4e7ad1b202e0ea6117abf9d760e05012661356c06cead6934b54c1541a545",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/AiFeedback.vue",
       "sha256": "e287d0c40c39c864207523ccb4162566304c10fa5e85b44012cd85f28742811b",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/App.vue",
-      "sha256": "8068d8e9130469c74e28d20d535127f8d90c9a8136bf0bfcfa32dca76b9cd20a",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "cb432b3804e9cb50b9ef8c28438f0b25809cc55eb306c74da4e60f424aa00cb8",
+      "changedFromGithubParent": true
     },
     {
       "path": "frontend/src/AssignmentManager.vue",
       "sha256": "98a1716df02eede49d3dbefc0e34ae6e194926b0594a903a7285f606c7587a35",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/Editor.vue",
-      "sha256": "2ad6051a2f684db73b47d99caee560f1188409d71e6da29e0a5c6aadd2a3c86a",
-      "changedFromPreviousLocalSnapshot": true
+      "sha256": "3348be2cffee06d4c16f90354a4ae3fc609d468e04c5ab47fd04b2dd0c4d84d0",
+      "changedFromGithubParent": true
     },
     {
       "path": "frontend/src/EvidenceWorkbench.vue",
       "sha256": "e379d826be880a6b2bfc2ee7b7ab5a2445b258816e0d2efa0a36fa80d927f468",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/FigureView.vue",
-      "sha256": "be85ff4ff6ff9dfdabb7e95fa53be8691eb3bfd4e282109483ac210c43103af4",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "668bc1b424ace8748ae08309ea4f9177ca6e14cc97e08ff11b6e939d2a5a794b",
+      "changedFromGithubParent": true
     },
     {
       "path": "frontend/src/FormulaBuilder.vue",
       "sha256": "903ff96dd7a32dc22e4780ff965de605d5cc07353af397e2ee48481c938ede96",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/HomeDashboard.vue",
-      "sha256": "0a17ccf8b82d50aa8e98121512702e6b0be1f52088078b206c0dd56b697735ff",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "7b71dba84c2da55a00f85cbcd99d04488e80b472edb89d3cb31803042f2a3f59",
+      "changedFromGithubParent": true
     },
     {
       "path": "frontend/src/MathView.vue",
       "sha256": "35df20e026470d2c8e39b26891671f6046141ff40f38973dd38b780d6372eceb",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/MembersPage.vue",
       "sha256": "f055c4010aa7e2b8ddba470d7af6f0bc866ed52d04f9d63a138494b5bdffd8e6",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/NotificationCenter.vue",
       "sha256": "49cca1dace4d02342dc56e74646bd8407a1a1b9d2ac411d115b042640fd090bc",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/ProgressPage.vue",
       "sha256": "e92844737558c08c74afd88b24a1e7026bf731e592adf20fb1d8c221cc8df251",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/PublicationManager.vue",
       "sha256": "1b366a9a3eda3e2e1b08a9c32e05c2f99d67d5b61b7faa32f9790e77f1d7c026",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/QualitySummary.vue",
       "sha256": "8f6cb42647a0ab7e50fd0581605d1501fee98abb88a4e603d969ab0090310bb0",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/ReportExport.vue",
-      "sha256": "b4ad3a51d2e4aa89bf7405f05e282df05bd7ee8f14f21e18dadbb1c88c4d3e0a",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "e4bee51647253131a36bab883e76261e3cf10c8fd884533475b822b649cd9fbd",
+      "changedFromGithubParent": true
     },
     {
       "path": "frontend/src/ReviewWorkbench.vue",
-      "sha256": "6e8688c6a673f4b6460bc5a07ccede3fad5e7e1d415cf617e637d83927510fa9",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "05aa20c2ba80dfcebd391ac58a03eb3a9805b49652a22708f84315f8ea188512",
+      "changedFromGithubParent": true
     },
     {
       "path": "frontend/src/RubricViewer.vue",
       "sha256": "c816cc78478018ec2f3240404ac85d0652a1d6ddd3a04e1c1c621125ccd5256b",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/RubricWorkbench.vue",
       "sha256": "3a3293736370be20c89165e05ef78b6497b3635681bcb6e27ce6487cc0bf15cf",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/api.ts",
       "sha256": "02d621a46275edd030bbe2cbcae8f5f167eec8f980c762c3fccc3c76a43eb1b5",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/deadlines.ts",
       "sha256": "e60fd8896f8369650bc0b79dbf682f5a7d468041db4607541059052f0a7b0b09",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/formulaBuilder.ts",
       "sha256": "8a27c14045213f93aa6d8dd9a21c228c9aaa8be84b72f8bed6b18e911cd50963",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/main.ts",
       "sha256": "a9a77d229d3df173585188d0cfcdeb479cf61b5a0028b67353b4f5998c9e3ad9",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/markdown.ts",
       "sha256": "af8e690215047ff4f7e56174b7565be0d234fc0a7fa8888c7b58b4a5b40a6df9",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/reportExport.ts",
       "sha256": "4a3311b6bde675e050f39f6044c2c30479efc9d5cfca69ed1a3cfbfb48d44534",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/reviewQuery.ts",
       "sha256": "76bd38c19d3122ecfbc8d4390eec8f136a81a4e43984b8be25f0fff4b4d03a72",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/richBlocks.ts",
       "sha256": "505895fec65eeab44ccdc1e502fd5a55522ef7d78a7a00ccdfe9a360ad81eef9",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/style.css",
-      "sha256": "01210f2de9159acc67c9bb050f170da5a7054192914d35349dfa703d4450e6a3",
-      "changedFromPreviousLocalSnapshot": true
+      "sha256": "7a7d98a8e644b2f64553d7985add476fd5fb3b05128f6d16246a8319119d7c09",
+      "changedFromGithubParent": true
     },
     {
       "path": "frontend/src/theme.ts",
       "sha256": "5a856676d01d8d90300b168a4ec18ef7d7184e14ec7dc25b4722c772c285b1b5",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/src/useReviewDraft.ts",
       "sha256": "94c773a1a71e630f2797e4c1da0658bda3ff9abb51d56a82177d3e0626d30f33",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/tsconfig.json",
       "sha256": "4ee7c6e1e704f0f1a2230133a58df62afc00bd9f7ba5c04dd202648b76480e30",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "frontend/vite.config.ts",
       "sha256": "531b80bb340bf8702a06514264b0f5bc0e2952fb9e99879508f4906b4017cafc",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "render.yaml",
       "sha256": "6670f55b061b187d703f0377059a90bce54c3fc933314b05955b1f4e281eb57c",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/accounts-e2e.mjs",
       "sha256": "0e25581d4f125612cc00f8075290cfe4ef3da30ce6d5ea97741108a089f4e6f5",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/api-e2e.py",
       "sha256": "20e9fce1ef51603c0e58ed43027192e5acf8fb9642aab698e9b971512f228554",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/assignment-e2e.mjs",
       "sha256": "83ef63440bc89cf13cd01589f07cd6ea8f5034cc5638cf7cdb08f652121153e2",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/capture-feedback-demo.mjs",
       "sha256": "13ecb017f9b700c29087c05fff6605a117371cb4ccaaa06bda61cf69489930e5",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/capture-studio-demo.mjs",
       "sha256": "6f0235af63d5c673f099436bf820bceea5e095180f5d3956bd5122d30e4ed9a2",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/deadline-test.mjs",
       "sha256": "e00abd4b590eeab83ec10f51fe68b41b7eb3c2a43a9c26e51894989cd9b81938",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
+    },
+    {
+      "path": "scripts/dimensions-e2e.mjs",
+      "sha256": "43c12f12db673705cbbf5c9a3a1225427d52c414c31481a67be565f43d32fca4",
+      "changedFromGithubParent": true
     },
     {
       "path": "scripts/evidence-e2e.mjs",
       "sha256": "f25a7150c33db0115dea203fbb21581b3445e625d5cb2d04cf99c4c7bdcebca3",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/fixtures/photosynthesis.svg",
       "sha256": "40491546761fe168ace6890db1fe255f3914ee5cb28d7904d40d37d72da2101f",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/formula-e2e.mjs",
       "sha256": "f724dce7efa8f93f2093cea4cb921b5b8985e7b381b5f26cbfdf4970560e81f6",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/formula-unit.mjs",
       "sha256": "8c897fc61e4f925f7f3caab83aa84c9aafbfd0273edca5fbb4be23e848c41ba6",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/local_maintenance.py",
       "sha256": "67abb6031494e4c992e41e0aa45151ac8411568d6f1f741ceb4f5cb2f171adda",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/local_preflight.py",
       "sha256": "45fd4817835bf7214d4753f6954cb2ef69cc609cc78e9d288076381cdf5e5e5a",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/local_tools_test.py",
       "sha256": "aff9b7120bd2bb744a092c66799eeab17da9a9b76b5bdaa498cd150db283a2ef",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/markdown-test.mjs",
       "sha256": "523392c05d381ac6a4fd073b4e84ff326895959bf73a8d49ae0720c0e1c25b5c",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/members-e2e.mjs",
       "sha256": "c0c24c44c098a74e912d07fcc95c423ee7f6ffb085f36d607b62b008b8b95723",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
+    },
+    {
+      "path": "scripts/polish-e2e.mjs",
+      "sha256": "821de595b8dcf775f60184e6736a7b43eccf42094cf58605e2328f5f86a6d814",
+      "changedFromGithubParent": true
     },
     {
       "path": "scripts/progress-e2e.mjs",
       "sha256": "a4b15c442c65b22ce5cb9a2f0eded1c4dfd7baefb39ee942cae316b55ce216a1",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/publication-e2e.mjs",
       "sha256": "59963f11c084ff54bdfed0a4122e5bd423616af68ede265e5411302e7659cf1a",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/qa-local.mjs",
-      "sha256": "d2b49197d73dfd6d254456bf8678ed4eba8d592a6e5f98155899a969bb385382",
-      "changedFromPreviousLocalSnapshot": true
+      "sha256": "9d6dad6ff13e9363c4bf1e279794df056ee95717a6b0b98aee3345bddffc6498",
+      "changedFromGithubParent": true
     },
     {
       "path": "scripts/reports-e2e.mjs",
       "sha256": "2cea0509a506c56d7b882413a21177c2a34a746c25e15c7827064dca2335e6e4",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/reports-unit.mjs",
       "sha256": "244cfc2583ad5cdcdc8d698036b620e60f776e725c1ef6e88472cf38612a8e60",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/review-e2e.mjs",
-      "sha256": "f2827ff4bc6b24e00764bdb8094670f754f30eabe83c3ab1bd54b726c5a0ea6d",
-      "changedFromPreviousLocalSnapshot": false
+      "sha256": "2c8e81e04b2a44f7b9281f253e8b05770023900d651159c243739cebd725daa7",
+      "changedFromGithubParent": true
     },
     {
       "path": "scripts/review-unit.mjs",
       "sha256": "87742c6f48577e3173296929f8841f5c6a91b758d3de2f2e14a8662da917b5bf",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/rubric-e2e.mjs",
       "sha256": "b3b9cf4156368e374fec96833d136dd84fc4cb22d666805593aebcbcabfb2cfc",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/run-local.sh",
       "sha256": "15729c045cee1850aedca26d7a0b5e263ac0d28de67b6c60921805ae6a2b1b0c",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/seed-studio-example.mjs",
       "sha256": "9dc7c240f371cebda14c60fa5db03d3366158f611b06d72a21d629bd3c75a913",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/sidebar-e2e.mjs",
       "sha256": "a95e64c89083da2dd171144c373833a0f65a0e70c148bd0b38a5ac35f809071d",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/studio-e2e.mjs",
       "sha256": "7413e3915396bfef2b03f58ffa5383986dde31d80b7c61c2d72f2a3b7fcedc13",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/theme-e2e.mjs",
       "sha256": "0780fd331907b0a2ade4eda81b0c081b1c8439d5bcf926b6ff183abf1f198ac4",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/theme-test.mjs",
       "sha256": "1f617273e029476ff1ddc96559f8676e53ed1bb54ef6dad54e0ddfb0fe3fc06d",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/ui-smoke.mjs",
       "sha256": "f4846dd9e7850748aea57173b0a992597091c71137fe2004c7cf3f2a05fddfde",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/verify-local.sh",
       "sha256": "43e0d978d5eb854c298e6be879e6874a99d8a71aefecb35d67e8f885f1b74fb8",
-      "changedFromPreviousLocalSnapshot": true
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/workflow-e2e.mjs",
       "sha256": "1dff24fccf490859366e5a45cf6ed2181580623098bcfbf396a8145b7d5da40d",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     },
     {
       "path": "scripts/writer-e2e.mjs",
       "sha256": "9f2a3c65c7d85939e81f8b429e3de1fb9cef81610586d772e914a216475753b5",
-      "changedFromPreviousLocalSnapshot": false
+      "changedFromGithubParent": false
     }
   ],
+  "retainedPreviousManifestFiles": 174,
+  "currentIncrementValidation": "docs/VALIDATION-DIMENSION-LINES-LOCAL.json",
   "githubIncrementPushed": true,
-  "workflowWriteBlocked": true,
-  "workflowProposal": "docs/ci-final-proposed.yml"
+  "githubSubmitParent": "5dc16ca71ea4e4c7c8bdee6ccd22e2afb09d3ca5",
+  "previousValidation": "docs/VALIDATION-PAGE-USABILITY-LOCAL.json",
+  "currentIncrementBrowserGroups": 24,
+  "workflowWriteBlocked": true
 }

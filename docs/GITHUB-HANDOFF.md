@@ -27,3 +27,16 @@ GitHub 连接可以提交普通源码，但修改 `.github/workflows/ci.yml` 时
 新增六类公式结构、六个科学模板、安全插入与键盘焦点保护，以及 12 组单元检查和 17 组公式浏览器检查。最终本地回归为后端 279、前端 51、工具 18、13 浏览器专项 202 组、恢复 8 组，结果保留原执行时间，不冒充 GitHub Actions 在线通过。
 
 工作流权限限制仍未解除：分支不添加 `.github/workflows/ci.yml`，最新预期配置保留在 `docs/ci-final-proposed.yml`。清单按实际分支内容计算并排除未写入的工作流。没有提交密码、运行数据或构建产物。继续保持草稿 PR，不合并主分支、不发布 Release、不部署或更新在线数据库。
+
+
+## 页面易用性与四维质量横线版 GitHub 提交
+
+用户明确要求提交最新版本，因此本次将基于 `5dc16ca71ea4e4c7c8bdee6ccd22e2afb09d3ca5` 的两轮已验收增量一起提交至原功能分支 `feat/validated-pc-baseline`。PR #1 保持草稿，不合并 main，不创建 Release。本次提交动作不执行部署、不修改任何运行数据库。
+
+内容包括：桌面长文操作栏与动态侧栏避让、编辑器弹窗中间滚动/底部操作保持可见、评分填写进度与缺项定位、折叠高级筛选及顶部翻页、独立图片工具栏、辅助字号/报告时间/量规版本展示，以及首页四维质量四条横线。分数来源、真实零分/未评分、教师只读概览与现有正式评价保护保持原语义。
+
+- 页面易用性增量实际本地验证：后端 279、前端 51、工具 18；14 浏览器套件 211 组、113 张截图；另有停机恢复 8 组。见 VALIDATION-PAGE-USABILITY-LOCAL.md/.json。
+- 随后的首页横线增量：最终构建通过；dimensions 5、polish 9、theme 10，共 24 组、16 张截图。该增量未改后端，未重新运行后端测试。见 VALIDATION-DIMENSION-LINES-LOCAL.json。
+- 验收文件中的“未提交”与 githubPushed=false 描述各次验收时的历史状态，不冒充新的测试执行或 GitHub Actions 成功。源码清单的 previousValidation 和 currentIncrementValidation 区分两轮结果。
+
+此前用户已另行授权临时演示，临时链接可能随沙箱/通道停止失效，不等于长期正式部署。账号密码、数据库、日志、构建产物与测试截图均不提交。现有 GitHub 工作流写入权限限制保持不变，本次不尝试写入 .github/workflows/*；参考配置继续保存在 docs/ci-final-proposed.yml。

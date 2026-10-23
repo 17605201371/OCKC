@@ -762,6 +762,7 @@ onBeforeUnmount(() => {
         <div class="writer-dialog-head"><h2 id="writer-math-title">{{mathPosition!==null?'编辑学科公式':'插入学科公式'}}</h2><button type="button" class="icon-btn" aria-label="关闭公式设置" @click="mathDialog?.close()"><X :size="19" /></button></div>
         <div class="writer-dialog-content">
           <div class="formula-mode" role="group" aria-label="公式输入方式"><button type="button" :aria-pressed="mathMode==='latex'" @click="mathMode='latex'">LaTeX 输入</button><button type="button" :aria-pressed="mathMode==='visual'" @click="mathMode='visual'">可视化输入</button></div>
+          <p class="formula-step-note">{{mathMode==='visual' ? '第 1 步：填写结构并应用；第 2 步：检查 LaTeX 预览后确认。' : '检查公式预览后，点击底部按钮写入正文；取消不会修改正文。'}}</p>
           <FormulaBuilder v-show="mathMode==='visual'" :key="mathSession" @apply="applyStructure" />
           <div v-show="mathMode==='latex'">
             <div class="formula-preview" v-if="mathPreview" aria-label="公式排版预览" v-html="mathPreview"></div><p v-else class="formula-preview muted">输入有效公式后显示排版预览</p>

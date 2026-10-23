@@ -5,6 +5,18 @@ import EvidenceWorkbench from "./EvidenceWorkbench.vue";
 import PublicationManager from "./PublicationManager.vue";
 import ReviewWorkbench from "./ReviewWorkbench.vue";
 import {defaultReviewQuery,reviewParams,reviewAdvanceBlocked,type ReviewQuery} from "./reviewQuery";
+// Measure wrapped toolbars so sticky side panels never sit beneath them.
+const actionObservers = new WeakMap<HTMLElement, ResizeObserver>();
+const vWorkspaceActions = {
+  mounted(el: HTMLElement) {
+    const measure = () => el.parentElement?.style.setProperty('--workspace-action-height', Math.ceil(el.getBoundingClientRect().height) + 'px');
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    actionObservers.set(el, observer);
+  },
+  unmounted(el: HTMLElement) { actionObservers.get(el)?.disconnect(); actionObservers.delete(el); },
+};
 const reviewFilters=ref<ReviewQuery>(defaultReviewQuery()),reviewNavScope=ref<ReviewQuery|null>(null),reviewQueueSummary=ref<any>(null),nextReviewBusy=ref(false),nextReviewMessage=ref('');
 async function openReviewRow(value:any){reviewFilters.value={...value.filters};if(await openVersion(value.id,true,true))reviewNavScope.value={...value.filters};}
 async function nextReview(){if(nextReviewBusy.value||busy.value)return;nextReviewBusy.value=true;nextReviewMessage.value='';try{if(reviewAdvanceBlocked(review.state,isTeacher.value)){error.value='请先处理评分草稿的加载、恢复或冲突提示，再切换提交。';return;}if(!await flushBeforeLeave())return;const id=cid.value,uid=me.value?.id,epoch=accessEpoch,sid=version.value?.id,scope={...(reviewNavScope.value||defaultReviewQuery())};const params=reviewParams(scope,true);params.set('excludeId',String(sid));const result=await api(`/courses/${id}/review-workbench/next?${params}`);if(id!==cid.value||uid!==me.value?.id||epoch!==accessEpoch||page.value!=='grading'||version.value?.id!==sid)return;if(!result.item){nextReviewMessage.value='当前队列范围没有其他待评审提交。可返回队列调整筛选。';return;}await openVersion(result.item.id,true,true);reviewNavScope.value=scope;}catch(e:any){error.value=e.message||'无法读取下一份提交，当前评分仍保留';}finally{nextReviewBusy.value=false;}}
@@ -241,6 +253,25 @@ const filteredPubs = computed(() => {
   const rows = publications.value.filter(p => (p.title + p.author_name).toLowerCase().includes(query.value.toLowerCase()));
   return publicationSort.value === 'quality' ? rows.sort((a, b) => Number(b.q_final) - Number(a.q_final)) : rows;
 });
+// Completion is only an editing aid; server validation and publish guards stay authoritative.
+function criterionComplete(i: any) {
+  return i.status === 'NA' ? !!i.reason?.trim() : i.status === 'SCORED' &&
+    i.score !== null && i.score !== '' && Number.isFinite(Number(i.score)) && Number(i.score) >= 0 && Number(i.score) <= 100;
+}
+const completedCriteria = computed(() => grading.value.filter(criterionComplete).length);
+async function jumpToMissingCriterion() {
+  const item = grading.value.find(i => !criterionComplete(i));
+  if (!item) return;
+  panelVisible.value = true;
+  await nextTick();
+  const input = document.getElementById('score-' + item.code);
+  const dimension = input?.closest('details');
+  if (dimension) dimension.open = true;
+  await nextTick();
+  const target = item.status === 'NA' ? input?.closest('.grading-item')?.querySelector<HTMLInputElement>('input[placeholder="填写不适用理由"]') : item.status === 'PENDING' ? input?.parentElement?.querySelector('select') : input;
+  target?.scrollIntoView({block:'nearest'});
+  target?.focus({preventScroll:true});
+}
 const previewScore = computed(() => {
   const dims: Record<string, number> = {};
   for (const d of rubric) {
@@ -1405,7 +1436,7 @@ onBeforeUnmount(() => {
         <EvidenceWorkbench v-else-if="page==='evidence'" :key="cid" :course-id="cid" :user-id="me.id" :role="course?.role||''" :assignments="assignments" :focus="evidenceFocus" @changed="refreshCourse" @open-submission="evidenceSubmission" />
 
         <section v-else-if="page === 'editor' && entry" class="editing-page knowledge-workbench">
-          <div class="editor-heading">
+          <div class="editor-heading" v-workspace-actions>
             <div>
               <button class="text-btn muted" @click="go('assignments')">
                 <ArrowLeft :size="16" />返回作业
@@ -1658,7 +1689,7 @@ onBeforeUnmount(() => {
         >
           <p v-if="page==='grading'&&nextReviewMessage" role="status" class="review-next-status">{{nextReviewMessage}}</p>
           <p v-if="page==='grading'&&reviewNavScope" class="review-next-status muted">下一份沿用进入时的队列范围和排序，只选择无正式评价的提交；不会跳过草稿保存，也不会自动发布。</p>
-          <div class="editor-heading">
+          <div class="editor-heading" v-workspace-actions>
             <div>
               <button
                 class="text-btn muted review-return-link"
@@ -1887,7 +1918,13 @@ onBeforeUnmount(() => {
                   }}
                 </p>
               </div>
-              <p class="notice">本提交量规：{{version.rubricSnapshot?.title}} · {{version.rubric_version}} <button class="text-btn" @click="openRubric">查看本提交量规</button></p>
+              <p class="notice">本提交量规：{{version.rubricSnapshot?.title}} · <code class="rubric-version-chip" :title="version.rubric_version">{{version.rubric_version}}</code> <button class="text-btn" @click="openRubric">查看本提交量规</button></p>
+              <div v-if="isTeacher" class="grading-completion" aria-label="评分填写进度">
+                <strong>已填写 {{completedCriteria}} / {{grading.length}} 项</strong>
+                <progress :value="completedCriteria" :max="grading.length" aria-label="评分指标填写进度"></progress>
+                <p>有效分或已说明理由的 N/A 计为已填写；待核验仍需处理。填写完成不等于可发布。</p>
+                <button class="text-btn" :disabled="completedCriteria===grading.length || !review.state.loaded || review.state.loading || reviewPublishing || !!review.state.stale || !!review.state.backup || review.state.conflict" @click="jumpToMissingCriterion">定位下一项待填写</button>
+              </div>
               <fieldset class="review-form" :disabled="!isTeacher || reviewPublishing || review.state.loading || !review.state.loaded || !!review.state.stale || !!review.state.backup || review.state.conflict">
               <details
                 v-for="d in rubric"

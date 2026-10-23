@@ -137,6 +137,13 @@ function date(d: string) {
       })
     : "—";
 }
+function dimensionValue(key: string): number | null {
+  if (props.staff) return null;
+  const value = props.homeSubmission?.evaluation?.dimensions?.[key];
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+}
 function score(n: any) {
   return n == null ? "—" : Number(n).toFixed(1);
 }
@@ -440,31 +447,16 @@ const today = new Date().toLocaleDateString("zh-CN", {
               <SlidersHorizontal :size="17" />
             </button>
           </header>
-          <div
-            v-if="!staff && homeSubmission?.evaluation"
-            class="home-dimensions"
-          >
-            <div
-              v-for="[key, label] in [
-                ['S', '科学性'],
-                ['A', '准确性'],
-                ['C', '完整性'],
-                ['L', '逻辑性'],
-              ]"
-              :key="key"
-            >
-              <span
-                ><i>{{ key }}</i
-                >{{ label }}</span
-              ><strong>{{
-                score(homeSubmission.evaluation.dimensions[key])
-              }}</strong>
+          <div class="home-dimensions" aria-label="四维质量分数">
+            <div v-for="[key, label] in [['S', '科学性'], ['A', '准确性'], ['C', '完整性'], ['L', '逻辑性']]" :key="key" class="home-dimension-row">
+              <span class="home-dimension-label"><i>{{key}}</i>{{label}}</span>
+              <div class="home-dimension-track" :class="{'is-unscored':dimensionValue(key)===null}" :role="dimensionValue(key)!==null?'progressbar':'img'" :aria-label="label+(dimensionValue(key)===null?'暂无正式评分':'质量分')" :aria-valuemin="dimensionValue(key)!==null?0:undefined" :aria-valuemax="dimensionValue(key)!==null?100:undefined" :aria-valuenow="dimensionValue(key)??undefined" :aria-valuetext="dimensionValue(key)===null?undefined:score(dimensionValue(key))+' / 100'">
+                <span v-if="dimensionValue(key)!==null" class="home-dimension-fill" :style="{width:dimensionValue(key)+'%'}"></span>
+              </div>
+              <strong>{{score(dimensionValue(key))}}</strong>
             </div>
           </div>
-          <div v-else class="rubric-intro">
-            <p>科学性 · 准确性<br />完整性 · 逻辑性</p>
-            <span>11 项指标，四个维度等权。</span>
-          </div>
+          <p class="home-dimension-note">{{staff?'11 项指标，四个维度等权；此处不显示班级均分。':homeSubmission?.evaluation?'当前作品正式评价 · 各维度占 25%':'尚无正式评分，未评分不计零分。'}}</p>
           <button class="card-link" @click="emit('navigate', 'rubric')">
             查看课程量规<ArrowUpRight :size="15" />
           </button>
