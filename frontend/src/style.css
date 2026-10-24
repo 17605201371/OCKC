@@ -4032,6 +4032,14 @@ summary:focus-visible {
 .management-state { display:flex; justify-content:space-between; gap:16px; font-size:13px; padding:12px; background:var(--surface); border-radius:6px; }
 .management-state span,.management-help { color:var(--muted); }
 .management-help { font-size:12px; line-height:1.85; margin:12px 0 20px; }
+/* 次数上限：两个数字输入并排，提示文字压在输入框下方 */
+.limit-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:4px 0 12px; }
+.limit-row label { margin:0; }
+.field-hint { display:block; margin-top:6px; font-size:11px; line-height:1.6; color:var(--muted); font-weight:400; }
+@media (max-width:720px) { .limit-row { grid-template-columns:1fr; } }
+/* 编辑器顶部：剩余提交版本提示 */
+.submit-quota { align-self:center; font-size:12px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
+.submit-quota.done { color:#b45309; }
 .assignment-manager footer { display:flex; justify-content:space-between; align-items:center; gap:12px; padding-top:22px; }
 .assignment-manager footer > div { display:flex; gap:14px; align-items:center; }
 .assignment-manager .notice-error { display:flex; gap:8px; align-items:flex-start; }
@@ -4311,6 +4319,17 @@ dialog.account-settings::backdrop{background:#0007;}
 /* ---------- 知识社区 ---------- */
 .community-page .page-heading { margin-bottom: 16px; }
 .comm-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; flex-wrap: wrap; }
+/* 社区可见范围切换：独立于下方的状态标签页 */
+.comm-scopes { display:inline-flex; gap:2px; padding:3px; margin-bottom:14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
+.comm-scope { border:0; background:transparent; color:var(--muted); font-size:13px; padding:6px 14px; border-radius:7px; cursor:pointer; transition:background .15s,color .15s; }
+.comm-scope:hover { color:var(--text); }
+.comm-scope.on { background:var(--paper); color:var(--text); font-weight:600; box-shadow:0 1px 2px rgb(15 23 42 / 8%); }
+/* 发布申请：可见范围选择 */
+.visibility-choice { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:14px 0; }
+.visibility-choice legend { font-size:12px; color:var(--muted); padding:0 6px; }
+.visibility-choice label { display:flex; gap:8px; align-items:center; margin:8px 0; font-size:13px; font-weight:400; }
+.visibility-choice label input { width:auto; margin:0; }
+.visibility-choice p { margin:8px 0 0; font-size:12px; }
 .comm-tab { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 10px 12px; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; }
 .comm-tab:hover { color: var(--text); }
 .comm-tab.on { color: var(--text); font-weight: 600; border-bottom-color: var(--text); }

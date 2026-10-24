@@ -35,6 +35,8 @@ public class ApiController {
  public record AiSuggestionStateRequest(@NotBlank @Pattern(regexp="OPEN|ADOPTED|DISMISSED") String state){}
  @PostMapping("/ai-suggestions/{id}/state") public Object aiSuggestionState(@PathVariable long id,@Valid @RequestBody AiSuggestionStateRequest r,Principal p){service.setAiSuggestionState(id,r.state(),uid(p));return Map.of("ok",true);}
  @PostMapping("/assignments/{aid}/entries") public Object start(@PathVariable long aid,Principal p){return service.start(aid,uid(p));}
+ public record FreeEntryRequest(@NotBlank @Size(max=160) String title){}
+ @PostMapping("/courses/{cid}/free-entries") public Object freeEntry(@PathVariable long cid,@Valid @RequestBody FreeEntryRequest r,Principal p){return service.createFreeEntry(cid,r.title(),uid(p));}
  @GetMapping("/entries/{eid}") public Object getEntry(@PathVariable long eid,Principal p){return service.getEntry(eid,uid(p));}
  @PutMapping("/entries/{eid}/draft") public Object save(@PathVariable long eid,@Valid @RequestBody DraftRequest r,Principal p){return service.save(eid,r,uid(p));}
  @PostMapping("/entries/{eid}/submissions") public Object submit(@PathVariable long eid,@RequestHeader("Idempotency-Key") String key,@Valid @RequestBody SubmitRequest r,Principal p){if(!key.matches("[a-zA-Z0-9_-]{8,80}"))throw ApiError.fail(422,"幂等键格式不正确");return service.submit(eid,r.revision(),key,uid(p));}
@@ -47,12 +49,12 @@ public class ApiController {
  @GetMapping("/evidence/{id}/verifications") public Object verifications(@PathVariable long id,Principal p){return service.verifications(id,uid(p));}
  @PostMapping("/evidence/{id}/verifications") public Object verify(@PathVariable long id,@Valid @RequestBody VerifyRequest r,Principal p){service.verify(id,r.verdict(),r.reason(),uid(p));return Map.of("ok",true);}
  @PostMapping("/submissions/{sid}/publication") public Object requestPub(@PathVariable long sid,Principal p){service.requestPublication(sid,uid(p));return Map.of("ok",true);}
- @GetMapping("/courses/{cid}/publications") public Object pubs(@PathVariable long cid,@RequestParam(defaultValue="false") boolean pending,Principal p){return service.publications(cid,uid(p),pending);}
+ @GetMapping("/courses/{cid}/publications") public Object pubs(@PathVariable long cid,@RequestParam(defaultValue="false") boolean pending,@RequestParam(defaultValue="COURSE") String scope,Principal p){return service.publications(cid,uid(p),pending,scope);}
  @PostMapping("/publications/{id}/actions") public Object pubAction(@PathVariable long id,@Valid @RequestBody ActionRequest r,Principal p){service.publicationAction(id,r.action(),uid(p));return Map.of("ok",true);}
  public record PublicationDecision(@NotBlank @Pattern(regexp="APPROVE|RETURN|WITHDRAW") String action,@NotBlank @Size(max=2000) String reason,@NotNull @Min(0) Integer revision){}
- public record PublicationRequest(@NotNull @Min(0) Integer revision,@NotNull @Size(max=2000) String reason){}
+ public record PublicationRequest(@NotNull @Min(0) Integer revision,@NotNull @Size(max=2000) String reason,@Pattern(regexp="COURSE|PUBLIC") String visibility){}
  @GetMapping("/courses/{cid}/publication-records") public Object publicationRecords(@PathVariable long cid,Principal p){return service.publicationRecords(cid,uid(p));}
  @GetMapping("/publications/{id}/review") public Object publicationReview(@PathVariable long id,Principal p){return service.publicationReview(id,uid(p));}
  @PostMapping("/publications/{id}/decisions") public Object publicationDecision(@PathVariable long id,@Valid @RequestBody PublicationDecision r,Principal p){service.publicationAction(id,r.action(),uid(p),r.revision(),r.reason());return Map.of("ok",true);}
- @PostMapping("/submissions/{sid}/publication-request") public Object publicationRequest(@PathVariable long sid,@Valid @RequestBody PublicationRequest r,Principal p){service.requestPublication(sid,uid(p),r.revision(),r.reason());return Map.of("ok",true);}
+ @PostMapping("/submissions/{sid}/publication-request") public Object publicationRequest(@PathVariable long sid,@Valid @RequestBody PublicationRequest r,Principal p){service.requestPublication(sid,uid(p),r.revision(),r.reason(),r.visibility());return Map.of("ok",true);}
 }

@@ -243,12 +243,37 @@ const navName = computed(
 const currentAssignment = computed(() =>
   assignments.value.find((a) => a.id === entry.value?.assignment_id),
 );
+// 提交次数上限（0 = 不限）：用于在编辑器里提示剩余版本，并在用尽后禁用提交。
+const submitLimit = computed(() => Number(currentAssignment.value?.max_submissions ?? 0));
+const submittedCount = computed(() => (entry.value?.versions || []).length);
+const submitExhausted = computed(
+  () => submitLimit.value > 0 && submittedCount.value >= submitLimit.value,
+);
 const pendingQueue = computed(() => queue.value.filter((q) => q.q_final === null));
 const pendingReviewCount=computed(()=>reviewQueueSummary.value?.pending_count??pendingQueue.value.length);
 watch([()=>cid.value,()=>me.value?.id,()=>course.value?.role],()=>{reviewFilters.value=defaultReviewQuery();reviewNavScope.value=null;reviewQueueSummary.value=null;nextReviewMessage.value='';});
 const myWork = computed(() => assignments.value.filter((a) => a.entry_id));
 const commTab = ref("all"),
   commStatus = ref("all");
+// 社区可见范围：本课程 / 我参与的所有课程 / 全站公开（仅作者授权公开的帖子）。
+const commScope = ref("COURSE");
+const commScopes = [
+  { id: "COURSE", name: "本课程" },
+  { id: "MINE", name: "我的课程" },
+  { id: "PUBLIC", name: "全站公开" },
+];
+async function loadCommunity() {
+  const activeCourse = cid.value, epoch = accessEpoch;
+  const rows = await api(
+    `/courses/${cid.value}/publications?scope=${commScope.value}`,
+  );
+  if (activeCourse !== cid.value || epoch !== accessEpoch) return;
+  publications.value = rows;
+}
+watch(commScope, () => {
+  commTab.value = "all";
+  loadCommunity().catch((e) => notify(e.message || "无法切换社区范围"));
+});
 const commSource = computed(() => [
   ...publications.value.map((p: any) => ({ ...p, _pending: false })),
   ...(isTeacher.value ? pending.value.map((p: any) => ({ ...p, _pending: true })) : []),
@@ -682,6 +707,31 @@ async function logout() {
     courses.value = [];
     toast.value = "";
     page.value = "home";
+  });
+}
+// 自由创作：直接新建知识帖，不挂在作业下；提交后仍走教师审核与正式评价。
+async function newFreePost() {
+  const title = prompt("给这篇知识帖起个标题（之后可在编辑器里改）");
+  if (title === null) return;
+  if (!title.trim()) {
+    notify("标题不能为空");
+    return;
+  }
+  await run(async () => {
+    if (!(await flushBeforeLeave())) return;
+    const epoch = accessEpoch, uid = me.value?.id, courseId = cid.value;
+    const e = await api(`/courses/${courseId}/free-entries`, "POST", {
+      title: title.trim(),
+    });
+    if (epoch !== accessEpoch || uid !== me.value?.id || courseId !== cid.value)
+      return;
+    entry.value = e;
+    await loadEditorState();
+    if (entry.value?.id !== e.id) return;
+    page.value = "editor";
+    menu.value = false;
+    await refreshCourse();
+    notify("已新建知识帖；提交后由任课教师审核");
   });
 }
 async function openAssignment(a: any) {
@@ -1153,7 +1203,7 @@ async function modalSubmit() {
         rubricId:Number(f.rubricId),
       });
       await refreshCourse();
-      notify(`作业已创建，量规锁定为 ${created.rubric_version}`);
+      notify(`作业已创建`);
     }
     if (modal.value === "course") {
       const c = await api("/courses", "POST", {
@@ -1584,6 +1634,11 @@ onBeforeUnmount(() => {
                 <Plus :size="17" />发布作业
               </button>
             </div>
+            <div v-else-if="!isStaff" class="button-row">
+              <button class="btn secondary" :disabled="busy" @click="newFreePost">
+                <PenLine :size="16" />写知识贴
+              </button>
+            </div>
           </div>
           <div class="list-tabs" role="group" aria-label="作业筛选">
             <button
@@ -1612,13 +1667,18 @@ onBeforeUnmount(() => {
             >
               <div class="card-top">
                 <span class="file-icon"><FileText :size="22" /></span
-                ><span class="badge blue">知识帖</span>
+                ><span class="badge blue">{{ a.free_form ? '自由创作' : '知识帖' }}</span>
               </div>
               <h2>{{ a.title }}</h2>
               <p>{{ a.requirements }}</p>
               <div class="meta-line">
-                <Clock :size="16" />{{ fmt(a.due_at) }} 截止
-                <span class="deadline-badge" :class="assignmentState(a,deadlineNow).toLowerCase()">{{ a.manually_closed ? '已结束' : dueLabel(assignmentState(a,deadlineNow)) }}</span>
+                <template v-if="a.free_form"
+                  ><PenLine :size="16" />自由创作 · 不受截止时间限制</template
+                >
+                <template v-else
+                  ><Clock :size="16" />{{ fmt(a.due_at) }} 截止
+                  <span class="deadline-badge" :class="assignmentState(a,deadlineNow).toLowerCase()">{{ a.manually_closed ? '已结束' : dueLabel(assignmentState(a,deadlineNow)) }}</span></template
+                >
               </div>
               <div class="assignment-ai-policy">
                 <div><span><Sparkles :size="14" />AI 修改建议</span><small>{{ a.ai_feedback_enabled ? '已开放入口 · 服务待配置' : '未开放 · 学生端不显示' }}</small></div>
@@ -1626,8 +1686,7 @@ onBeforeUnmount(() => {
                 <span v-else class="small-label">{{ a.ai_feedback_enabled ? '已开启' : '未开启' }}</span>
               </div>
               <div class="assignment-foot"><button v-if="isTeacher" class="btn secondary manage-assignment-btn" @click="managedAssignment={...a}"><SlidersHorizontal :size="14"/>管理作业</button>
-                <span class="muted">{{ a.rubric_version }}</span
-                ><button
+                <button
                   class="text-btn"
                   :disabled="busy || (!isStaff && !a.entry_id && assignmentState(a,deadlineNow)==='CLOSED')"
                   @click="isStaff ? go('review') : openAssignment(a)"
@@ -1665,8 +1724,32 @@ onBeforeUnmount(() => {
               <h1>知识社区</h1>
               <p>同学们共同撰写、评议与核验的知识条目。</p>
             </div>
-            <button class="btn secondary" @click="go('assignments')">
-              去创作 <Plus :size="15" />
+            <div class="button-row">
+              <button
+                v-if="!isStaff"
+                class="btn primary"
+                :disabled="busy"
+                @click="newFreePost"
+              >
+                写知识贴 <PenLine :size="15" />
+              </button>
+              <button class="btn secondary" @click="go('assignments')">
+                去作业 <Plus :size="15" />
+              </button>
+            </div>
+          </div>
+
+          <div class="comm-scopes" role="radiogroup" aria-label="可见范围">
+            <button
+              v-for="s in commScopes"
+              :key="s.id"
+              class="comm-scope"
+              :class="{ on: commScope === s.id }"
+              role="radio"
+              :aria-checked="commScope === s.id"
+              @click="commScope = s.id"
+            >
+              {{ s.name }}
             </button>
           </div>
 
@@ -1850,12 +1933,18 @@ onBeforeUnmount(() => {
                 @click="saveDraftAndReturn"
               >
                 <Save :size="17" />保存草稿</button
+              ><span
+                v-if="submitLimit > 0"
+                class="submit-quota"
+                :class="{ done: submitExhausted }"
+                :title="submitExhausted ? '本作业的提交次数已用完，仍可保存草稿' : '本作业最多可提交 ' + submitLimit + ' 个版本'"
+              >已提交 {{ submittedCount }}/{{ submitLimit }}</span
               ><button
                 class="btn primary"
-                :disabled="saving || busy || conflicted || uploadingMedia || (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED')"
+                :disabled="saving || busy || conflicted || uploadingMedia || submitExhausted || (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED')"
                 @click="submit"
               >
-                <Send :size="17" />{{ currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED' ? (currentAssignment?.manually_closed?'作业已结束':'作业已截止') : '提交评审' }}
+                <Send :size="17" />{{ submitExhausted ? '提交次数已用完' : (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED' ? (currentAssignment?.manually_closed?'作业已结束':'作业已截止') : '提交评审') }}
               </button>
             </div>
           </div>
@@ -2172,8 +2261,7 @@ onBeforeUnmount(() => {
             </aside>
             <div class="document-column">
               <div class="document-paper" @mouseup="captureSelection">
-                <span class="eyebrow"
-                  >{{ version.rubric_version }} · 不可变提交版本</span
+                <span class="eyebrow">不可变提交版本</span
                 >
                 <h2 class="reader-title">{{ version.title }}</h2>
                 <div class="document-meta">
@@ -2354,7 +2442,6 @@ onBeforeUnmount(() => {
                 <section class="grade-block">
                   <div class="grade-block-head">
                     <h4>内容质量</h4>
-                    <span>{{ version.rubric_version }}</span>
                   </div>
                   <div v-for="d in rubric" :key="d.d" class="grade-dim">
                     <span class="grade-dim-name"
