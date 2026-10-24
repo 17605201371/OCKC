@@ -64,35 +64,54 @@ public class CommunityService {
   if(!enabled)return Map.of("enabled",false,"status","DISABLED","suggestions",List.of(),"formalScore",false);
   if(aiKey==null||aiKey.isBlank())return Map.of("enabled",true,"status","NOT_CONFIGURED","suggestions",List.of(),"formalScore",false);
   int rev=((Number)e.get("revision")).intValue();
-  var cached=s.db.queryForList("SELECT payload_json FROM ai_feedback_cache WHERE entry_id=? AND revision=?",eid,rev);
-  if(!cached.isEmpty()){
-   var node=decode(cached.getFirst().get("payload_json"));var list=new ArrayList<Map<String,Object>>();
-   for(var item:node.path("suggestions"))list.add(Map.of("dimension",item.path("dimension").asText("C"),"title",item.path("title").asText(""),"body",item.path("body").asText("")));
-   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"cached",true,"model",aiModel);
-  }
+  var saved=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY id",eid,rev);
+  if(!saved.isEmpty())return Map.of("enabled",true,"status","READY","suggestions",saved,"formalScore",false,"saved",true,"model",aiModel);
   if(!generate)return Map.of("enabled",true,"status","NOT_GENERATED","suggestions",List.of(),"formalScore",false,"model",aiModel);
-  String body=text(decode(e.get("draft_json")));
-  if(body.isBlank())return Map.of("enabled",true,"status","EMPTY","suggestions",List.of(),"formalScore",false);
-  if(body.length()>6000)body=body.substring(0,6000);
+  var paragraphs=anchors(decode(e.get("draft_json")));
+  if(paragraphs.isEmpty()||text(decode(e.get("draft_json"))).isBlank())return Map.of("enabled",true,"status","EMPTY","suggestions",List.of(),"formalScore",false);
+  // 只把段落标识与正文交给模型，图片与证据原文不出网。
+  StringBuilder listing=new StringBuilder();
+  for(var en:paragraphs.entrySet()){
+   String value=en.getValue().trim();
+   if(value.isEmpty())continue;
+   listing.append('[').append(en.getKey()).append("] ").append(value).append('\n');
+   if(listing.length()>6000)break;
+  }
   String title=(String)e.get("title");
   try{
-   String content=requestSuggestions(title,body);
+   String content=requestSuggestions(title,listing.substring(0,Math.min(listing.length(),6000)));
    var node=decode(stripFence(content));
    if(!node.path("suggestions").isArray()||node.path("suggestions").isEmpty())throw new IllegalStateException("模型未返回可用建议");
-   s.db.update("DELETE FROM ai_feedback_cache WHERE entry_id=?",eid);
-   s.db.update("INSERT INTO ai_feedback_cache(entry_id,revision,payload_json,created_at) VALUES(?,?,?,?)",eid,rev,encode(node),now());
-   s.audit(uid,"AI_FEEDBACK_GENERATE","entry",eid);
-   var list=new ArrayList<Map<String,Object>>();
+   s.db.update("DELETE FROM ai_suggestion WHERE entry_id=? AND revision=?",eid,rev);
    int count=0;
    for(var item:node.path("suggestions")){
     if(count++>=4)break;
-    list.add(Map.of("dimension",item.path("dimension").asText("C"),"title",item.path("title").asText(""),"body",item.path("body").asText("")));
+    String pid=item.path("paragraphId").asText("").trim();
+    // 段落标识必须是本文真实存在的锚点，否则建议无法定位，只保留文字。
+    if(!paragraphs.containsKey(pid))pid="";
+    String quote=item.path("quote").asText("").trim();
+    if(quote.length()>600||(!pid.isEmpty()&&!paragraphs.get(pid).contains(quote)))quote="";
+    s.db.update("INSERT INTO ai_suggestion(entry_id,revision,paragraph_id,quote_text,dimension,title,body,state,created_at) VALUES(?,?,?,?,?,?,?,'OPEN',?)",
+     eid,rev,pid.isEmpty()?null:pid,quote.isEmpty()?null:quote,
+     item.path("dimension").asText("C"),trimTo(item.path("title").asText(""),200),trimTo(item.path("body").asText(""),1000),now());
    }
-   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"cached",false,"model",aiModel);
+   s.audit(uid,"AI_FEEDBACK_GENERATE","entry",eid);
+   var list=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY id",eid,rev);
+   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"saved",true,"model",aiModel);
   }catch(Exception ex){
    org.slf4j.LoggerFactory.getLogger(CommunityService.class).warn("AI feedback failed for entry {}: {}",eid,ex.toString());
    return Map.of("enabled",true,"status","FAILED","message","模型服务暂时不可用，请稍后重试","suggestions",List.of(),"formalScore",false);
   }
+ }
+ private String trimTo(String value,int max){String v=value==null?"":value.trim();return v.length()>max?v.substring(0,max):v;}
+ @Transactional public void setAiSuggestionState(long id,String state,long uid){
+  if(!Set.of("OPEN","ADOPTED","DISMISSED").contains(state))throw fail(422,"未知的建议状态");
+  var rows=s.db.queryForList("SELECT entry_id FROM ai_suggestion WHERE id=?",id);
+  if(rows.isEmpty())throw fail(404,"建议不存在");
+  var e=entry(s.id(rows.getFirst(),"entry_id"));String role=s.role(s.id(e,"course_id"),uid);
+  if(s.id(e,"author_id")!=uid&&!"TEACHER".equals(role))throw fail(403,"无权处理该建议");
+  s.db.update("UPDATE ai_suggestion SET state=? WHERE id=?",state,id);
+  s.audit(uid,"AI_SUGGESTION_"+state,"ai_suggestion",id);
  }
  private String stripFence(String raw){
   String t=raw==null?"":raw.trim();
@@ -107,8 +126,10 @@ public class CommunityService {
   var client=org.springframework.web.client.RestClient.builder().baseUrl(aiBase).requestFactory(factory).build();
   String system=("你是课程写作助教，帮助学生改进知识帖。只能依据四维量规给出可执行的修改建议，不得编造来源。"
    +"四个维度：S 科学性（概念与机制是否正确）、A 准确性（表述与数据是否有据）、C 完整性（关键环节是否交代）、L 逻辑性（论证链条是否连贯）。"
-   +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出问题并给出改法\"}]}。最多 4 条，按重要程度排序。");
-  String user="标题："+(title==null?"":title)+"\n正文：\n"+body+"\n\n请给出 3 到 4 条修改建议。";
+   +"我会给你带段落标识的正文，每行形如 [p_xxx] 段落内容。"
+   +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中 10-40 字的原文片段\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出问题并给出改法\"}]}。"
+   +"paragraphId 必须来自我给出的列表；quote 必须逐字出现在该段落里。最多 4 条，按重要程度排序。");
+  String user="标题："+(title==null?"":title)+"\n正文（带段落标识）：\n"+body+"\n\n请给出 3 到 4 条修改建议。";
   Map<String,Object> payload=new LinkedHashMap<>();
   payload.put("model",aiModel);
   payload.put("temperature",0.3);

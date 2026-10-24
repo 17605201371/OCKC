@@ -366,15 +366,21 @@ function insertCommand(id: string) {
   else if (id === "code") chain.setCodeBlock().run();
   else if (id === "rule") chain.setHorizontalRule().run();
 }
-function openInsert() {
-  const e = editor.value;
-  if (!e) return;
-  e.chain().focus().run();
-  if (e.state.selection.$from.parent.textContent)
-    e.chain().insertContent({ type: "paragraph" }).run();
-  dismissedSlash = "";
-  e.chain().insertContent("/").run();
-  syncUi();
+// 插入菜单直接用按钮弹出列表：原先靠写入 "/" 触发斜杠菜单，在代码块、图片块等
+// 无法插入文本的节点里会静默失败，表现为“点了没反应”。
+const insertOpen = ref(false);
+function toggleInsert() {
+  insertOpen.value = !insertOpen.value;
+}
+function chooseInsert(id: string) {
+  insertOpen.value = false;
+  insertCommand(id);
+}
+function onDocumentMouseDown(e: MouseEvent) {
+  if (!insertOpen.value) return;
+  const t = e.target as HTMLElement | null;
+  if (t?.closest?.(".writer-insert-wrap")) return;
+  insertOpen.value = false;
 }
 async function showHelp() {
   closeSlash();
@@ -743,10 +749,12 @@ function onViewportChange() {
 onMounted(() => {
   window.addEventListener("resize", onViewportChange);
   window.addEventListener("scroll", onViewportChange, true);
+  document.addEventListener("mousedown", onDocumentMouseDown);
 });
 onBeforeUnmount(() => {
   window.removeEventListener("resize", onViewportChange);
   window.removeEventListener("scroll", onViewportChange, true);
+  document.removeEventListener("mousedown", onDocumentMouseDown);
   editor.value?.destroy();
 });
 </script>
@@ -778,16 +786,33 @@ onBeforeUnmount(() => {
         <span class="writer-key">Markdown</span>
       </div>
       <div class="writer-actions">
-        <button
-          type="button"
-          class="writer-tool"
-          aria-label="插入内容"
-          title="插入内容"
-          @mousedown.prevent
-          @click="openInsert"
-        >
-          <Plus :size="17" /><span>插入</span>
-        </button>
+        <div class="writer-insert-wrap">
+          <button
+            type="button"
+            class="writer-tool"
+            aria-label="插入内容"
+            title="插入内容"
+            :aria-expanded="insertOpen"
+            @mousedown.prevent
+            @click="toggleInsert"
+          >
+            <Plus :size="17" /><span>插入</span>
+          </button>
+          <div v-if="insertOpen" class="writer-insert-menu" role="menu" aria-label="插入内容">
+            <button
+              v-for="c in commands"
+              :key="c.id"
+              type="button"
+              role="menuitem"
+              @mousedown.prevent
+              @click="chooseInsert(c.id)"
+            >
+              <component :is="c.icon" :size="16" />
+              <span class="insert-text"><strong>{{ c.label }}</strong><small>{{ c.detail }}</small></span>
+              <kbd>{{ c.hint }}</kbd>
+            </button>
+          </div>
+        </div>
         <button
           type="button"
           class="writer-icon"

@@ -3,13 +3,22 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { Sparkles, RefreshCw, ShieldCheck, AlertCircle, Wand2 } from 'lucide-vue-next';
 import { api } from './api';
 const props = defineProps<{ entryId: number; assignmentEnabled?: boolean }>();
-const emit = defineEmits<{ visibility: [enabled: boolean] }>();
+const emit = defineEmits<{ visibility: [enabled: boolean]; locate: [paragraphId: string] }>();
 const enabled = ref(false), loading = ref(false), failed = ref(false);
 const status = ref(''), message = ref(''), model = ref('');
-const suggestions = ref<Array<{ dimension: string; title: string; body: string }>>([]);
+const suggestions = ref<Array<{ id?: number; paragraph_id?: string | null; quote_text?: string | null; dimension: string; title: string; body: string; state?: string }>>([]);
 let sequence = 0;
 const DIM: Record<string, string> = { S: '科学性', A: '准确性', C: '完整性', L: '逻辑性' };
 function dimName(code: string) { return DIM[String(code || 'C').charAt(0)] || '建议'; }
+async function toggleAdopt(s: any) {
+  if (!s.id) return;
+  const previous = s.state || 'OPEN';
+  const next = previous === 'ADOPTED' ? 'OPEN' : 'ADOPTED';
+  s.state = next;
+  try { await api(`/ai-suggestions/${s.id}/state`, 'POST', { state: next }); }
+  catch { s.state = previous; }
+}
+function locate(s: any) { if (s.paragraph_id) emit('locate', s.paragraph_id); }
 async function load(generate = false) {
   const current = ++sequence; loading.value = true; failed.value = false;
   try {
@@ -37,9 +46,14 @@ onBeforeUnmount(() => { sequence++; });
     <header class="sidebar-section-heading"><h3><Sparkles :size="15" />AI 反馈</h3><span class="small-label">{{ status === 'READY' ? (model || '已生成') : '教师已开启' }}</span></header>
 
     <div v-if="status === 'READY' && suggestions.length" class="ai-suggestion-list">
-      <article v-for="(s, i) in suggestions" :key="i" class="ai-suggestion">
+      <article v-for="(s, i) in suggestions" :key="s.id || i" class="ai-suggestion" :class="{ adopted: s.state === 'ADOPTED' }">
         <div class="ai-suggestion-top"><span class="ai-dim">{{ dimName(s.dimension) }}</span><strong>{{ s.title }}</strong></div>
         <p>{{ s.body }}</p>
+        <blockquote v-if="s.quote_text" class="ai-quote">{{ s.quote_text }}</blockquote>
+        <div class="ai-suggestion-actions">
+          <button v-if="s.paragraph_id" class="text-btn" @click="locate(s)">定位正文</button>
+          <button class="text-btn" :class="{ adopted: s.state === 'ADOPTED' }" @click="toggleAdopt(s)">{{ s.state === 'ADOPTED' ? '已采纳' : '采纳' }}</button>
+        </div>
       </article>
       <button class="text-btn ai-refresh" :disabled="loading" @click="load(true)"><RefreshCw :size="13" :class="{ spinning: loading }" />重新生成建议</button>
     </div>

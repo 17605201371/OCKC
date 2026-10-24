@@ -32,6 +32,8 @@ public class ApiController {
  @PostMapping("/courses/{cid}/assignments") public Object createAssignment(@PathVariable long cid,@Valid @RequestBody AssignmentRequest r,Principal p){return service.createAssignment(cid,r.title(),r.requirements(),r.dueAt(),Boolean.TRUE.equals(r.aiFeedbackEnabled()),r.rubricId(),uid(p));}
  @PutMapping("/assignments/{aid}/ai-policy") public Object aiPolicy(@PathVariable long aid,@Valid @RequestBody AiPolicyRequest r,Principal p){return service.setAiPolicy(aid,r.enabled(),uid(p));}
  @GetMapping("/entries/{eid}/ai-feedback") public Object aiFeedback(@PathVariable long eid,@RequestParam(defaultValue="false") boolean generate,Principal p){return service.aiFeedback(eid,uid(p),generate);}
+ public record AiSuggestionStateRequest(@NotBlank @Pattern(regexp="OPEN|ADOPTED|DISMISSED") String state){}
+ @PostMapping("/ai-suggestions/{id}/state") public Object aiSuggestionState(@PathVariable long id,@Valid @RequestBody AiSuggestionStateRequest r,Principal p){service.setAiSuggestionState(id,r.state(),uid(p));return Map.of("ok",true);}
  @PostMapping("/assignments/{aid}/entries") public Object start(@PathVariable long aid,Principal p){return service.start(aid,uid(p));}
  @GetMapping("/entries/{eid}") public Object getEntry(@PathVariable long eid,Principal p){return service.getEntry(eid,uid(p));}
  @PutMapping("/entries/{eid}/draft") public Object save(@PathVariable long eid,@Valid @RequestBody DraftRequest r,Principal p){return service.save(eid,r,uid(p));}

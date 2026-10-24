@@ -803,6 +803,12 @@ async function saveDraft(): Promise<boolean> {
   })();
   return inFlight;
 }
+// 保存草稿后默认回到作业列表，避免停在编辑页误以为已经提交。
+async function saveDraftAndReturn() {
+  if (!(await saveDraft())) return;
+  notify("草稿已保存");
+  await go("assignments");
+}
 function restoreBackup() {
   if (!backup.value) return;
   entry.value.title = backup.value.title;
@@ -848,6 +854,8 @@ async function submit() {
     await loadEditorState();
     await refreshCourse();
     notify(`已提交 v${v.version_no}，等待教师评审`);
+    // 提交成功后默认回到作业列表。
+    await go("assignments");
   });
 }
 async function openVersion(sid: number, asReview = false, keepReviewScope=false) {
@@ -1238,6 +1246,8 @@ async function publishGrade() {
     await review.load(version.value.id);
     await refreshCourse();
     notify("正式评价已发布并留存历史记录");
+    // 发布后默认回到批改队列，继续处理下一份。
+    await go("review");
     } finally { reviewPublishing.value=false; }
   });
 }
@@ -1837,7 +1847,7 @@ onBeforeUnmount(() => {
               ><button
                 class="btn secondary"
                 :disabled="saving || busy || uploadingMedia"
-                @click="saveDraft"
+                @click="saveDraftAndReturn"
               >
                 <Save :size="17" />保存草稿</button
               ><button
@@ -2025,7 +2035,7 @@ onBeforeUnmount(() => {
                 </article>
                 <div v-if="!latest?.feedback?.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? '还没有教师批注' : '提交后，在这里查看教师批注' }}</p><span>批注会定位到对应段落或图片。</span></div>
               </section>
-              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" @visibility="aiSidebarVisible = $event" />
+              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" />
               <details class="sidebar-version-history" :open="feedbackTab === 'versions'"><summary><History :size="14" />版本记录<span>{{ entry.versions.length }}</span><ChevronRight :size="14" class="history-chevron" /></summary>
               <div class="version-list">
                 <button
