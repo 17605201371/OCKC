@@ -1808,6 +1808,7 @@ summary:focus-visible {
   top: 80px;
   max-height: calc(100vh - 104px);
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #c9c6c0 transparent;
 }
@@ -1936,6 +1937,7 @@ summary:focus-visible {
   border-radius: 8px;
   background: var(--paper);
 }
+.feedback-empty { margin: 6px 16px 14px; padding: 12px 14px; font-size: 12.5px; line-height: 1.7; color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; }
 .feedback-card .card-top {
   margin-bottom: 10px;
 }
@@ -3726,7 +3728,7 @@ summary:focus-visible {
 .outline-assignment summary { margin-top: 12px; cursor: pointer; font-size: 12px; color: var(--blue); }
 .outline-assignment details p { font-size: 12px; line-height: 1.8; padding-top: 8px; color: var(--muted); }
 .creation-workspace .outline-foot { font-size: 11px; padding-top: 16px; margin: 24px 7px 0; line-height: 1.8; border-color: var(--border); }
-.creation-workspace .feedback-sidebar { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 14px; max-height: calc(100vh - 78px); top: 66px; position: sticky; overflow-y: auto; scrollbar-width: thin; }
+.creation-workspace .feedback-sidebar { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 14px; max-height: calc(100vh - 78px); top: 66px; position: sticky; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .creation-workspace .panel-title { border: 0; padding: 0 0 13px; gap: 6px; }
 .creation-workspace .panel-title h2 { font-size: 13px; }
 .creation-workspace .panel-title .badge { font-size: 10px; padding: 2px 6px; }
@@ -4324,8 +4326,7 @@ dialog.account-settings::backdrop{background:#0007;}
 .comm-scope { border:0; background:transparent; color:var(--muted); font-size:13px; padding:6px 14px; border-radius:7px; cursor:pointer; transition:background .15s,color .15s; }
 .comm-scope:hover { color:var(--text); }
 .comm-scope.on { background:var(--paper); color:var(--text); font-weight:600; box-shadow:0 1px 2px rgb(15 23 42 / 8%); }
-/* 发布申请：可见范围选择 */
-.visibility-choice { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:14px 0; }
+/* 发布申请：可见范围选择 */.visibility-choice { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:14px 0; }
 .visibility-choice legend { font-size:12px; color:var(--muted); padding:0 6px; }
 .visibility-choice label { display:flex; gap:8px; align-items:center; margin:8px 0; font-size:13px; font-weight:400; }
 .visibility-choice label input { width:auto; margin:0; }

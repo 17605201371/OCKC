@@ -1354,7 +1354,36 @@ function keydown(e: KeyboardEvent) {
     void saveDraft();
   }
 }
+// 右侧反馈面板：高度按「当前视口 − 面板顶部」收缩，未吸顶时也不会被视口裁掉；
+// 面板自身滚动并阻止滚动链，滚轮划过反馈区不会再带动左侧正文。
+let sidebarFitFrame = 0, sidebarFitValue = 0, sidebarFitEl: HTMLElement | null = null;
+function fitFeedbackSidebar() {
+  const el = document.querySelector<HTMLElement>(".feedback-sidebar");
+  if (!el) return;
+  const stickyTop = 68;
+  const top = el.getBoundingClientRect().top;
+  const anchor = Math.max(stickyTop, Math.min(top, window.innerHeight - 280));
+  const avail = Math.max(280, Math.round(window.innerHeight - anchor - 20));
+  if (avail !== sidebarFitValue || el !== sidebarFitEl) {
+    sidebarFitValue = avail;
+    sidebarFitEl = el;
+    el.style.maxHeight = avail + "px";
+  }
+}
+function scheduleSidebarFit() {
+  if (sidebarFitFrame) return;
+  sidebarFitFrame = requestAnimationFrame(() => {
+    sidebarFitFrame = 0;
+    fitFeedbackSidebar();
+  });
+}
+watch(
+  () => [page.value, panelVisible.value, version.value?.id, entry.value?.id],
+  () => nextTick(scheduleSidebarFit),
+);
 onMounted(async () => {
+  window.addEventListener("scroll", scheduleSidebarFit, { passive: true });
+  window.addEventListener("resize", scheduleSidebarFit);
   window.addEventListener("ockc-session-expired",sessionExpired);
   deadlineTimer=setInterval(()=>{clockNow.value=Date.now();void refreshAssignmentRules()},30000);
   window.addEventListener("focus",refreshAssignmentRules);
@@ -1370,6 +1399,8 @@ onMounted(async () => {
   }
 });
 onBeforeUnmount(() => {
+  window.removeEventListener("scroll", scheduleSidebarFit);
+  window.removeEventListener("resize", scheduleSidebarFit);
   window.removeEventListener("ockc-session-expired",sessionExpired);
   clearTimeout(saveTimer);clearInterval(deadlineTimer);
   window.removeEventListener("beforeunload", beforeUnload);
@@ -2629,6 +2660,9 @@ onBeforeUnmount(() => {
                 <h3>等待教师评审</h3>
               </div>
               <h3 class="sub-panel-title">教师反馈</h3>
+              <p v-if="!version.feedback.length" class="feedback-empty">
+                本版暂无段落批注；教师若留下批注，会在这里按段落列出，可直接定位正文。
+              </p>
               <article
                 v-for="f in version.feedback"
                 :key="f.id"
