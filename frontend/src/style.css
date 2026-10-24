@@ -3914,6 +3914,7 @@ summary:focus-visible {
 .quality-bar { height: 5px; background: var(--surface-2); }
 .quality-bar i, .quality-bar i.amber, .quality-bar i.mint { background: var(--blue); opacity: .8; }
 .quality-detail-list { background: var(--surface); border-radius: 5px; padding: 4px 8px; margin-bottom: 5px; }
+.quality-dim-meta { margin: 0; padding: 6px 0 0; font-size: 10px; color: var(--muted); line-height: 1.7; }
 .quality-detail-list > div { display: grid; grid-template-columns: 20px 1fr auto; gap: 6px; font-size: 10px; padding: 7px 0; align-items: start; }
 .quality-detail-list code { color: var(--subtle); font-size: 9px; }
 .quality-detail-list strong { font-weight: 500; }
@@ -4415,12 +4416,13 @@ dialog.account-settings::backdrop{background:#0007;}
 .grade-block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .grade-block-head h4 { font-size: 14px; font-weight: 600; }
 .grade-block-head > span { margin-left: auto; font-size: 12px; color: var(--subtle); }
-.grade-dim { display: grid; grid-template-columns: 74px minmax(0, 1fr); align-items: center; gap: 6px 10px; margin-bottom: 10px; }
+/* 批改侧栏是窄栏：维度名独占一行，评级按钮铺满下一行，避免「待改进」被挤成两行。 */
+.grade-dim { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; margin-bottom: 12px; }
 .grade-dim:last-of-type { margin-bottom: 4px; }
-.grade-dim-name { font-size: 13px; color: var(--muted); }
+.grade-dim-name { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--muted); }
 .grade-dim-name em { font-style: normal; font-size: 11px; color: var(--subtle); margin-left: 3px; }
 .grade-levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 3px; background: var(--surface-2); border-radius: 9px; }
-.grade-levels button { height: 30px; border: 0; border-radius: 7px; font-size: 13px; font-weight: 500; color: var(--muted); background: transparent; }
+.grade-levels button { height: 30px; border: 0; border-radius: 7px; padding: 0 2px; white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--muted); background: transparent; }
 .grade-levels button:hover { color: var(--text); }
 .grade-levels button.on { background: var(--paper); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px #00000012, 0 0 0 1px var(--border); }
 .grade-fine { margin-top: 4px; border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; }

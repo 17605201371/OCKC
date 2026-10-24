@@ -1,17 +1,34 @@
 <script setup lang="ts">
-defineProps<{ snapshot: any; source?: string }>();
+import { computed } from 'vue';
+
+const props = defineProps<{ snapshot: any; source?: string }>();
 const bands: [string, string][] = [
   ['excellent', '优秀 90–100'],
   ['good', '良好 75–89'],
   ['pass', '基本 60–74'],
   ['improve', '待改进 0–59'],
 ];
-const groups: [string, string][] = [
-  ['S', '科学性'],
-  ['A', '准确性'],
-  ['C', '完整性'],
-  ['L', '逻辑性'],
-];
+const FALLBACK: Record<string, { name: string; description: string }> = {
+  S: { name: '科学性', description: '论断有依据，方法与结论相称。' },
+  A: { name: '准确性', description: '事实、数据与表述准确，来源可核验。' },
+  C: { name: '完整性', description: '关键环节交代完整，必要要素不缺。' },
+  L: { name: '逻辑性', description: '结构清晰，论证与内容关系前后一致。' },
+};
+
+/** 维度名称与权重以量规快照为准；历史快照没有维度记录时回退到四维等权。 */
+const groups = computed(() => {
+  const rows = Array.isArray(props.snapshot?.dimensions) ? props.snapshot.dimensions : [];
+  return ['S', 'A', 'C', 'L'].map((code) => {
+    const row = rows.find((d: any) => d && d.code === code) || {};
+    const weight = Number(row.weight);
+    const name = row.name && String(row.name).trim() ? String(row.name).trim() : FALLBACK[code].name;
+    const description = row.description && String(row.description).trim()
+      ? String(row.description).trim()
+      : FALLBACK[code].description;
+    return { code, name, description, weight: Number.isFinite(weight) ? weight : 25 };
+  });
+});
+
 function inGroup(criteria: any[], d: string) {
   return (criteria || []).filter((i: any) => String(i.code || '').startsWith(d));
 }
@@ -24,13 +41,14 @@ function inGroup(criteria: any[], d: string) {
     </p>
     <p v-if="snapshot.instructions" class="rv-instructions">{{ snapshot.instructions }}</p>
 
-    <section v-for="g in groups" :key="g[0]" class="rv-group">
+    <section v-for="g in groups" :key="g.code" class="rv-group">
       <div class="rv-group-head">
-        <span class="rv-dim">{{ g[0] }}</span>
-        <strong>{{ g[1] }}</strong>
-        <span class="rv-weight">25%</span>
+        <span class="rv-dim">{{ g.code }}</span>
+        <strong>{{ g.name }}</strong>
+        <span class="rv-weight">{{ g.weight }}%</span>
       </div>
-      <article v-for="i in inGroup(snapshot.criteria, g[0])" :key="i.code" class="rv-item">
+      <p class="rv-group-desc">{{ g.description }}</p>
+      <article v-for="i in inGroup(snapshot.criteria, g.code)" :key="i.code" class="rv-item">
         <div class="rv-item-head">
           <b>{{ i.code }}</b><span>{{ i.name }}</span>
         </div>
@@ -55,6 +73,7 @@ function inGroup(criteria: any[], d: string) {
 .rv-group-head strong { font-size: 14px; }
 .rv-dim { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 5px; background: var(--blue-soft); color: var(--blue-text); font-size: 12px; font-weight: 700; }
 .rv-weight { margin-left: auto; font-size: 12px; color: var(--subtle); }
+.rv-group-desc { font-size: 12.5px; color: var(--subtle); margin: 6px 0 0; }
 .rv-item { padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
 .rv-item:last-child { border-bottom: 0; }
 .rv-item-head { display: flex; align-items: center; gap: 8px; }

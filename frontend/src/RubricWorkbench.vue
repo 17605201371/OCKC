@@ -20,11 +20,13 @@ const message = ref('');
 const busy = ref(false);
 const reason = ref('');
 const editing = ref(false);
+const openItems = ref<Record<string, boolean>>({});
 let alive = true;
 
 const pinned = computed(() => !!props.initialSnapshot);
 const dirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== baseline.value);
 const editable = computed(() => props.teacher && !pinned.value && selected.value?.state === 'DRAFT');
+const draftItem = computed(() => (catalog.value?.items || []).find((r: any) => r.state === 'DRAFT') || null);
 const anchors: [string, string][] = [
   ['excellent', '优秀 90–100'],
   ['good', '良好 75–89'],
@@ -33,10 +35,39 @@ const anchors: [string, string][] = [
 ];
 const key = (id: number) => `community-rubric-${props.userId}-${props.courseId}-${id}`;
 
+/** 四维：代码固定，名称 / 说明 / 权重可编辑。 */
+const dimensions = computed<any[]>(() => {
+  const rows = draft.value?.dimensions;
+  return Array.isArray(rows) ? rows : [];
+});
+const weightSum = computed(() => dimensions.value.reduce((n, d) => n + (Number(d.weight) || 0), 0));
+const weightOk = computed(() => weightSum.value === 100);
+const allOpen = computed(() =>
+  !!draft.value && draft.value.criteria.every((i: any) => openItems.value[i.code]),
+);
+function itemsOf(code: string) {
+  return (draft.value?.criteria || []).filter((i: any) => String(i.code).startsWith(code));
+}
+function toggleItem(code: string) {
+  openItems.value = { ...openItems.value, [code]: !openItems.value[code] };
+}
+function toggleAll() {
+  const next = !allOpen.value;
+  const map: Record<string, boolean> = {};
+  for (const i of draft.value.criteria) map[i.code] = next;
+  openItems.value = map;
+}
+
 function payload() {
   return {
     title: draft.value.title,
     instructions: draft.value.instructions,
+    dimensions: dimensions.value.map((d: any) => ({
+      code: d.code,
+      name: d.name,
+      description: d.description,
+      weight: Number(d.weight) || 0,
+    })),
     criteria: draft.value.criteria.map((i: any) => ({
       code: i.code,
       description: i.description,
@@ -108,8 +139,8 @@ async function load() {
       return;
     }
     const items = catalog.value?.items || [];
-    const draftItem = props.teacher ? items.find((r: any) => r.state === 'DRAFT') : null;
-    const code = draftItem ? draftItem.code : catalog.value.defaultCode;
+    const draftRow = props.teacher ? items.find((r: any) => r.state === 'DRAFT') : null;
+    const code = draftRow ? draftRow.code : catalog.value.defaultCode;
     const data = await api(`/courses/${props.courseId}/rubrics/${code}`);
     if (alive) setSelected(data);
   });
@@ -133,14 +164,23 @@ function onVersionChange(event: Event) {
   void choose(code);
 }
 
-async function startEdit() {
+/** forceNew=true 表示「新建修订版本」：始终基于已启用版本起一份新草稿。 */
+async function startEdit(forceNew = false) {
   if (!props.teacher || pinned.value) return;
-  if (selected.value?.state === 'DRAFT') {
+  if (!forceNew && selected.value?.state === 'DRAFT') {
     setSelected(selected.value);
     editing.value = true;
     return;
   }
   await task(async () => {
+    if (forceNew && draftItem.value) {
+      const data = await api(`/courses/${props.courseId}/rubrics/${draftItem.value.code}`);
+      if (!alive) return;
+      setSelected(data);
+      editing.value = true;
+      message.value = '已有未启用草稿，已为你打开；保存并启用后才能再新建修订。';
+      return;
+    }
     const sourceId = selected.value?.state === 'ENABLED' ? selected.value.id : catalog.value.defaultId;
     const data = await api(`/courses/${props.courseId}/rubrics`, 'POST', { sourceId });
     if (!alive) return;
@@ -153,6 +193,10 @@ async function startEdit() {
 
 async function save() {
   if (!editable.value) return;
+  if (!weightOk.value) {
+    error.value = `四个维度的权重合计必须为 100%，当前为 ${weightSum.value}%。`;
+    return;
+  }
   await task(async () => {
     const data = await api(`/courses/${props.courseId}/rubrics/${selected.value.id}`, 'PUT', payload());
     if (!alive) return;
@@ -164,6 +208,10 @@ async function save() {
 
 async function activate() {
   if (!editable.value || !reason.value.trim()) return;
+  if (!weightOk.value) {
+    error.value = `四个维度的权重合计必须为 100%，当前为 ${weightSum.value}%。`;
+    return;
+  }
   await task(async () => {
     const data = await api(`/courses/${props.courseId}/rubrics/${selected.value.id}/enable`, 'POST', {
       revision: selected.value.revision,
@@ -209,7 +257,8 @@ onBeforeUnmount(() => {
     <header class="page-heading">
       <div>
         <h1>课程量规</h1>
-        <p>四维等权，11 项指标固定。</p>
+        <p v-if="editing">正在编辑草稿：四维权重与 11 项指标锚点都可调整，启用后只影响新作业。</p>
+        <p v-else>四维按权重加权，11 项二级指标固定。</p>
       </div>
       <div class="rw-head-actions">
         <select
@@ -224,14 +273,14 @@ onBeforeUnmount(() => {
             {{ r.title }} · {{ r.state === 'DRAFT' ? '草稿' : '已启用' }}
           </option>
         </select>
-        <button
-          v-if="props.teacher && !pinned && !editing"
-          class="btn primary"
-          :disabled="busy"
-          @click="startEdit"
-        >
-          {{ selected?.state === 'DRAFT' ? '继续编辑' : '修改量规' }}
-        </button>
+        <template v-if="props.teacher && !pinned && !editing">
+          <button class="btn secondary rw-new" :disabled="busy" @click="startEdit(true)">
+            ＋ 新建修订版本
+          </button>
+          <button class="btn primary rw-edit" :disabled="busy" @click="startEdit(false)">
+            {{ selected?.state === 'DRAFT' ? '继续编辑草稿' : '编辑量规' }}
+          </button>
+        </template>
       </div>
     </header>
 
@@ -256,31 +305,111 @@ onBeforeUnmount(() => {
 
       <form v-else class="rw-form" @submit.prevent="save">
         <fieldset :disabled="busy">
-          <label>量规标题<input v-model="draft.title" maxlength="120" required /></label>
-          <label>总体说明<textarea v-model="draft.instructions" maxlength="2000" rows="3" required /></label>
+          <section class="rw-block">
+            <h2 class="rw-step"><i>1</i>基本信息</h2>
+            <div class="rw-basic">
+              <label>量规标题<input v-model="draft.title" maxlength="120" required /></label>
+              <label>总体说明<textarea v-model="draft.instructions" maxlength="2000" rows="3" required /></label>
+            </div>
+          </section>
 
-          <div class="rw-items">
-            <section v-for="i in draft.criteria" :key="i.code" class="rw-item">
-              <div class="rw-item-head"><b>{{ i.code }}</b><span>{{ i.name }}</span></div>
-              <label class="rw-item-desc">指标说明<input v-model="i.description" maxlength="1000" required /></label>
-              <div class="rw-anchors">
-                <label v-for="a in anchors" :key="a[0]">
-                  {{ a[1] }}<input v-model="i[a[0]]" maxlength="1000" required />
-                </label>
+          <section class="rw-block">
+            <h2 class="rw-step">
+              <i>2</i>四维设置
+              <span class="rw-sum" :class="{ bad: !weightOk }">
+                权重合计 {{ weightSum }}%
+                <em v-if="!weightOk">需为 100%</em>
+              </span>
+            </h2>
+            <p class="rw-hint">
+              维度代码 S / A / C / L 固定，可改名称、说明与权重；权重决定该维在总分中的占比，四项合计须为 100%。
+            </p>
+            <div class="rw-dims">
+              <article v-for="d in dimensions" :key="d.code" class="rw-dim-card">
+                <div class="rw-dim-top">
+                  <span class="rw-dim-code">{{ d.code }}</span>
+                  <input
+                    v-model="d.name"
+                    class="rw-dim-name"
+                    maxlength="40"
+                    :aria-label="d.code + ' 维度名称'"
+                    placeholder="维度名称"
+                    required
+                  />
+                  <span class="rw-dim-weight">
+                    <input
+                      v-model.number="d.weight"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      :aria-label="d.code + ' 维度权重'"
+                      required
+                    />%
+                  </span>
+                </div>
+                <input
+                  v-model="d.description"
+                  class="rw-dim-desc"
+                  maxlength="500"
+                  :aria-label="d.code + ' 维度说明'"
+                  placeholder="这个维度考察什么"
+                  required
+                />
+                <p class="rw-dim-count">{{ itemsOf(d.code).length }} 项指标</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="rw-block">
+            <h2 class="rw-step">
+              <i>3</i>指标锚点
+              <button type="button" class="text-btn rw-toggle-all" @click="toggleAll">
+                {{ allOpen ? '全部收起' : '全部展开' }}
+              </button>
+            </h2>
+            <p class="rw-hint">11 项二级指标按维度分组，点开某一项可修改说明与四档锚点。</p>
+
+            <div v-for="d in dimensions" :key="d.code" class="rw-dim-group">
+              <div class="rw-dim-group-head">
+                <span class="rw-dim-code">{{ d.code }}</span>
+                <strong>{{ d.name }}</strong>
+                <span class="rw-dim-group-weight">{{ d.weight }}%</span>
               </div>
-            </section>
-          </div>
+              <article v-for="i in itemsOf(d.code)" :key="i.code" class="rw-item">
+                <button
+                  type="button"
+                  class="rw-item-head"
+                  :aria-expanded="!!openItems[i.code]"
+                  @click="toggleItem(i.code)"
+                >
+                  <span class="rw-caret" :class="{ open: !!openItems[i.code] }">›</span>
+                  <b>{{ i.code }}</b>
+                  <span class="rw-item-title">{{ i.name }}</span>
+                  <span class="rw-item-preview">{{ openItems[i.code] ? '收起' : '展开编辑' }}</span>
+                </button>
+                <div v-if="openItems[i.code]" class="rw-item-body">
+                  <label class="rw-item-desc">指标说明<input v-model="i.description" maxlength="1000" required /></label>
+                  <div class="rw-anchors">
+                    <label v-for="a in anchors" :key="a[0]">
+                      {{ a[1] }}<input v-model="i[a[0]]" maxlength="1000" required />
+                    </label>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
 
           <div class="rw-foot">
             <label class="rw-reason">
               变更说明
               <input v-model="reason" maxlength="1000" placeholder="写入启用记录，仅任课教师可见" />
             </label>
-            <button class="btn primary" type="submit" :disabled="!dirty">保存草稿</button>
+            <button class="btn primary" type="submit" :disabled="!dirty || !weightOk">保存草稿</button>
             <button
               type="button"
               class="btn secondary"
-              :disabled="busy || dirty || !reason.trim()"
+              :disabled="busy || dirty || !weightOk || !reason.trim()"
               @click="activate"
             >
               启用为新作业默认
@@ -297,23 +426,57 @@ onBeforeUnmount(() => {
 .rubric-workbench { max-width: 1040px; }
 .rw-head-actions { display: flex; align-items: center; gap: 10px; }
 .rw-version { width: auto; max-width: 260px; padding: 7px 10px; font-size: 13px; }
+.rw-edit, .rw-new { white-space: nowrap; }
 .rw-current { border: 1px solid var(--border); border-radius: 12px; background: var(--paper); padding: 18px 22px 22px; }
 .rw-current-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
-.rw-form label { display: block; margin: 14px 0; font-size: 13px; color: var(--muted); }
-.rw-form input, .rw-form textarea { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
+
 .rw-form fieldset { border: 0; padding: 0; min-width: 0; }
-.rw-items { display: grid; gap: 12px; margin-top: 18px; }
-.rw-item { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
-.rw-item-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.rw-item-head b { font-size: 13px; color: var(--blue-text); background: var(--blue-soft); border-radius: 4px; padding: 1px 6px; }
-.rw-item-head span { font-size: 14px; font-weight: 600; color: var(--text); }
-.rw-item label { margin: 0; }
-.rw-anchors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin-top: 10px; }
-.rw-foot { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
-.rw-reason { flex: 1 1 240px; margin: 0 !important; }
-.rw-form .danger { color: var(--red); }
+.rw-block { margin-top: 22px; }
+.rw-block:first-child { margin-top: 4px; }
+.rw-step { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 15px; }
+.rw-step i { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--blue-soft); color: var(--blue-text); font-size: 12px; font-style: normal; font-weight: 700; }
+.rw-sum { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface); border-radius: 999px; padding: 3px 10px; }
+.rw-sum.bad { color: var(--red); background: var(--red-soft, #fdecec); }
+.rw-sum em { font-style: normal; margin-left: 6px; }
+.rw-hint { margin: 6px 0 12px; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+.rw-toggle-all { margin-left: auto; font-size: 12.5px; }
+
+.rw-basic label { display: block; margin: 12px 0; font-size: 13px; color: var(--muted); }
+.rw-basic input, .rw-basic textarea { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
+
+.rw-dims { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.rw-dim-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--paper); }
+.rw-dim-top { display: flex; align-items: center; gap: 8px; }
+.rw-dim-code { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 5px; border-radius: 5px; background: var(--blue-soft); color: var(--blue-text); font-size: 12px; font-weight: 700; }
+.rw-dim-name { flex: 1 1 auto; min-width: 0; font-weight: 600; }
+.rw-dim-weight { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.rw-dim-weight input { width: 58px; text-align: right; }
+.rw-dim-desc { display: block; width: 100%; margin-top: 8px; box-sizing: border-box; font-size: 13px; }
+.rw-dim-count { margin: 8px 0 0; font-size: 11.5px; color: var(--subtle); }
+
+.rw-dim-group { margin-top: 14px; }
+.rw-dim-group-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.rw-dim-group-head strong { font-size: 14px; }
+.rw-dim-group-weight { margin-left: auto; font-size: 12px; color: var(--subtle); }
+.rw-item { border: 1px solid var(--border); border-radius: 10px; margin-top: 8px; overflow: hidden; }
+.rw-item-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px; background: none; border: 0; text-align: left; cursor: pointer; font: inherit; }
+.rw-item-head:hover { background: var(--surface); }
+.rw-caret { display: inline-block; width: 12px; color: var(--subtle); transition: transform .15s ease; }
+.rw-caret.open { transform: rotate(90deg); }
+.rw-item-head b { font-size: 12px; color: var(--blue-text); background: var(--blue-soft); border-radius: 4px; padding: 1px 6px; }
+.rw-item-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.rw-item-preview { margin-left: auto; font-size: 12px; color: var(--subtle); }
+.rw-item-body { padding: 0 14px 14px; }
+.rw-item-body label { display: block; margin: 10px 0 0; font-size: 13px; color: var(--muted); }
+.rw-item-body input { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
+.rw-anchors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin-top: 4px; }
+
+.rw-foot { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 22px; padding: 14px 0 12px; border-top: 1px solid var(--border); background: var(--bg, var(--paper)); }
+.rw-reason { flex: 1 1 240px; margin: 0 !important; font-size: 13px; color: var(--muted); }
+.rw-reason input { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
 .rubric-workbench p { overflow-wrap: anywhere; }
-@media (max-width: 720px) {
+@media (max-width: 860px) {
+  .rw-dims { grid-template-columns: minmax(0, 1fr); }
   .rw-anchors { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

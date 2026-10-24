@@ -456,7 +456,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
               <strong>{{score(dimensionValue(key))}}</strong>
             </div>
           </div>
-          <p class="home-dimension-note">{{staff?'11 项指标，四个维度等权；此处不显示班级均分。':homeSubmission?.evaluation?'当前作品正式评价 · 各维度占 25%':'尚无正式评分，未评分不计零分。'}}</p>
+          <p class="home-dimension-note">{{staff?'11 项指标，四个维度按量规权重加权；此处不显示班级均分。':homeSubmission?.evaluation?'当前作品正式评价 · 各维度按量规权重加权':'尚无正式评分，未评分不计零分。'}}</p>
           <button class="card-link" @click="emit('navigate', 'rubric')">
             查看课程量规<ArrowUpRight :size="15" />
           </button>

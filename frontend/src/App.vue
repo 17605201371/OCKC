@@ -193,6 +193,19 @@ const rubric = [
 const allItems = rubric.flatMap((d) =>
   d.items.map(([code, name]) => ({ code, name, dimension: d.d })),
 );
+// 维度名称与权重以该提交绑定的量规快照为准；历史快照没有维度记录时回退四维等权。
+const dims = computed(() =>
+  rubric.map((d) => {
+    const snap = version.value?.rubricSnapshot?.dimensions;
+    const row = Array.isArray(snap)
+      ? snap.find((x: any) => x && x.code === d.d)
+      : null;
+    const weight = Number(row?.weight);
+    const name =
+      row?.name && String(row.name).trim() ? String(row.name).trim() : d.name;
+    return { ...d, name, weight: Number.isFinite(weight) ? weight : 25 };
+  }),
+);
 const grading = ref<any[]>([]),
   summary = ref(""),
   gateReason = ref("");
@@ -390,8 +403,8 @@ async function jumpToMissingCriterion() {
   target?.focus({preventScroll:true});
 }
 const previewScore = computed(() => {
-  const dims: Record<string, number> = {};
-  for (const d of rubric) {
+  const scores: Record<string, number> = {};
+  for (const d of dims.value) {
     const v = grading.value.filter(
       (i) => i.code.startsWith(d.d) && i.status === "SCORED",
     );
@@ -407,11 +420,17 @@ const previewScore = computed(() => {
       grading.value.some((i) => i.status === "PENDING")
     )
       return null;
-    dims[d.d] = v.reduce((n, i) => n + Number(i.score), 0) / v.length;
+    scores[d.d] = v.reduce((n, i) => n + Number(i.score), 0) / v.length;
   }
-  const raw = Object.values(dims).reduce((a, b) => a + b, 0) / 4;
+  let weighted = 0,
+    totalWeight = 0;
+  for (const d of dims.value) {
+    weighted += scores[d.d] * d.weight;
+    totalWeight += d.weight;
+  }
+  const raw = totalWeight ? weighted / totalWeight : 0;
   return {
-    dims,
+    dims: scores,
     raw,
     total: gateReason.value.trim() ? Math.min(raw, 89) : raw,
   };
@@ -2089,7 +2108,7 @@ onBeforeUnmount(() => {
               </div>
               <nav class="feedback-jump-nav" aria-label="反馈分区导航"><button @click="sidebarJump('sidebar-quality')">质量评分</button><button @click="sidebarJump('sidebar-teacher')">教师批注<span>{{ latest?.feedback?.length || 0 }}</span></button><button v-if="aiSidebarVisible" @click="sidebarJump('sidebar-ai')">AI 反馈</button></nav>
               </div>
-              <div id="sidebar-quality"><QualitySummary :evaluation="latest?.evaluation" :version="latest?.version_no" draft @rubric="openRubric" /></div>
+              <div id="sidebar-quality"><QualitySummary :evaluation="latest?.evaluation" :version="latest?.version_no" :dimensions="latest?.rubricSnapshot?.dimensions" draft @rubric="openRubric" /></div>
               <section id="sidebar-teacher" class="sidebar-section teacher-feedback-section" aria-label="教师批注">
                 <header class="sidebar-section-heading"><h3><MessageSquare :size="15" />教师批注</h3><span class="small-label">{{ latest?.feedback?.length || 0 }} 条</span></header>
               <p v-if="latest?.evaluation?.summary" class="teacher-summary">
@@ -2474,9 +2493,9 @@ onBeforeUnmount(() => {
                   <div class="grade-block-head">
                     <h4>内容质量</h4>
                   </div>
-                  <div v-for="d in rubric" :key="d.d" class="grade-dim">
+                  <div v-for="d in dims" :key="d.d" class="grade-dim">
                     <span class="grade-dim-name"
-                      >{{ d.name }}<em>25%</em></span
+                      >{{ d.name }}<em>{{ d.weight }}%</em></span
                     >
                     <div
                       class="grade-levels"
@@ -2499,7 +2518,7 @@ onBeforeUnmount(() => {
                   <details class="grade-fine">
                     <summary>逐项微调 · 11 项指标</summary>
                     <div
-                      v-for="d in rubric"
+                      v-for="d in dims"
                       :key="d.d"
                       class="grade-fine-group"
                     >
@@ -2654,7 +2673,7 @@ onBeforeUnmount(() => {
                 <span class="badge">v{{ version.version_no }}</span>
                 <button class="panel-collapse" title="收起反馈面板" aria-label="收起反馈面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
-              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" @rubric="openRubric" /><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
+              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
               <div v-else class="empty">
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>
