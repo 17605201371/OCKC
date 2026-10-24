@@ -273,7 +273,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
         </ol>
         <div class="hero-quality">
           <span class="muted"
-            >{{ staff ? "此提交质量分" : "最近提交质量分" }} · 四维等权</span
+            >{{ staff ? "此提交质量分" : "最近提交质量分" }} · 四维加权</span
           >
           <div>
             <strong>{{ score(quality) }}</strong

@@ -403,6 +403,10 @@ summary:focus-visible {
   color: var(--muted);
   font-size: 14px;
 }
+.caption-actions { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+/* 侧栏课程列表旁的「新建课程」入口：图标按钮，悬停才强调，避免抢主视觉。 */
+.course-add { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: var(--paper); color: var(--muted); cursor: pointer; }
+.course-add:hover { color: var(--text); border-color: var(--subtle); background: var(--surface); }
 .course-nav > button {
   min-height: 42px !important;
 }

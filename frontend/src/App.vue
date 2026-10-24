@@ -211,6 +211,12 @@ const grading = ref<any[]>([]),
   gateReason = ref("");
 const course = computed(() => courses.value.find((c) => c.id === cid.value));
 const isTeacher = computed(() => course.value?.role === "TEACHER");
+// 一门课都没有时任何人都不该被卡死；已经教课的老师可以继续开新课。
+const canCreateCourse = computed(
+  () =>
+    courses.value.length === 0 ||
+    courses.value.some((c: any) => c.role === "TEACHER"),
+);
 const isStaff = computed(() =>
   ["TEACHER", "ASSISTANT"].includes(course.value?.role),
 );
@@ -1225,6 +1231,8 @@ async function modalSubmit() {
       notify(`作业已创建`);
     }
     if (modal.value === "course") {
+      // 新建课程会切换当前课程，等同离开当前页面：先把编辑器里未保存的内容落盘。
+      if (!(await flushBeforeLeave())) return;
       const c = await api("/courses", "POST", {
         title: f.title,
         description: f.requirements,
@@ -1232,6 +1240,10 @@ async function modalSubmit() {
       courses.value = await api("/courses");
       cid.value = c.id;
       await refreshCourse();
+      // 从「还没有课程」的入口页建课成功后，直接进入新课程首页。
+      accessMessage.value = "";
+      accessBackup.value = null;
+      page.value = "home";
       notify("课程已创建");
     }
     if (modal.value === "member") {
@@ -1525,8 +1537,20 @@ onBeforeUnmount(() => {
         </button>
       </nav>
       <div class="workspace-caption">
-        <span>{{ isStaff ? "我教的课程" : "我的课程" }}</span
-        ><span>{{ courses.length }} 门</span>
+        <span>{{ isStaff ? "我教的课程" : "我的课程" }}</span>
+        <span class="caption-actions">
+          <span>{{ courses.length }} 门</span>
+          <button
+            v-if="canCreateCourse"
+            class="course-add"
+            type="button"
+            title="新建课程（你将成为该课教师）"
+            aria-label="新建课程"
+            @click="showModal('course')"
+          >
+            <Plus :size="13" />
+          </button>
+        </span>
       </div>
       <nav class="course-nav" aria-label="课程列表">
         <button
@@ -1643,7 +1667,12 @@ onBeforeUnmount(() => {
       <section v-if="!cid" class="page empty">
         <BookOpen :size="36" />
         <h1>还没有可访问的课程</h1>
-        <p>请联系任课教师将你的账号加入课程。</p>
+        <p>可以自己开一门课（你将成为该课教师），或请任课教师把你的账号加入课程。</p>
+        <div class="button-row">
+          <button class="btn primary" @click="showModal('course')">
+            <Plus :size="16" />创建我的第一门课程
+          </button>
+        </div>
       </section>
       <template v-else>
         <HomeDashboard
@@ -2463,7 +2492,7 @@ onBeforeUnmount(() => {
               <div v-if="review.state.stale && isTeacher" class="review-recovery"><strong>正式评价已更新</strong><p>有一份基于旧评价的评分草稿。请先选择恢复并复核，或放弃旧草稿。</p><button class="text-btn" @click="restoreReview(review.state.stale)">恢复旧草稿并复核</button><button class="text-btn muted" @click="review.discardStale()">放弃旧草稿</button></div>
               <div v-if="review.state.backup && isTeacher" class="review-recovery"><strong>发现本机未同步的评分备份</strong><p>可恢复后继续核对；不会直接覆盖正式评价。</p><button class="text-btn" @click="restoreReview(review.state.backup)">恢复本机评分备份</button><button class="text-btn muted" @click="review.discardBackup()">使用服务端草稿</button></div>
               <div class="grade-summary">
-                <span>综合质量 · 四维等权</span>
+                <span>综合质量 · 四维加权</span>
                 <strong
                   >{{ previewScore ? number(previewScore.total) : "—"
                   }}<small>/ 100</small></strong
@@ -2968,7 +2997,9 @@ onBeforeUnmount(() => {
                 ? "正在保存…"
                 : modal === "assignment"
                   ? "发布作业"
-                  : "确认保存"
+                  : modal === "course"
+                    ? "创建课程"
+                    : "确认保存"
             }}<Check :size="17" />
           </button>
         </footer>
