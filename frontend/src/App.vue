@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, defineAsyncComponent, nextTick } from "vue";
 import { useTheme } from "./theme";
+import { uid } from "./uid";
 import EvidenceWorkbench from "./EvidenceWorkbench.vue";
 import PublicationManager from "./PublicationManager.vue";
 import ReviewWorkbench from "./ReviewWorkbench.vue";
@@ -47,11 +48,9 @@ import {
   ShieldCheck,
   GraduationCap,
   Search,
-  Menu,
   X,
   Send,
   Save,
-  Link as LinkIcon,
   History,
   CheckCircle2,
   AlertCircle,
@@ -77,7 +76,6 @@ import AiFeedback from "./AiFeedback.vue";
 import NotificationCenter from "./NotificationCenter.vue";
 import AccountSettings from "./AccountSettings.vue";
 import RubricWorkbench from "./RubricWorkbench.vue";
-import RubricViewer from "./RubricViewer.vue";
 const rubricWorkbench=ref<InstanceType<typeof RubricWorkbench>>();
 const rubricFocus=ref<any>(null),rubricFocusSource=ref('');
 const assignmentRubrics=ref<any[]>([]),assignmentRubricError=ref(''),assignmentRubricLoading=ref(false);
@@ -123,7 +121,7 @@ const homeEntry = ref<any>(null),
   commandOpen = ref(false),
   commandQuery = ref(""),
   assignmentFilter = ref("all"),
-  publicationSort = ref("recent");
+  publicationSort = ref("new");
 const page = ref("home"),
   loading = ref(true),
   busy = ref(false),
@@ -217,7 +215,7 @@ async function navigateNotice(n:any) {
   else if(n.target_type==='assignment'){page.value='assignments';assignmentFilter.value='all';await nextTick();document.querySelector(`[data-assignment-id="${n.target_id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});}
   else if(n.target_type==='evidence') {
     await openEvidence(n.target_id);
-  } else if(n.target_type==='publication'&&isTeacher.value&&pending.value.some(p=>p.submission_id===n.target_id)) {page.value='community';await nextTick();document.querySelector('.approval-card')?.scrollIntoView({behavior:'smooth'});}
+  } else if(n.target_type==='publication'&&isTeacher.value&&pending.value.some(p=>p.submission_id===n.target_id)) {page.value='community';await nextTick();document.querySelector('.comm-approve')?.scrollIntoView({behavior:'smooth'});}
   else {if(!await openVersion(n.target_id,isTeacher.value && ['SUBMISSION','FEEDBACK_REPLY'].includes(n.kind)))throw new Error('无法打开关联提交，请检查当前权限。');if(n.anchor_id){await nextTick();await focusAnchor(n.anchor_id);}}
 }
 const nav = computed(() => [
@@ -249,10 +247,104 @@ const pendingQueue = computed(() => queue.value.filter((q) => q.q_final === null
 const pendingReviewCount=computed(()=>reviewQueueSummary.value?.pending_count??pendingQueue.value.length);
 watch([()=>cid.value,()=>me.value?.id,()=>course.value?.role],()=>{reviewFilters.value=defaultReviewQuery();reviewNavScope.value=null;reviewQueueSummary.value=null;nextReviewMessage.value='';});
 const myWork = computed(() => assignments.value.filter((a) => a.entry_id));
-const filteredPubs = computed(() => {
-  const rows = publications.value.filter(p => (p.title + p.author_name).toLowerCase().includes(query.value.toLowerCase()));
-  return publicationSort.value === 'quality' ? rows.sort((a, b) => Number(b.q_final) - Number(a.q_final)) : rows;
+const commTab = ref("all"),
+  commStatus = ref("all");
+const commSource = computed(() => [
+  ...publications.value.map((p: any) => ({ ...p, _pending: false })),
+  ...(isTeacher.value ? pending.value.map((p: any) => ({ ...p, _pending: true })) : []),
+]);
+const commMine = (p: any) => p.author_id === me.value?.id;
+const commTopFlag = (p: any) => !p._pending && p.q_final != null && Number(p.q_final) >= 85;
+const commTabs = computed(() => [
+  { id: "all", name: "全部" },
+  isTeacher.value ? { id: "rev", name: "待评议" } : { id: "mine", name: "我参与的" },
+  { id: "top", name: "优质" },
+]);
+const commStatusChips = computed(() => [
+  { id: "all", name: "全部状态" },
+  ...(isTeacher.value ? [{ id: "rev", name: "待评议" }] : []),
+  { id: "ver", name: "已核验" },
+  { id: "top", name: "优质" },
+]);
+const commCounts = computed<Record<string, number>>(() => ({
+  all: commSource.value.length,
+  mine: commSource.value.filter(commMine).length,
+  rev: commSource.value.filter((p: any) => p._pending).length,
+  top: commSource.value.filter(commTopFlag).length,
+}));
+const commRows = computed(() => {
+  const kw = query.value.trim().toLowerCase();
+  const list = commSource.value.filter((p: any) => {
+    if (commTab.value === "mine" && !commMine(p)) return false;
+    if (commTab.value === "rev" && !p._pending) return false;
+    if (commTab.value === "top" && !commTopFlag(p)) return false;
+    if (commStatus.value === "rev" && !p._pending) return false;
+    if (commStatus.value === "ver" && p._pending) return false;
+    if (commStatus.value === "top" && !commTopFlag(p)) return false;
+    if (kw && !`${p.title} ${p.author_name} ${p.summary || ""}`.toLowerCase().includes(kw)) return false;
+    return true;
+  });
+  const stamp = (p: any) => String(p.published_at || p.requested_at || "");
+  const sorters: Record<string, (a: any, b: any) => number> = {
+    new: (a, b) => stamp(b).localeCompare(stamp(a)),
+    q: (a, b) => Number(b.q_final ?? -1) - Number(a.q_final ?? -1),
+    disc: (a, b) => Number(b.discussion_count || 0) - Number(a.discussion_count || 0),
+  };
+  return list.sort(sorters[publicationSort.value] || sorters.new);
 });
+const commTop = computed(() =>
+  publications.value
+    .filter((p: any) => p.q_final != null)
+    .slice()
+    .sort((a: any, b: any) => Number(b.q_final) - Number(a.q_final))
+    .slice(0, 4),
+);
+const commPeople = computed(() => {
+  const map = new Map<string, number>();
+  for (const p of publications.value as any[]) map.set(p.author_name, (map.get(p.author_name) || 0) + 1);
+  return [...map.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([name, n]) => ({ name, n }));
+});
+const commTodo = computed(() => {
+  const rows = isTeacher.value
+    ? [
+        { text: `${pending.value.length} 个条目待评议`, sub: "学生已申请发布", tag: "待评议", tone: "orange", act: "rev" },
+        { text: `${pendingReviewCount.value} 份提交待批改`, sub: "进入批改中心", tag: "待评", tone: "blue", act: "review" },
+      ]
+    : [
+        { text: `${myWork.value.length} 篇作品在修订`, sub: "继续写作或提交", tag: "作品", tone: "blue", act: "assignments" },
+        { text: `${commCounts.value.top} 篇优质条目`, sub: "按质量分排序", tag: "优质", tone: "green", act: "top" },
+      ];
+  return rows.filter((r) => !r.text.startsWith("0 "));
+});
+function commAct(kind: string) {
+  if (kind === "rev") {
+    commTab.value = "rev";
+    commStatus.value = "all";
+  } else if (kind === "top") commTab.value = "top";
+  else if (kind === "review") go("review");
+  else if (kind === "assignments") go("assignments");
+}
+function commStatusOf(p: any) {
+  if (p._pending) return { n: "待评议", c: "orange" };
+  if (commTopFlag(p)) return { n: "优质", c: "green" };
+  return { n: "已核验", c: "blue" };
+}
+function commBars(p: any) {
+  const d = p.dims || {};
+  return ["S", "A", "C", "L"].map((k) => {
+    const v = d[k] == null ? 0 : Math.round(Number(d[k]));
+    return { k, v, h: Math.max(3, Math.round(v / 5)) };
+  });
+}
+function shortDate(v: string) {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return v;
+  return `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, "0")}`;
+}
 // Completion is only an editing aid; server validation and publish guards stay authoritative.
 function criterionComplete(i: any) {
   return i.status === 'NA' ? !!i.reason?.trim() : i.status === 'SCORED' &&
@@ -299,6 +391,56 @@ const previewScore = computed(() => {
     total: gateReason.value.trim() ? Math.min(raw, 89) : raw,
   };
 });
+
+// 打分：先按维度评级（4 档），再按需逐项微调
+const LEVELS = [
+  { n: "优", v: 95 },
+  { n: "良", v: 82 },
+  { n: "合格", v: 67 },
+  { n: "待改进", v: 50 },
+];
+const QUICK_NOTES = ["证据链完整", "因果衔接还需补一句", "注意限定语的范围", "图注要写清机制"];
+function addNote(t: string) {
+  const base = summary.value.trim().replace(/[；;。]\s*$/, "");
+  summary.value = base ? `${base}；${t}` : t;
+}
+function dimLevel(code: string) {
+  const items = grading.value.filter(
+    (i) =>
+      i.code.startsWith(code) &&
+      i.status === "SCORED" &&
+      i.score !== null &&
+      i.score !== "" &&
+      Number.isFinite(Number(i.score)),
+  );
+  if (!items.length) return null;
+  const avg = items.reduce((n, i) => n + Number(i.score), 0) / items.length;
+  return avg >= 90 ? 95 : avg >= 75 ? 82 : avg >= 60 ? 67 : 50;
+}
+function setDimLevel(code: string, v: number) {
+  for (const i of grading.value) {
+    if (!i.code.startsWith(code)) continue;
+    if (i.status === "NA") continue; // 已说明的不适用项保持不变
+    i.status = "SCORED";
+    i.score = v;
+  }
+}
+function dimDone(code: string) {
+  const items = grading.value.filter((i) => i.code.startsWith(code));
+  return (
+    items.length > 0 &&
+    items.every((i) =>
+      i.status === "SCORED"
+        ? i.score !== null && i.score !== "" && Number.isFinite(Number(i.score))
+        : i.status === "NA"
+          ? !!String(i.reason || "").trim()
+          : false,
+    )
+  );
+}
+const dimsLeft = computed(
+  () => rubric.filter((d: any) => !dimDone(d.d)).length,
+);
 function fmt(d: string) {
   if (!d) return "—";
   return new Date(d).toLocaleString("zh-CN", {
@@ -690,7 +832,7 @@ async function submit() {
       operation = JSON.parse(localStorage.getItem(storageKey) || "null");
     } catch {}
     if (!operation || operation.revision !== entry.value.revision)
-      operation = { revision: entry.value.revision, key: crypto.randomUUID() };
+      operation = { revision: entry.value.revision, key: uid() };
     localStorage.setItem(storageKey, JSON.stringify(operation));
     const k = operation.key;
     const v = await api(
@@ -781,6 +923,165 @@ async function focusAnchor(id: string, original = "") {
   if(el){selectedAnchor.value=id;if(error.value.startsWith('原段落已删除或拆分'))error.value='';await nextTick();el.scrollIntoView({behavior:'smooth',block:'center'});return true;}
   error.value=`原段落已删除或拆分，请对照历史原文：${original||id}`;return false;
 }
+
+// ---- 四维批注：正文选中 → 就地浮层 ----
+const DIMENSIONS = [
+  { code: "S", name: "科学性" },
+  { code: "A", name: "准确性" },
+  { code: "C", name: "完整性" },
+  { code: "L", name: "逻辑性" },
+];
+const DIM_LABELS: Record<string, string> = {
+  S: "科学性", A: "准确性", C: "完整性", L: "逻辑性",
+  S1: "科学性", S2: "科学性", S3: "科学性",
+  A1: "准确性", A2: "准确性", A3: "准确性",
+  C1: "完整性", C2: "完整性",
+  L1: "逻辑性", L2: "逻辑性", L3: "逻辑性",
+};
+function dimLabel(code: string) { return DIM_LABELS[code] || code || "批注"; }
+
+const highlightFeedbackId = ref(0);
+const versionAnnotations = computed(() =>
+  (version.value?.feedback || [])
+    .map((f: any) => ({
+      id: f.id,
+      blockId: f.paragraph_id,
+      quote: f.quote_text || "",
+      dimension: String(f.indicator_code || "C").charAt(0),
+    }))
+    .filter((a: any) => a.quote),
+);
+const draftAnnotations = computed(() =>
+  (latest.value?.feedback || [])
+    .map((f: any) => ({
+      id: f.id,
+      blockId: f.paragraph_id,
+      quote: f.quote_text || "",
+      dimension: String(f.indicator_code || "C").charAt(0),
+    }))
+    .filter((a: any) => a.quote),
+);
+async function jumpToFeedback(id: number) {
+  highlightFeedbackId.value = id;
+  // 面板可能是收起状态，批注列表也可能折叠在 details 里：先展开再定位，否则元素没有布局、滚动无效。
+  panelVisible.value = true;
+  await nextTick();
+  const el = document.getElementById("feedback-" + id);
+  if (!el) return;
+  let opened = false;
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    if (node instanceof HTMLDetailsElement && !node.open) { node.open = true; opened = true; }
+  }
+  if (opened) await nextTick();
+  // 等一帧，让展开后的布局完成再滚动。
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  setTimeout(() => { if (highlightFeedbackId.value === id) highlightFeedbackId.value = 0; }, 2400);
+}
+
+const annotation = ref<{ blockId: string; quote: string; label: string; kind: "text" | "figure"; left: number; top: number } | null>(null);
+const annotationBody = ref("");
+const annotationDim = ref("C");
+const annotationBusy = ref(false);
+const annotationError = ref("");
+function clearAnnotation() { annotation.value = null; annotationBody.value = ""; annotationError.value = ""; }
+function onOutsideMouseDown(e: MouseEvent) {
+  if (!annotation.value) return;
+  const t = e.target as HTMLElement | null;
+  if (t?.closest?.(".annotation-popover")) return;
+  clearAnnotation();
+}
+onMounted(() => document.addEventListener("mousedown", onOutsideMouseDown, true));
+onBeforeUnmount(() => document.removeEventListener("mousedown", onOutsideMouseDown, true));
+function captureSelection() {
+  if (page.value !== "grading" || !isTeacher.value) return;
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed) return;
+  const text = sel.toString().trim();
+  if (!text || text.length > 600) return;
+  const range = sel.getRangeAt(0);
+  const node = range.startContainer;
+  const el = (node.nodeType === 1 ? node : node.parentElement) as HTMLElement | null;
+  const block = el?.closest("[data-block-id]") as HTMLElement | null;
+  if (!block?.dataset.blockId) return;
+  const rect = range.getBoundingClientRect();
+  const below = rect.bottom + 10;
+  const top = below + 320 > innerHeight ? Math.max(70, rect.top - 330) : below;
+  annotation.value = {
+    blockId: block.dataset.blockId,
+    quote: text,
+    label: text,
+    kind: "text",
+    left: Math.min(Math.max(12, rect.left), Math.max(12, innerWidth - 344)),
+    top,
+  };
+  annotationError.value = "";
+}
+// 图片块没有可选中文本，改为在图片右下角提供入口，浮层贴着图片出现。
+function annotateFigure(payload: { blockId: string; label: string }) {
+  if (page.value !== "grading" || !isTeacher.value) return;
+  if (!payload?.blockId) return;
+  const el = document.querySelector(`[data-block-id="${payload.blockId}"]`) as HTMLElement | null;
+  const rect = el?.getBoundingClientRect();
+  const boxW = 320, boxH = 300;
+  // 以正文栏右边界为限，避免浮层压住右侧评分面板。
+  const col = (document.querySelector(".document-column") as HTMLElement | null)?.getBoundingClientRect();
+  const limit = col ? Math.min(col.right, innerWidth) : innerWidth;
+  let left = rect ? rect.right + 12 : innerWidth / 2 - boxW / 2;
+  let top = rect ? rect.top : 120;
+  if (left + boxW > limit - 8) left = Math.max(12, (rect?.left ?? 12) - boxW - 12);
+  if (top + boxH > innerHeight - 12) top = Math.max(72, innerHeight - boxH - 12);
+  annotation.value = {
+    blockId: payload.blockId,
+    quote: payload.label && payload.label !== "图片" ? payload.label : "",
+    label: payload.label || "图片",
+    kind: "figure",
+    left,
+    top,
+  };
+  annotationDim.value = "C";
+  annotationBody.value = "";
+  annotationError.value = "";
+}
+async function submitAnnotation() {
+  if (!annotation.value || !version.value) return;
+  const body = annotationBody.value.trim();
+  if (!body) { annotationError.value = "请填写批注内容"; return; }
+  annotationBusy.value = true; annotationError.value = "";
+  try {
+    await api(`/submissions/${version.value.id}/feedback`, "POST", {
+      paragraphId: annotation.value.blockId,
+      indicator: annotationDim.value,
+      body,
+      quote: annotation.value.quote,
+    });
+    version.value = await api(`/submissions/${version.value.id}`);
+    clearAnnotation();
+    window.getSelection()?.removeAllRanges();
+    notify("批注已添加，学生可在正文高亮处看到");
+  } catch (e: any) {
+    annotationError.value = e?.message || "批注保存失败";
+  } finally { annotationBusy.value = false; }
+}
+
+// 大纲按 H1/H2/H3 生成 1 / 1.1 / 1.1.1 层级编号，避免长文里只剩一串连续序号。
+function outlineNumbered(doc: any) {
+  const heads = documentHeadings(doc);
+  if (!heads.length) return [];
+  const base = Math.min(...heads.map((h) => h.level || 1));
+  const counters = [0, 0, 0];
+  return heads.map((h) => {
+    const depth = Math.min(Math.max((h.level || 1) - base, 0), 2);
+    counters[depth] += 1;
+    for (let i = depth + 1; i < 3; i++) counters[i] = 0;
+    const parts = counters.slice(0, depth + 1).map((n) => n || 1);
+    // 正文里已经手写了「2.1 xxx」时，大纲不再重复一次编号。
+    const text = String(h.text || "").replace(/^\d+(?:\.\d+)*[\s、.．]*/, "") || h.text;
+    return { ...h, text, number: parts.join("."), depth };
+  });
+}
+const entryOutline = computed(() => outlineNumbered(entry.value?.content));
+const versionOutline = computed(() => outlineNumbered(version.value?.content));
 
 function showModal(kind: string, data: Record<string, any> = {}) {
   modal.value = kind;
@@ -1348,88 +1649,155 @@ onBeforeUnmount(() => {
 
         <ReviewWorkbench v-else-if="page === 'review' && isStaff" :key="cid+'-'+me.id+'-'+course?.role" :course-id="cid" :teacher="isTeacher" :course-label="course.title" :filters="reviewFilters" :busy="busy" @filters="reviewFilters=$event" @open="openReviewRow" />
 
-        <section v-else-if="page === 'community'" class="page">
+        <section v-else-if="page === 'community'" class="page community-page">
           <div class="page-heading">
             <div>
-              <span class="eyebrow">课程知识共建</span>
-              <h1>让好的解释，被更多人看见。</h1>
-              <p>这里的每一篇知识帖，都保留作者、来源、版本和教师评价。</p>
+              <h1>知识社区</h1>
+              <p>同学们共同撰写、评议与核验的知识条目。</p>
             </div>
-            <span class="badge blue"
-              >{{ publications.length }} 篇课程内条目</span
-            >
+            <button class="btn secondary" @click="go('assignments')">
+              去创作 <Plus :size="15" />
+            </button>
           </div>
-          <div id="publication-entry" class="publication-entry"></div>
-          <section v-if="isTeacher && pending.length" class="approval-card">
-            <div class="section-title">
-              <h2>等待你的发布审核</h2>
-              <span class="badge orange">{{ pending.length }}</span>
-            </div>
-            <div v-for="p in pending" :key="p.id" class="approval-row">
-              <div>
-                <strong>{{ p.title }}</strong>
-                <p>
-                  {{ p.author_name }} · v{{ p.version_no }} · 仅申请发布到本课程
-                </p>
-              </div>
-              <button
-                class="btn secondary"
-                @click="openVersion(p.submission_id)"
-              >
-                查看</button
-              ><button class="btn primary" @click="pubAction(p.id, 'APPROVE')">
-                同意发布</button
-              ><button class="text-btn" @click="pubAction(p.id, 'RETURN')">
-                退回
-              </button>
+
+          <div class="comm-tabs" role="tablist" aria-label="社区范围">
+            <button
+              v-for="t in commTabs"
+              :key="t.id"
+              class="comm-tab"
+              :class="{ on: commTab === t.id }"
+              role="tab"
+              :aria-selected="commTab === t.id"
+              @click="commTab = t.id"
+            >
+              {{ t.name }}<span class="c">{{ commCounts[t.id] || 0 }}</span>
+            </button>
+          </div>
+
+          <section v-if="isTeacher && pending.length" class="comm-approve">
+            <strong>{{ pending.length }} 个条目等待发布审核</strong>
+            <div v-for="p in pending" :key="p.id" class="comm-approve-row">
+              <span class="comm-approve-title">{{ p.title }}</span>
+              <span class="comm-meta-line">{{ p.author_name }} · v{{ p.version_no }}</span>
+              <span class="grow"></span>
+              <button class="text-btn" @click="openVersion(p.submission_id)">查看</button>
+              <button class="btn secondary" @click="pubAction(p.id, 'APPROVE')">同意发布</button>
+              <button class="text-btn" @click="pubAction(p.id, 'RETURN')">退回</button>
             </div>
           </section>
-          <div class="filter-row">
-            <label class="search-box"
-              ><Search :size="18" /><input
-                v-model="query"
-                placeholder="搜索标题或作者"
-                aria-label="搜索社区条目" /></label
-            ><label class="community-sort">排序<select v-model="publicationSort" aria-label="社区排序"><option value="recent">最近发布</option><option value="quality">质量分优先</option></select></label><span class="muted">仅展示已获批的指定版本</span>
-          </div>
-          <div class="community-grid">
-            <article
-              v-for="p in filteredPubs"
-              :key="p.id"
-              class="knowledge-card"
-            >
-              <button v-if="p.cover" class="knowledge-cover" aria-label="打开图文知识帖" @click="openVersion(p.submission_id)"><img :src="p.cover" :alt="p.title + '的插图'" loading="lazy" /></button>
-              <div class="card-top">
-                <span class="category-label">课程知识帖</span
-                ><span class="quality-number"
-                  >{{ number(p.q_final) }}<small>质量分</small></span
-                >
+
+          <div class="comm-layout">
+            <div class="comm-main">
+              <div class="comm-filters">
+                <label class="search-box">
+                  <Search :size="17" />
+                  <input v-model="query" placeholder="搜索条目" aria-label="搜索社区条目" />
+                </label>
+                <div class="comm-chips">
+                  <button
+                    v-for="s in commStatusChips"
+                    :key="s.id"
+                    class="comm-chip"
+                    :class="{ on: commStatus === s.id }"
+                    @click="commStatus = s.id"
+                  >
+                    {{ s.name }}
+                  </button>
+                </div>
+                <span class="grow"></span>
+                <select v-model="publicationSort" class="comm-sort" aria-label="社区排序">
+                  <option value="new">最近更新</option>
+                  <option value="q">质量最高</option>
+                  <option value="disc">讨论最多</option>
+                </select>
               </div>
-              <button
-                class="title-button"
-                @click="openVersion(p.submission_id)"
-              >
-                <h2>{{ p.title }}</h2>
-              </button>
-              <p>{{ p.summary }}</p>
-              <div class="knowledge-foot">
-                <span class="avatar small">{{ p.author_name.slice(0, 1) }}</span
-                ><span>{{ p.author_name }}</span
-                ><span class="grow"></span><span>v{{ p.version_no }}</span
-                ><button
-                  class="icon-btn"
-                  aria-label="阅读知识帖"
+
+              <div class="comm-list">
+                <article
+                  v-for="p in commRows"
+                  :key="p.id"
+                  class="comm-row"
+                  role="button"
+                  tabindex="0"
                   @click="openVersion(p.submission_id)"
+                  @keydown.enter="openVersion(p.submission_id)"
                 >
-                  <ArrowUpRight :size="18" />
-                </button>
+                  <div class="comm-row-main">
+                    <div class="comm-tags">
+                      <span class="comm-tag" :class="commStatusOf(p).c">{{ commStatusOf(p).n }}</span>
+                      <span v-if="commMine(p)" class="comm-tag blue">我参与</span>
+                      <span class="comm-meta-line">v{{ p.version_no }} · {{ p.author_name }}</span>
+                    </div>
+                    <h3>{{ p.title }}</h3>
+                    <p class="comm-abs">{{ p.summary }}</p>
+                    <div class="comm-meta">
+                      <span class="avatar small">{{ p.author_name.slice(0, 1) }}</span>
+                      <span>{{ p.author_name }}</span>
+                      <span><MessageSquare :size="13" />{{ p.discussion_count || 0 }}</span>
+                      <span>更新于 {{ shortDate(p.published_at || p.requested_at) }}</span>
+                    </div>
+                  </div>
+                  <div class="comm-score">
+                    <template v-if="p.q_final != null">
+                      <b>{{ number(p.q_final) }}</b><span>质量分</span>
+                      <div class="comm-bars">
+                        <i
+                          v-for="b in commBars(p)"
+                          :key="b.k"
+                          :class="{ low: b.v < 60 }"
+                          :style="{ height: b.h + 'px' }"
+                          :title="b.k + ' ' + b.v"
+                        />
+                      </div>
+                    </template>
+                    <template v-else><b class="none">—</b><span>未评分</span></template>
+                  </div>
+                </article>
+                <div v-if="!commRows.length" class="empty">
+                  <Library :size="30" />
+                  <h2>没有符合条件的条目</h2>
+                  <p>换个关键词，或清除筛选条件。</p>
+                  <button
+                    class="btn secondary"
+                    @click="query = ''; commStatus = 'all'; commTab = 'all'"
+                  >
+                    清除筛选
+                  </button>
+                </div>
               </div>
-            </article>
-            <div v-if="!filteredPubs.length" class="empty card">
-              <Library :size="32" />
-              <h2>{{ query ? "没有找到匹配条目" : "课程社区还没有条目" }}</h2>
-              <p>作品需要作者申请、教师审核后才会展示。</p>
+              <p class="comm-foot">{{ commRows.length }} 条 · 仅显示你有权查看的条目</p>
             </div>
+
+            <aside class="comm-rail">
+              <section class="comm-card">
+                <div class="comm-card-head"><h3>待我处理</h3><span>{{ commTodo.length }} 项</span></div>
+                <button v-for="t in commTodo" :key="t.text" class="comm-li" @click="commAct(t.act)">
+                  <div class="comm-li-main">
+                    <strong>{{ t.text }}</strong><small>{{ t.sub }}</small>
+                  </div>
+                  <span class="comm-tag" :class="t.tone">{{ t.tag }}</span>
+                </button>
+                <p v-if="!commTodo.length" class="comm-empty">暂无待办。</p>
+              </section>
+              <section class="comm-card">
+                <div class="comm-card-head"><h3>高质量条目</h3><span>按质量分</span></div>
+                <button v-for="(e, i) in commTop" :key="e.id" class="comm-rank" @click="openVersion(e.submission_id)">
+                  <span class="i">{{ i + 1 }}</span>
+                  <div class="comm-li-main"><strong>{{ e.title }}</strong><small>{{ e.author_name }} · v{{ e.version_no }}</small></div>
+                  <span class="v">{{ number(e.q_final) }}</span>
+                </button>
+                <p v-if="!commTop.length" class="comm-empty">还没有已评分条目。</p>
+              </section>
+              <section class="comm-card">
+                <div class="comm-card-head"><h3>活跃贡献者</h3><span>本课程</span></div>
+                <div v-for="c in commPeople" :key="c.name" class="comm-li static">
+                  <span class="avatar small">{{ c.name.slice(0, 1) }}</span>
+                  <div class="comm-li-main"><strong>{{ c.name }}</strong></div>
+                  <span class="num">参与 {{ c.n }} 条</span>
+                </div>
+                <p v-if="!commPeople.length" class="comm-empty">暂无贡献记录。</p>
+              </section>
+            </aside>
           </div>
         </section>
 
@@ -1500,12 +1868,13 @@ onBeforeUnmount(() => {
               'without-panel': !panelVisible,
             }"
           >
+            <button v-if="!panelVisible" class="panel-reopen" title="展开反馈面板" aria-label="展开反馈面板" @click="panelVisible = true"><MessageSquare :size="16" /><span>反馈</span></button>
             <aside v-if="outlineVisible" class="document-outline studio-outline">
-              <div class="outline-section-label"><ListTree :size="16" /><h3>写作大纲</h3><span>{{ documentHeadings(entry.content).length }}</span></div>
+              <div class="outline-section-label"><ListTree :size="16" /><h3>写作大纲</h3><span>{{ entryOutline.length }}</span></div>
               <nav aria-label="文章章节">
-                <button v-for="(a, i) in documentHeadings(entry.content)" :key="a.id" :class="{ selected: activeOutlineId === a.id, 'sub-heading': a.level > 1 }" @click="focusAnchor(a.id)"><span>{{ i + 1 }}</span><span>{{ a.text }}</span></button>
+                <button v-for="a in entryOutline" :key="a.id" :class="{ selected: activeOutlineId === a.id, 'sub-heading': a.level > 1 }" :style="{ paddingLeft: 12 + a.depth * 16 + 'px' }" @click="focusAnchor(a.id)"><span>{{ a.number }}</span><span>{{ a.text }}</span></button>
               </nav>
-              <p v-if="!documentHeadings(entry.content).length" class="outline-empty">用 H1 / H2 组织文章，章节将自动出现在这里。</p>
+              <p v-if="!entryOutline.length" class="outline-empty">用 H1 / H2 / H3 组织文章，章节将按层级出现在这里。</p>
               <section class="outline-evidence"><div class="outline-section-label"><BookOpen :size="16" /><h3>挂载证据</h3><span>{{ entry.evidence.length }}</span></div>
                 <button v-for="(e, i) in entry.evidence" :key="i" class="outline-source" @click="focusAnchor(e.paragraphId)"><span>E{{ i + 1 }}</span><span>{{ e.sourceTitle }}</span></button>
                 <p v-if="!entry.evidence.length" class="outline-empty">让每一个关键论断，都有可靠的来源。</p>
@@ -1534,12 +1903,14 @@ onBeforeUnmount(() => {
                 </div>
                 <Editor
                   :highlight-id="selectedAnchor"
+                  :annotations="draftAnnotations"
                   :document-title="entry.title"
                   :entry-id="entry.id" :evidence-count="entry.evidence.length" @uploading="uploadingMedia = $event"
                   @evidence="showModal('evidence')"
                   v-model="entry.content"
                   @update:model-value="changed"
                   @selected="selectedParagraph = $event"
+                  @annotation="jumpToFeedback"
                 />
               </div>
               <section class="card source-panel">
@@ -1584,6 +1955,7 @@ onBeforeUnmount(() => {
                 <span class="badge">{{
                   latest ? `最近提交 v${latest.version_no}` : "尚未提交"
                 }}</span>
+                <button class="panel-collapse" title="收起反馈面板" aria-label="收起反馈面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
               <nav class="feedback-jump-nav" aria-label="反馈分区导航"><button @click="sidebarJump('sidebar-quality')">质量评分</button><button @click="sidebarJump('sidebar-teacher')">教师批注<span>{{ latest?.feedback?.length || 0 }}</span></button><button v-if="aiSidebarVisible" @click="sidebarJump('sidebar-ai')">AI 反馈</button></nav>
               </div>
@@ -1596,10 +1968,13 @@ onBeforeUnmount(() => {
                 <article
                   v-for="f in latest?.feedback || []"
                   :key="f.id"
+                  :id="'feedback-' + f.id"
                   class="feedback-card"
+                  :class="{ 'is-target': highlightFeedbackId === f.id }"
+                  @click="focusAnchor(f.paragraph_id, f.original_text)"
                 >
                   <div class="card-top">
-                    <span class="indicator-tag">{{ f.indicator_code }}</span
+                    <span class="indicator-tag">{{ dimLabel(f.indicator_code) }}</span
                     ><span
                       class="badge"
                       :class="f.resolved ? 'green' : 'orange'"
@@ -1610,11 +1985,11 @@ onBeforeUnmount(() => {
                   <h3 class="feedback-highlight">{{ f.body }}</h3>
                   <button
                     class="text-btn"
-                    @click="focusAnchor(f.paragraph_id, f.original_text)"
+                    @click.stop="focusAnchor(f.paragraph_id, f.original_text)"
                   >
                     定位正文<ArrowUpRight :size="14" />
                   </button>
-                  <blockquote>{{ f.original_text }}</blockquote>
+                  <blockquote>{{ f.quote_text || f.original_text }}</blockquote>
                   <div
                     class="feedback-replies"
                     v-for="a in f.actions"
@@ -1763,17 +2138,19 @@ onBeforeUnmount(() => {
               'without-panel': !panelVisible,
             }"
           >
+            <button v-if="!panelVisible" class="panel-reopen" title="展开反馈面板" aria-label="展开反馈面板" @click="panelVisible = true"><MessageSquare :size="16" /><span>反馈</span></button>
             <aside v-if="outlineVisible" class="document-outline">
               <h3><ListTree :size="16" />文档大纲</h3>
               <p>点击章节，定位正文</p>
               <nav aria-label="正文段落">
                 <button
-                  v-for="(a, i) in documentHeadings(version.content)"
+                  v-for="a in versionOutline"
                   :key="a.id"
-                  :class="{ selected: selectedAnchor === a.id }"
+                  :class="{ selected: selectedAnchor === a.id, 'sub-heading': a.level > 1 }"
+                  :style="{ paddingLeft: 12 + a.depth * 16 + 'px' }"
                   @click="focusAnchor(a.id)"
                 >
-                  <span>{{ i + 1 }}</span
+                  <span>{{ a.number }}</span
                   ><span>{{ a.text }}</span>
                 </button>
               </nav>
@@ -1784,7 +2161,7 @@ onBeforeUnmount(() => {
               </div>
             </aside>
             <div class="document-column">
-              <div class="document-paper">
+              <div class="document-paper" @mouseup="captureSelection">
                 <span class="eyebrow"
                   >{{ version.rubric_version }} · 不可变提交版本</span
                 >
@@ -1796,13 +2173,16 @@ onBeforeUnmount(() => {
                   ><span>{{ version.author_name }}</span
                   ><span>v{{ version.version_no }}</span>
                 </div>
-                <details class="assignment-snapshot rubric-snapshot"><summary>提交时的量规 · {{version.rubric_version}}</summary><RubricViewer :snapshot="version.rubricSnapshot" :source="version.rubricSnapshotSource" /></details>
                 <details class="assignment-snapshot"><summary>提交时的任务规则{{ version.assignmentSnapshot ? ' · r'+version.assignmentSnapshot.management_revision : ' · 未记录' }}</summary><template v-if="version.assignmentSnapshot"><p><strong>{{ version.assignmentSnapshot.title }}</strong></p><p>{{ version.assignmentSnapshot.requirements }}</p><p>{{ fmt(version.assignmentSnapshot.due_at) }} 截止 · {{ version.assignmentSnapshot.rubric_version }}</p><p class="muted">本规则快照随该提交保存，后续调整不改写本记录。</p></template><p v-else class="muted">此历史提交早于任务快照功能，未保存当时的规则；不使用当前规则冒充历史记录。</p></details>
                 <Editor
                   :highlight-id="selectedAnchor"
+                  :annotations="versionAnnotations"
+                  :can-annotate="isTeacher"
                   :model-value="version.content"
                   readonly
                   @selected="selectedAnchor = $event"
+                  @annotation="jumpToFeedback"
+                  @annotate="annotateFigure"
                 />
               </div>
               <section class="card source-panel">
@@ -1836,11 +2216,11 @@ onBeforeUnmount(() => {
                   </p>
                 </details>
               </section>
-              <section class="card source-panel">
-                <div class="section-title">
+              <details class="card source-panel source-collapsed">
+                <summary class="section-title">
                   <h3>来源与核验</h3>
-                  <span class="muted">{{ version.evidence.length }} 条</span>
-                </div>
+                  <span class="muted">{{ version.evidence.length }} 条 · 展开查看</span>
+                </summary>
                 <div
                   v-for="e in version.evidence"
                   :key="e.id"
@@ -1889,7 +2269,36 @@ onBeforeUnmount(() => {
                 <p v-if="!version.evidence.length" class="muted">
                   此版本未挂载证据；教师仍需评估需要依据的主张是否有充分来源。
                 </p>
-              </section>
+              </details>
+            </div>
+            <div
+              v-if="annotation"
+              class="annotation-popover"
+              :style="{ left: annotation.left + 'px', top: annotation.top + 'px' }"
+              role="dialog"
+              aria-label="添加批注"
+              @mouseup.stop
+            >
+              <div class="annotation-popover-head">
+                <strong><MessageSquare :size="14" />{{ annotation.kind === "figure" ? "图片批注" : "添加批注" }}</strong>
+                <button class="annotation-close" aria-label="关闭批注浮层" @click="clearAnnotation"><X :size="15" /></button>
+              </div>
+              <p class="annotation-quote" :class="{ 'is-figure': annotation.kind === 'figure' }">{{ annotation.kind === "figure" ? annotation.label : annotation.quote }}</p>
+              <div class="annotation-dims" role="group" aria-label="批注维度">
+                <button
+                  v-for="d in DIMENSIONS"
+                  :key="d.code"
+                  type="button"
+                  :class="{ active: annotationDim === d.code }"
+                  @click="annotationDim = d.code"
+                >{{ d.name }}</button>
+              </div>
+              <textarea v-model="annotationBody" rows="3" maxlength="2000" :placeholder="annotation.kind === 'figure' ? '说明这张图的问题：读法、标注、与正文是否对得上' : '指出问题并给出改法，一两句即可'"></textarea>
+              <p v-if="annotationError" class="annotation-error">{{ annotationError }}</p>
+              <div class="annotation-actions">
+                <button class="text-btn" @click="clearAnnotation">取消</button>
+                <button class="btn primary" :disabled="annotationBusy" @click="submitAnnotation">{{ annotationBusy ? "保存中…" : "添加批注" }}</button>
+              </div>
             </div>
             <aside
               v-show="panelVisible"
@@ -1899,150 +2308,223 @@ onBeforeUnmount(() => {
               <div class="panel-title">
                 <h2>四维评分</h2>
                 <span class="badge blue">教师确认</span>
+                <button class="panel-collapse" title="收起评分面板" aria-label="收起评分面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
-              <div v-if="isTeacher" class="review-save-state" :class="{failed:review.state.error}" aria-live="polite"><span>{{ review.state.loading ? '正在加载评分草稿…' : review.state.saving ? '正在保存评分草稿…' : review.state.error ? '评分草稿未保存' : review.state.dirty ? '有未保存的评分修改' : review.state.savedAt ? '评分草稿已保存 · ' + fmt(review.state.savedAt) : '修改后自动保存评分草稿' }}</span><small>仅你可见；发布后学生才会看到评分和总评。</small></div>
+              <div v-if="isTeacher" class="review-save-state" :class="{failed:review.state.error}" aria-live="polite"><span>{{ review.state.loading ? '正在加载评分草稿…' : review.state.saving ? '正在保存评分草稿…' : review.state.error ? '评分草稿未保存' : review.state.dirty ? '有未保存的评分修改' : review.state.savedAt ? '评分草稿已保存 · ' + fmt(review.state.savedAt) : '修改后自动保存评分草稿' }}</span><small>仅你可见</small></div>
               <div v-if="review.state.error && isTeacher" class="review-recovery" role="alert"><p>{{ review.state.error }}</p><button class="text-btn" @click="review.state.conflict || !review.state.loaded ? reloadReview() : review.save()">{{ review.state.conflict || !review.state.loaded ? '重新加载并合并' : '重试保存' }}</button></div>
               <div v-if="review.state.stale && isTeacher" class="review-recovery"><strong>正式评价已更新</strong><p>有一份基于旧评价的评分草稿。请先选择恢复并复核，或放弃旧草稿。</p><button class="text-btn" @click="restoreReview(review.state.stale)">恢复旧草稿并复核</button><button class="text-btn muted" @click="review.discardStale()">放弃旧草稿</button></div>
               <div v-if="review.state.backup && isTeacher" class="review-recovery"><strong>发现本机未同步的评分备份</strong><p>可恢复后继续核对；不会直接覆盖正式评价。</p><button class="text-btn" @click="restoreReview(review.state.backup)">恢复本机评分备份</button><button class="text-btn muted" @click="review.discardBackup()">使用服务端草稿</button></div>
-              <div class="grading-preview">
-                <span>综合质量 · 四维等权</span
-                ><strong
+              <div class="grade-summary">
+                <span>综合质量 · 四维等权</span>
+                <strong
                   >{{ previewScore ? number(previewScore.total) : "—"
                   }}<small>/ 100</small></strong
                 >
                 <p>
                   {{
-                    previewScore
-                      ? "仅为待发布计算值"
-                      : "请逐项评分，不适用项需填写理由"
+                    dimsLeft
+                      ? `还有 ${dimsLeft} 个维度未评`
+                      : "四维已全部评级"
                   }}
                 </p>
               </div>
-              <p class="notice">本提交量规：{{version.rubricSnapshot?.title}} · <code class="rubric-version-chip" :title="version.rubric_version">{{version.rubric_version}}</code> <button class="text-btn" @click="openRubric">查看本提交量规</button></p>
-              <div v-if="isTeacher" class="grading-completion" aria-label="评分填写进度">
-                <strong>已填写 {{completedCriteria}} / {{grading.length}} 项</strong>
-                <progress :value="completedCriteria" :max="grading.length" aria-label="评分指标填写进度"></progress>
-                <p>有效分或已说明理由的 N/A 计为已填写；待核验仍需处理。填写完成不等于可发布。</p>
-                <button class="text-btn" :disabled="completedCriteria===grading.length || !review.state.loaded || review.state.loading || reviewPublishing || !!review.state.stale || !!review.state.backup || review.state.conflict" @click="jumpToMissingCriterion">定位下一项待填写</button>
-              </div>
-              <fieldset class="review-form" :disabled="!isTeacher || reviewPublishing || review.state.loading || !review.state.loaded || !!review.state.stale || !!review.state.backup || review.state.conflict">
-              <details
-                v-for="d in rubric"
-                :key="d.d"
-                class="grading-dimension"
-                :open="d.d === 'S'"
+
+              <fieldset
+                class="grade-form"
+                :disabled="
+                  !isTeacher ||
+                  reviewPublishing ||
+                  review.state.loading ||
+                  !review.state.loaded ||
+                  !!review.state.stale ||
+                  !!review.state.backup ||
+                  review.state.conflict
+                "
               >
-                <summary>
-                  <span
-                    ><i>{{ d.d }}</i
-                    >{{ d.name }}</span
-                  ><span
-                    >{{ dimensionScore(d.d) }}<ChevronRight :size="15"
-                  /></span>
-                </summary>
-                <div
-                  v-for="i in grading.filter((i) => i.code.startsWith(d.d))"
-                  :key="i.code"
-                  class="grading-item"
-                >
-                  <label :for="'score-' + i.code"
-                    ><code>{{ i.code }}</code
-                    >{{ i.name }}</label
-                  >
-                  <details class="grading-anchors"><summary>查看此指标评分锚点</summary><template v-if="gradingCriterion(i.code)?.description"><p>{{gradingCriterion(i.code).description}}</p><p v-for="[key,label] in [['excellent','优秀'],['good','良好'],['pass','基本达到'],['improve','待改进']]" :key="key"><strong>{{label}}：</strong>{{gradingCriterion(i.code)[key]}}</p></template><p v-else class="muted">该历史版本未记录单项锚点，不使用新增锚点冒充当时标准。</p></details>
-                  <div class="grading-inputs">
-                    <input
-                      :id="'score-' + i.code"
-                      v-model="i.score"
-                      :disabled="i.status !== 'SCORED'"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.01"
-                      placeholder="分数"
-                    /><select
-                      v-model="i.status"
-                      :aria-label="i.name + '评分状态'"
-                    >
-                      <option value="SCORED">有效分</option>
-                      <option value="NA">N/A</option>
-                      <option value="PENDING">待核验</option>
-                    </select>
+                <section class="grade-block">
+                  <div class="grade-block-head">
+                    <h4>内容质量</h4>
+                    <span>{{ version.rubric_version }}</span>
                   </div>
-                  <input
-                    v-if="i.status === 'NA'"
-                    v-model="i.reason"
-                    :aria-label="i.name + '不适用理由'"
-                    maxlength="500"
-                    placeholder="填写不适用理由"
-                  />
-                </div>
-              </details>
-              <div class="grading-notes">
-                <label
-                  >关键质量门槛<textarea
-                    v-model="gateReason"
-                    rows="2"
-                    maxlength="1000"
-                    placeholder="仅已证实的严重缺陷填写；将 Q 封顶 89"
-                  /></label
-                ><label
-                  >总评与下一步建议<textarea
+                  <div v-for="d in rubric" :key="d.d" class="grade-dim">
+                    <span class="grade-dim-name"
+                      >{{ d.name }}<em>25%</em></span
+                    >
+                    <div
+                      class="grade-levels"
+                      role="group"
+                      :aria-label="d.name + '评级'"
+                    >
+                      <button
+                        v-for="l in LEVELS"
+                        :key="l.v"
+                        type="button"
+                        :class="{ on: dimLevel(d.d) === l.v }"
+                        :title="l.n + ' · 对应 ' + l.v + ' 分'"
+                        @click="setDimLevel(d.d, l.v)"
+                      >
+                        {{ l.n }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <details class="grade-fine">
+                    <summary>逐项微调 · 11 项指标</summary>
+                    <div
+                      v-for="d in rubric"
+                      :key="d.d"
+                      class="grade-fine-group"
+                    >
+                      <h5>{{ d.d }} · {{ d.name }}</h5>
+                      <div
+                        v-for="i in grading.filter((x) => x.code.startsWith(d.d))"
+                        :key="i.code"
+                        class="grade-fine-row"
+                      >
+                        <label :for="'score-' + i.code"
+                          ><code>{{ i.code }}</code
+                          >{{ i.name }}</label
+                        >
+                        <input
+                          :id="'score-' + i.code"
+                          v-model="i.score"
+                          :disabled="i.status !== 'SCORED'"
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          placeholder="—"
+                        />
+                        <select
+                          v-model="i.status"
+                          :aria-label="i.name + '评分状态'"
+                        >
+                          <option value="SCORED">有效分</option>
+                          <option value="NA">N/A</option>
+                          <option value="PENDING">待核验</option>
+                        </select>
+                        <input
+                          v-if="i.status === 'NA'"
+                          v-model="i.reason"
+                          :aria-label="i.name + '不适用理由'"
+                          maxlength="500"
+                          placeholder="不适用理由"
+                        />
+                        <details class="grade-anchor">
+                          <summary>锚点</summary>
+                          <template v-if="gradingCriterion(i.code)?.description">
+                            <p>{{ gradingCriterion(i.code).description }}</p>
+                            <p
+                              v-for="[key, label] in [
+                                ['excellent', '优秀'],
+                                ['good', '良好'],
+                                ['pass', '基本达到'],
+                                ['improve', '待改进'],
+                              ]"
+                              :key="key"
+                            >
+                              <strong>{{ label }}：</strong
+                              >{{ gradingCriterion(i.code)[key] }}
+                            </p>
+                          </template>
+                          <p v-else class="muted">
+                            该历史版本未记录单项锚点。
+                          </p>
+                        </details>
+                      </div>
+                    </div>
+                  </details>
+                </section>
+
+                <section class="grade-block">
+                  <div class="grade-block-head">
+                    <h4>总评</h4>
+                    <span>学生可见</span>
+                  </div>
+                  <textarea
                     v-model="summary"
-                    rows="4"
+                    rows="5"
                     maxlength="2000"
-                    placeholder="最重要的 1–3 个改进方向"
+                    placeholder="写给学生的总体评价与下一步建议"
                     required
-                  /></label
-                ><button
-                  class="btn secondary full"
-                  @click="showModal('feedback')"
-                >
-                  <MessageSquare :size="17" />添加段落批注
-                </button>
-                <p class="small-note">
-                  复评保留旧记录。该版已有证据必须先完成核验或教师裁定。
-                </p>
-                <div
-                  v-for="f in version.feedback"
-                  :key="f.id"
-                  class="feedback-card"
-                >
-                  <strong>{{ f.indicator_code }} · {{ f.body }}</strong
-                  ><button
-                    class="text-btn"
+                  />
+                  <div class="grade-quick">
+                    <button
+                      v-for="t in QUICK_NOTES"
+                      :key="t"
+                      type="button"
+                      class="grade-chip"
+                      @click="addNote(t)"
+                    >
+                      + {{ t }}
+                    </button>
+                  </div>
+                  <details class="grade-gate" :open="!!gateReason">
+                    <summary>存在严重缺陷 · 综合分封顶 89</summary>
+                    <textarea
+                      v-model="gateReason"
+                      rows="2"
+                      maxlength="1000"
+                      placeholder="仅填写已证实的严重缺陷"
+                    />
+                  </details>
+                  <p class="grade-tip">
+                    <MessageSquare :size="14" /><span
+                      >在左侧正文中选中文字即可添加批注；点击高亮可反向定位。</span
+                    >
+                  </p>
+                </section>
+
+                <details v-if="version.feedback.length" class="grade-feedback">
+                  <summary>已有批注 {{ version.feedback.length }} 条</summary>
+                  <div
+                    v-for="f in version.feedback"
+                    :key="f.id"
+                    :id="'feedback-' + f.id"
+                    class="feedback-card"
+                    :class="{ 'is-target': highlightFeedbackId === f.id }"
                     @click="focusAnchor(f.paragraph_id, f.original_text)"
                   >
-                    定位正文
-                  </button>
-                  <div
-                    v-for="a in f.actions"
-                    :key="a.id"
-                    class="feedback-replies"
-                  >
-                    <strong>{{ a.actor_name }}</strong
-                    ><span>{{ a.action_type }} · {{ a.body }}</span>
+                    <strong
+                      >{{ dimLabel(f.indicator_code) }} · {{ f.body }}</strong
+                    ><button
+                      class="text-btn"
+                      @click.stop="focusAnchor(f.paragraph_id, f.original_text)"
+                    >
+                      定位正文
+                    </button>
+                    <blockquote v-if="f.quote_text">
+                      {{ f.quote_text }}
+                    </blockquote>
+                    <div
+                      v-for="a in f.actions"
+                      :key="a.id"
+                      class="feedback-replies"
+                    >
+                      <strong>{{ a.actor_name }}</strong
+                      ><span>{{ a.action_type }} · {{ a.body }}</span>
+                    </div>
+                    <button
+                      v-if="isTeacher"
+                      class="text-btn"
+                      @click="
+                        showModal('action', {
+                          id: f.id,
+                          action: f.resolved ? 'REOPEN' : 'RESOLVE',
+                        })
+                      "
+                    >
+                      {{ f.resolved ? "重新打开问题" : "确认问题已解决" }}
+                    </button>
                   </div>
-                  <button
-                    v-if="isTeacher"
-                    class="text-btn"
-                    @click="
-                      showModal('action', {
-                        id: f.id,
-                        action: f.resolved ? 'REOPEN' : 'RESOLVE',
-                      })
-                    "
-                  >
-                    {{ f.resolved ? "重新打开问题" : "确认问题已解决" }}
-                  </button>
-                </div>
-              </div>
+                </details>
               </fieldset>
             </aside>
             <aside v-else v-show="panelVisible" class="feedback-sidebar">
               <div class="panel-title">
                 <h2>质量与版本</h2>
                 <span class="badge">v{{ version.version_no }}</span>
+                <button class="panel-collapse" title="收起反馈面板" aria-label="收起反馈面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
               <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" @rubric="openRubric" /><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
               <div v-else class="empty">

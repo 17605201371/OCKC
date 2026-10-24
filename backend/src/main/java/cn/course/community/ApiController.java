@@ -19,7 +19,7 @@ public class ApiController {
  public record DraftRequest(@NotBlank @Size(max=160) String title,@NotNull JsonNode content,@Min(0) int revision,@NotNull @Size(max=30) List<@Valid EvidenceInput> evidence){}
  public record SubmitRequest(@Min(0) int revision){}
  public record EvaluationRequest(@NotNull List<QualityCalculator.Item> items,@NotNull @Size(max=1000) String gateReason,@NotBlank @Size(max=2000) String summary,@Min(0) int expectedRevision){}
- public record FeedbackRequest(@NotBlank @Size(max=80) String paragraphId,@NotBlank String indicator,@NotBlank @Size(max=2000) String body){}
+ public record FeedbackRequest(@NotBlank @Size(max=80) String paragraphId,@NotBlank String indicator,@NotBlank @Size(max=2000) String body,@Size(max=600) String quote){}
  public record ActionRequest(@NotBlank String action,@NotNull @Size(max=2000) String body){}
  public record VerifyRequest(@NotBlank String verdict,@NotBlank @Size(max=2000) String reason){}
  @GetMapping("/auth/csrf") public Map<String,String> csrf(CsrfToken token){return Map.of("token",token.getToken(),"headerName",token.getHeaderName());}
@@ -31,7 +31,7 @@ public class ApiController {
  @GetMapping("/courses/{cid}/assignments") public Object assignments(@PathVariable long cid,Principal p){return service.assignments(cid,uid(p));}
  @PostMapping("/courses/{cid}/assignments") public Object createAssignment(@PathVariable long cid,@Valid @RequestBody AssignmentRequest r,Principal p){return service.createAssignment(cid,r.title(),r.requirements(),r.dueAt(),Boolean.TRUE.equals(r.aiFeedbackEnabled()),r.rubricId(),uid(p));}
  @PutMapping("/assignments/{aid}/ai-policy") public Object aiPolicy(@PathVariable long aid,@Valid @RequestBody AiPolicyRequest r,Principal p){return service.setAiPolicy(aid,r.enabled(),uid(p));}
- @GetMapping("/entries/{eid}/ai-feedback") public Object aiFeedback(@PathVariable long eid,Principal p){return service.aiFeedback(eid,uid(p));}
+ @GetMapping("/entries/{eid}/ai-feedback") public Object aiFeedback(@PathVariable long eid,@RequestParam(defaultValue="false") boolean generate,Principal p){return service.aiFeedback(eid,uid(p),generate);}
  @PostMapping("/assignments/{aid}/entries") public Object start(@PathVariable long aid,Principal p){return service.start(aid,uid(p));}
  @GetMapping("/entries/{eid}") public Object getEntry(@PathVariable long eid,Principal p){return service.getEntry(eid,uid(p));}
  @PutMapping("/entries/{eid}/draft") public Object save(@PathVariable long eid,@Valid @RequestBody DraftRequest r,Principal p){return service.save(eid,r,uid(p));}

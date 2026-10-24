@@ -463,10 +463,5 @@ const today = new Date().toLocaleDateString("zh-CN", {
         </section>
       </aside>
     </div>
-    <div class="workspace-note">
-      <ShieldCheck :size="15" /><span
-        >保留每次提交、反馈与核验记录。知识不是一次写成的。</span
-      ><span class="grow"></span><span>课程内共享</span>
-    </div>
   </section>
 </template>

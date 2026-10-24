@@ -13,7 +13,8 @@ import katex from 'katex';
 import FormulaBuilder from './FormulaBuilder.vue';
 import { formulaTemplates, formulaSourceError, MAX_FORMULA_LENGTH } from './formulaBuilder';
 import 'katex/dist/katex.min.css';
-import { Figure, MathBlock, Callout } from './richBlocks';
+import { Figure, MathBlock, InlineMath, Callout, annotationStore } from './richBlocks';
+import { uid } from './uid';
 import { uploadImage } from './api';
 import StarterKit from "@tiptap/starter-kit";
 import { Extension } from "@tiptap/core";
@@ -55,16 +56,18 @@ const props = defineProps<{
   modelValue: any;
   readonly?: boolean;
   highlightId?: string;
+  annotations?: Array<{ id: number; blockId: string; quote: string; dimension: string }>;
   documentTitle?: string;
   entryId?: number;
   evidenceCount?: number;
+  canAnnotate?: boolean;
 }>();
-const emit = defineEmits(["update:modelValue", "selected", "evidence", "uploading"]);
+const emit = defineEmits(["update:modelValue", "selected", "evidence", "uploading", "annotation", "annotate"]);
 const mediaDialog = ref<HTMLDialogElement>(), mathDialog = ref<HTMLDialogElement>();
 const imageFile = ref<HTMLInputElement>();
 const media = ref({ src: '', alt: '', caption: '', source: '' });
 const mediaError = ref(''), mediaBusy = ref(false), mathLatex = ref(''), mathError = ref('');
-let mediaPosition: number | null = null, mathPosition: number | null = null;
+let mediaPosition: number | null = null, mathPosition: number | null = null, inlineMathPos: number | null = null;
 const mathMode = ref<'latex'|'visual'>('latex'), mathSession = ref(0);
 let mathContext: { editor: any; entryId: number|undefined; document: string; blockId?: string } | null = null;
 const mathValidation = computed(() => {
@@ -84,7 +87,7 @@ function cycleMathFocus(event:KeyboardEvent){
     event.preventDefault();(event.shiftKey?last:first).focus();
   }
 }
-function mathClosed(){const ctx=mathContext;mathContext=null;const e=editor.value;if(ctx&&e===ctx.editor&&e?.isEditable&&!props.readonly)e.commands.focus();}
+function mathClosed(){const ctx=mathContext;mathContext=null;inlineMathPos=null;const e=editor.value;if(ctx&&e===ctx.editor&&e?.isEditable&&!props.readonly)e.commands.focus();}
 
 function showImage(node?: any, pos?: number) {
   mediaPosition = typeof pos === 'number' ? pos : null;
@@ -111,13 +114,22 @@ function insertImage() {
   const e = editor.value; if (!e) return;
   e.view.dispatch(closeHistory(e.state.tr));
   if (mediaPosition !== null) e.chain().focus().setNodeSelection(mediaPosition).updateAttributes('figure', media.value).run();
-  else e.chain().focus().setTextSelection(savedSelection).insertContent([{ type: 'figure', attrs: { ...media.value, blockId: crypto.randomUUID() } }, { type: 'paragraph', attrs: { blockId: crypto.randomUUID() } }]).run();
+  else e.chain().focus().setTextSelection(savedSelection).insertContent([{ type: 'figure', attrs: { ...media.value, blockId: uid() } }, { type: 'paragraph', attrs: { blockId: uid() } }]).run();
   e.view.dispatch(closeHistory(e.state.tr));
   mediaDialog.value?.close();
 }
 function showMath(node?: any, pos?: number) {
   const e=editor.value;if(!e || !e.isEditable || props.readonly)return;
-  mathPosition = typeof pos === 'number' ? pos : null; mathLatex.value = node?.attrs?.latex || ''; mathError.value = ''; bubble.value = false;
+  mathPosition = typeof pos === 'number' ? pos : null; inlineMathPos = null; mathLatex.value = node?.attrs?.latex || ''; mathError.value = ''; bubble.value = false;
+  mathMode.value='latex';mathSession.value++;
+  savedSelection = { from: e.state.selection.from, to: e.state.selection.to };
+  mathContext={editor:e,entryId:props.entryId,document:JSON.stringify(e.getJSON()),blockId:node?.attrs?.blockId};
+  nextTick(() => mathDialog.value?.showModal());
+}
+// 行内公式复用同一个对话框，只是写回的目标节点不同。
+function showInlineMath(node?: any, pos?: number) {
+  const e=editor.value;if(!e || !e.isEditable || props.readonly)return;
+  mathPosition = null; inlineMathPos = typeof pos === 'number' ? pos : null; mathLatex.value = node?.attrs?.latex || ''; mathError.value = ''; bubble.value = false;
   mathMode.value='latex';mathSession.value++;
   savedSelection = { from: e.state.selection.from, to: e.state.selection.to };
   mathContext={editor:e,entryId:props.entryId,document:JSON.stringify(e.getJSON()),blockId:node?.attrs?.blockId};
@@ -130,15 +142,23 @@ function insertMath() {
     mathError.value='正文或编辑权限已变化，未写入公式。请关闭设置，核对正文后重新打开。';return;
   }
   if(mathPosition!==null){const target=e.state.doc.nodeAt(mathPosition);if(target?.type.name!=='mathBlock'||target.attrs.blockId!==ctx.blockId){mathError.value='原公式位置已变化，未覆盖正文，请重新打开公式设置。';return;}}
+  if(inlineMathPos!==null){const target=e.state.doc.nodeAt(inlineMathPos);if(target?.type.name!=='inlineMath'){mathError.value='原公式位置已变化，未覆盖正文，请重新打开公式设置。';return;}}
   e.view.dispatch(closeHistory(e.state.tr));
   // Insert after the selected range: opening a formula must never silently delete selected prose.
   const ok=mathPosition!==null ? e.chain().focus().setNodeSelection(mathPosition).updateAttributes('mathBlock', { latex: mathLatex.value.trim() }).run()
-    : e.chain().focus().setTextSelection(savedSelection.to).insertContent([{ type: 'mathBlock', attrs: { latex: mathLatex.value.trim(), blockId: crypto.randomUUID() } }, { type: 'paragraph', attrs: { blockId: crypto.randomUUID() } }]).run();
+    : inlineMathPos!==null ? e.chain().focus().setNodeSelection(inlineMathPos).updateAttributes('inlineMath', { latex: mathLatex.value.trim() }).run()
+    : e.chain().focus().setTextSelection(savedSelection.to).insertContent([{ type: 'mathBlock', attrs: { latex: mathLatex.value.trim(), blockId: uid() } }, { type: 'paragraph', attrs: { blockId: uid() } }]).run();
   if(!ok){mathError.value='当前位置无法插入公式，请关闭设置后选择普通正文段落重试。';return;}
   e.view.dispatch(closeHistory(e.state.tr));
   mathDialog.value?.close();
 }
 function evidenceFor(id: string) { emit('selected', id); emit('evidence'); }
+function annotateFigure(node: any) {
+  emit('annotate', {
+    blockId: node?.attrs?.blockId || '',
+    label: node?.attrs?.caption || node?.attrs?.alt || '图片',
+  });
+}
 function tableAction(action: string) {
   const c = editor.value?.chain().focus(); if (!c) return;
   if (action === 'row') c.addRowAfter().run(); else if (action === 'column') c.addColumnAfter().run();
@@ -160,6 +180,7 @@ const commands = [
   { id: 'image', label: '图片与图注', detail: '上传示意图，补充图注和来源', hint: '图片', icon: ImagePlus, terms: 'image photo tupian 图片' },
   { id: 'table', label: '表格', detail: '对照概念、过程与数据', hint: '3 × 3', icon: Table2, terms: 'table biaoge 表格' },
   { id: 'math', label: '公式', detail: '可视化结构或 LaTeX 排版公式与反应式', hint: '公式', icon: Sigma, terms: 'math formula gongshi 公式' },
+  { id: 'inlinemath', label: '行内公式', detail: '写在句子中间；正文里直接输入 $x$ 也会自动转换', hint: '$x$', icon: Sigma, terms: 'inline math hangnei gongshi 行内公式' },
   { id: 'callout', label: '提示块', detail: '突出关键结论或常见误区', hint: '提示', icon: Lightbulb, terms: 'callout note tishi 提示' },
   {
     id: "paragraph",
@@ -325,11 +346,17 @@ function insertCommand(id: string) {
   if (slash.value)
     chain = chain.deleteRange({ from: slash.value.from, to: slash.value.to });
   slash.value = null;
-  if (['image', 'math'].includes(id)) {
+  if (['image', 'math', 'inlinemath'].includes(id)) {
+    if (id === 'inlinemath') {
+      const pos = e.state.selection.from;
+      chain.insertContent({ type: 'inlineMath', attrs: { latex: 'x' } }).run();
+      showInlineMath({ attrs: { latex: 'x' } }, pos);
+      return;
+    }
     chain.run(); if (id === 'image') showImage(); else showMath(); return;
   }
   if (id === 'table') { chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run(); return; }
-  if (id === 'callout') { chain.insertContent({ type: 'callout', content: [{ type: 'paragraph', attrs: { blockId: crypto.randomUUID() }, content: [{ type: 'text', text: '关键结论：' }] }] }).run(); return; }
+  if (id === 'callout') { chain.insertContent({ type: 'callout', content: [{ type: 'paragraph', attrs: { blockId: uid() }, content: [{ type: 'text', text: '关键结论：' }] }] }).run(); return; }
   if (id === "paragraph") chain.setParagraph().run();
   else if (id.startsWith("h"))
     chain.setHeading({ level: Number(id.slice(1)) as 1 | 2 | 3 }).run();
@@ -453,7 +480,7 @@ const Ids = Extension.create({
             ) {
               let id = node.attrs.blockId;
               if (!id || seen.has(id)) {
-                id = crypto.randomUUID();
+                id = uid();
                 tr.setNodeMarkup(pos, undefined, {
                   ...node.attrs,
                   blockId: id,
@@ -470,6 +497,65 @@ const Ids = Extension.create({
   },
 });
 const highlightKey = new PluginKey("feedbackHighlight");
+const annotationKey = new PluginKey("annotationMarks");
+const annotationItems = computed(() => props.annotations || []);
+const AnnotationMarks = Extension.create({
+  name: "annotationMarks",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: annotationKey,
+        state: {
+          init: () => 0,
+          apply: (tr, old) => tr.getMeta(annotationKey) ?? old,
+        },
+        props: {
+          decorations: (state) => {
+            const items = annotationItems.value;
+            if (!items.length) return null;
+            const marks: Decoration[] = [];
+            state.doc.descendants((node, pos) => {
+              if (!node.isTextblock || !node.attrs.blockId) return;
+              const hits = items.filter((a) => a.blockId === node.attrs.blockId && a.quote);
+              if (!hits.length) return;
+              const segs: { text: string; from: number }[] = [];
+              node.descendants((child, cpos) => {
+                if (child.isText && child.text) segs.push({ text: child.text, from: pos + 1 + cpos });
+              });
+              if (!segs.length) return;
+              let full = "";
+              const map: number[] = [];
+              for (const s of segs) {
+                for (let i = 0; i < s.text.length; i++) map.push(s.from + i);
+                full += s.text;
+              }
+              for (const h of hits) {
+                const idx = full.indexOf(h.quote);
+                if (idx < 0) continue;
+                const endIdx = idx + h.quote.length - 1;
+                if (endIdx >= map.length) continue;
+                marks.push(
+                  Decoration.inline(map[idx], map[endIdx] + 1, {
+                    class: `annotation-mark dim-${(h.dimension || "C").toLowerCase()}`,
+                    "data-annotation-id": String(h.id),
+                    title: "点击查看教师批注",
+                  }),
+                );
+              }
+            });
+            return DecorationSet.create(state.doc, marks);
+          },
+        },
+      }),
+    ];
+  },
+});
+function onEditorClick(event: MouseEvent) {
+  const target = event.target as HTMLElement | null;
+  const mark = target?.closest?.(".annotation-mark") as HTMLElement | null;
+  const id = mark?.getAttribute("data-annotation-id");
+  if (id) emit("annotation", Number(id));
+}
 const Highlight = Extension.create({
   name: "feedbackHighlight",
   addProseMirrorPlugins() {
@@ -531,10 +617,16 @@ const editor = useEditor({
       heading: { levels: [1, 2, 3] },
     }),
     TableKit.configure({ table: { resizable: false, HTMLAttributes: { class: 'knowledge-table' } } }),
-    Figure.configure({ onEdit: showImage, onEvidence: evidenceFor }),
-    MathBlock.configure({ onEdit: showMath }), Callout,
+    Figure.configure({
+      onEdit: showImage,
+      onEvidence: evidenceFor,
+      onAnnotate: annotateFigure,
+      annotateEnabled: !!props.canAnnotate,
+    }),
+    MathBlock.configure({ onEdit: showMath }), InlineMath.configure({ onEdit: showInlineMath }), Callout,
     Ids,
     Highlight,
+    AnnotationMarks,
   ],
   editorProps: {
     attributes: {
@@ -634,6 +726,17 @@ watch(
       );
   },
 );
+watch(
+  () => props.annotations,
+  () => {
+    annotationStore.value = (props.annotations || []) as any;
+    if (editor.value)
+      editor.value.view.dispatch(
+        editor.value.state.tr.setMeta(annotationKey, Date.now()),
+      );
+  },
+  { deep: true, immediate: true },
+);
 function onViewportChange() {
   if (slash.value || bubble.value) syncUi();
 }
@@ -648,25 +751,26 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <div class="editor-shell" :class="{ 'writer-editable': !readonly }">
+  <div class="editor-shell" :class="{ 'writer-editable': !readonly }" @click="onEditorClick">
     <div
       v-if="!readonly && editor"
       class="writer-commandbar"
       aria-label="写作工具"
     >
       <div class="writer-format-tools">
-        <button type="button" aria-label="正文加粗" title="加粗" :class="{ active: editor.isActive('bold') }" @mousedown.prevent @click="editor.chain().focus().toggleBold().run()"><Bold :size="17" /></button>
-        <button type="button" aria-label="正文斜体" title="斜体" :class="{ active: editor.isActive('italic') }" @mousedown.prevent @click="editor.chain().focus().toggleItalic().run()"><Italic :size="17" /></button>
-        <button type="button" aria-label="正文下划线" title="下划线" :class="{ active: editor.isActive('underline') }" @mousedown.prevent @click="editor.chain().focus().toggleUnderline().run()"><Underline :size="17" /></button>
+        <button type="button" aria-label="正文加粗" title="加粗" :class="{ active: editor.isActive('bold') }" @mousedown.prevent @click="editor.chain().focus().toggleBold().run()"><Bold :size="17" /><span class="tool-label">加粗</span></button>
+        <button type="button" aria-label="正文斜体" title="斜体" :class="{ active: editor.isActive('italic') }" @mousedown.prevent @click="editor.chain().focus().toggleItalic().run()"><Italic :size="17" /><span class="tool-label">斜体</span></button>
+        <button type="button" aria-label="正文下划线" title="下划线" :class="{ active: editor.isActive('underline') }" @mousedown.prevent @click="editor.chain().focus().toggleUnderline().run()"><Underline :size="17" /><span class="tool-label">下划线</span></button>
         <span class="writer-separator"></span>
-        <button type="button" aria-label="设置一级标题" title="一级标题" :class="{ active: editor.isActive('heading', {level: 1}) }" @mousedown.prevent @click="editor.chain().focus().toggleHeading({level: 1}).run()"><Heading1 :size="19" /></button>
-        <button type="button" aria-label="设置二级标题" title="二级标题" :class="{ active: editor.isActive('heading', {level: 2}) }" @mousedown.prevent @click="editor.chain().focus().toggleHeading({level: 2}).run()"><Heading2 :size="19" /></button>
+        <button type="button" aria-label="设置一级标题" title="一级标题" :class="{ active: editor.isActive('heading', {level: 1}) }" @mousedown.prevent @click="editor.chain().focus().toggleHeading({level: 1}).run()"><Heading1 :size="19" /><span class="tool-label">标题1</span></button>
+        <button type="button" aria-label="设置二级标题" title="二级标题" :class="{ active: editor.isActive('heading', {level: 2}) }" @mousedown.prevent @click="editor.chain().focus().toggleHeading({level: 2}).run()"><Heading2 :size="19" /><span class="tool-label">标题2</span></button>
         <span class="writer-separator"></span>
-        <button type="button" aria-label="插入无序列表" title="无序列表" @mousedown.prevent @click="editor.chain().focus().toggleBulletList().run()"><List :size="19" /></button>
-        <button type="button" aria-label="插入图片" title="图片与图注" @mousedown.prevent @click="showImage()"><ImagePlus :size="19" /></button>
-        <button type="button" aria-label="插入表格" title="插入表格" @mousedown.prevent @click="insertCommand('table')"><Table2 :size="18" /></button>
-        <button type="button" aria-label="插入公式" title="公式" @mousedown.prevent @click="showMath()"><Sigma :size="19" /></button>
-        <button type="button" aria-label="插入提示块" title="提示块" @mousedown.prevent @click="insertCommand('callout')"><Lightbulb :size="18" /></button>
+        <button type="button" aria-label="插入无序列表" title="无序列表" @mousedown.prevent @click="editor.chain().focus().toggleBulletList().run()"><List :size="19" /><span class="tool-label">列表</span></button>
+        <button type="button" aria-label="插入图片" title="图片与图注" @mousedown.prevent @click="showImage()"><ImagePlus :size="19" /><span class="tool-label">图片</span></button>
+        <button type="button" aria-label="插入表格" title="插入表格" @mousedown.prevent @click="insertCommand('table')"><Table2 :size="18" /><span class="tool-label">表格</span></button>
+        <button type="button" aria-label="插入公式" title="公式" @mousedown.prevent @click="showMath()"><Sigma :size="19" /><span class="tool-label">公式</span></button>
+        <button type="button" aria-label="插入提示块" title="提示块" @mousedown.prevent @click="insertCommand('callout')"><Lightbulb :size="18" /><span class="tool-label">提示</span></button>
+        <button type="button" aria-label="插入代码块" title="代码块（等宽排版，保留缩进）" @mousedown.prevent @click="insertCommand('code')"><Code2 :size="18" /><span class="tool-label">代码</span></button>
         <button type="button" class="toolbar-evidence" @mousedown.prevent @click="attachEvidence"><BookOpen :size="16" /><span>挂证据<span v-if="evidenceCount"> · {{ evidenceCount }}</span></span></button>
       </div>
       <div class="writer-mode">
@@ -693,7 +797,7 @@ onBeforeUnmount(() => {
           @mousedown.prevent
           @click="editor.chain().focus().undo().run()"
         >
-          <Undo2 :size="17" />
+          <Undo2 :size="17" /><span class="tool-label">撤销</span>
         </button>
         <button
           type="button"
@@ -704,7 +808,7 @@ onBeforeUnmount(() => {
           @mousedown.prevent
           @click="editor.chain().focus().redo().run()"
         >
-          <Redo2 :size="17" />
+          <Redo2 :size="17" /><span class="tool-label">重做</span>
         </button>
         <span class="writer-separator"></span>
         <button
@@ -714,7 +818,7 @@ onBeforeUnmount(() => {
           title="导出正文 Markdown（不含教学记录）"
           @click="exportMarkdown"
         >
-          <Download :size="17" />
+          <Download :size="17" /><span class="tool-label">导出</span>
         </button>
         <button
           type="button"
@@ -723,7 +827,7 @@ onBeforeUnmount(() => {
           title="Markdown 写作帮助"
           @click="showHelp"
         >
-          <Keyboard :size="18" />
+          <Keyboard :size="18" /><span class="tool-label">帮助</span>
         </button>
       </div>
     </div>
@@ -759,7 +863,7 @@ onBeforeUnmount(() => {
         <div class="writer-dialog-foot"><button class="btn secondary" :disabled="mediaBusy" @click="mediaDialog?.close()">取消</button><button class="btn primary" :disabled="mediaBusy" @click="insertImage">{{ mediaPosition !== null ? '更新图片' : '插入图片' }}</button></div>
       </dialog>
       <dialog ref="mathDialog" class="writer-dialog math-dialog" aria-labelledby="writer-math-title" @close="mathClosed" @keydown.tab="cycleMathFocus">
-        <div class="writer-dialog-head"><h2 id="writer-math-title">{{mathPosition!==null?'编辑学科公式':'插入学科公式'}}</h2><button type="button" class="icon-btn" aria-label="关闭公式设置" @click="mathDialog?.close()"><X :size="19" /></button></div>
+        <div class="writer-dialog-head"><h2 id="writer-math-title">{{inlineMathPos!==null?'编辑行内公式':mathPosition!==null?'编辑学科公式':'插入学科公式'}}</h2><button type="button" class="icon-btn" aria-label="关闭公式设置" @click="mathDialog?.close()"><X :size="19" /></button></div>
         <div class="writer-dialog-content">
           <div class="formula-mode" role="group" aria-label="公式输入方式"><button type="button" :aria-pressed="mathMode==='latex'" @click="mathMode='latex'">LaTeX 输入</button><button type="button" :aria-pressed="mathMode==='visual'" @click="mathMode='visual'">可视化输入</button></div>
           <p class="formula-step-note">{{mathMode==='visual' ? '第 1 步：填写结构并应用；第 2 步：检查 LaTeX 预览后确认。' : '检查公式预览后，点击底部按钮写入正文；取消不会修改正文。'}}</p>

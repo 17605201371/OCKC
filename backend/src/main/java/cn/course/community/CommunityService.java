@@ -25,16 +25,21 @@ public class CommunityService {
  public Map<String,Object> progress(long cid,long uid){
   String role=s.role(cid,uid);boolean staff=Set.of("TEACHER","ASSISTANT").contains(role);
   String filter=staff?"":" AND e.author_id="+uid;
-  var entries=s.db.queryForList("SELECT e.id,e.title,e.author_id,e.revision,e.updated_at,a.title AS assignment_title,a.due_at,u.display_name AS author_name FROM entry e JOIN assignment a ON a.id=e.assignment_id JOIN app_user u ON u.id=e.author_id WHERE a.course_id=?"+filter+" ORDER BY e.updated_at DESC",cid);
-  for(var e:entries){
-   var versions=s.db.queryForList("SELECT v.id,v.version_no,v.created_at,g.q_final,g.dimensions_json,g.summary FROM submission v LEFT JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE v.entry_id=? ORDER BY v.version_no",e.get("id"));
-   for(var v:versions){Object dims=v.remove("dimensions_json");v.put("dimensions",dims==null?Map.of():decode(dims));}
-   e.put("versions",versions);
-   e.put("feedback_total",s.db.queryForObject("SELECT COUNT(*) FROM feedback f JOIN submission v ON v.id=f.submission_id WHERE v.entry_id=?",Integer.class,e.get("id")));
-   e.put("feedback_resolved",s.db.queryForObject("SELECT COUNT(*) FROM feedback f JOIN submission v ON v.id=f.submission_id WHERE v.entry_id=? AND f.resolved=TRUE",Integer.class,e.get("id")));
-   e.put("evidence_passed",s.db.queryForObject("SELECT COUNT(*) FROM evidence x JOIN submission v ON v.id=x.submission_id WHERE v.entry_id=? AND x.state='PASS'",Integer.class,e.get("id")));
-  }
-  return Map.of("entries",entries,"staff",staff,"assignmentCount",s.db.queryForObject("SELECT COUNT(*) FROM assignment WHERE course_id=?",Integer.class,cid));
+  // 统计口径用相关子查询一次算完，避免每个作品再发三条 COUNT。
+  var entries=s.db.queryForList("SELECT e.id,e.title,e.author_id,e.revision,e.updated_at,a.title AS assignment_title,a.due_at,u.display_name AS author_name,"
+   +"(SELECT COUNT(*) FROM feedback f JOIN submission sv ON sv.id=f.submission_id WHERE sv.entry_id=e.id) AS feedback_total,"
+   +"(SELECT COUNT(*) FROM feedback f JOIN submission sv ON sv.id=f.submission_id WHERE sv.entry_id=e.id AND f.resolved=TRUE) AS feedback_resolved,"
+   +"(SELECT COUNT(*) FROM evidence x JOIN submission sv ON sv.id=x.submission_id WHERE sv.entry_id=e.id AND x.state='PASS') AS evidence_passed "
+   +"FROM entry e JOIN assignment a ON a.id=e.assignment_id JOIN app_user u ON u.id=e.author_id WHERE a.course_id=?"+filter+" ORDER BY e.updated_at DESC",cid);
+  int assignmentCount=s.db.queryForObject("SELECT COUNT(*) FROM assignment WHERE course_id=?",Integer.class,cid);
+  if(entries.isEmpty())return Map.of("entries",entries,"staff",staff,"assignmentCount",assignmentCount);
+  // 所有版本一次取回后按作品分组，查询数与作品数量无关。
+  String ids=entries.stream().map(e->String.valueOf(s.id(e,"id"))).collect(java.util.stream.Collectors.joining(","));
+  var versions=s.db.queryForList("SELECT v.entry_id,v.id,v.version_no,v.created_at,g.q_final,g.dimensions_json,g.summary FROM submission v LEFT JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE v.entry_id IN ("+ids+") ORDER BY v.entry_id,v.version_no");
+  Map<Long,List<Map<String,Object>>> grouped=new HashMap<>();
+  for(var v:versions){long eid=((Number)v.remove("entry_id")).longValue();Object dims=v.remove("dimensions_json");v.put("dimensions",dims==null?Map.of():decode(dims));grouped.computeIfAbsent(eid,k->new ArrayList<>()).add(v);}
+  for(var e:entries)e.put("versions",grouped.getOrDefault(s.id(e,"id"),List.of()));
+  return Map.of("entries",entries,"staff",staff,"assignmentCount",assignmentCount);
  }
  @Transactional public Map<String,Object> createCourse(String title,String description,long uid){long id=s.insert("INSERT INTO course(title,description) VALUES(?,?)",title,description);s.db.update("INSERT INTO course_member(course_id,user_id,role) VALUES(?,?,'TEACHER')",id,uid);s.audit(uid,"COURSE_CREATE","course",id);return s.one("SELECT * FROM course WHERE id=?",id);}
  @Transactional public void addMember(long cid,String email,String role,long uid){members.add(cid,email,role,uid,null,"演示初始化或教师添加已有账号");}
@@ -48,11 +53,77 @@ public class CommunityService {
   s.audit(uid,enabled?"ASSIGNMENT_AI_ENABLE":"ASSIGNMENT_AI_DISABLE","assignment",aid);
   return assignment(aid);
  }
- public Map<String,Object> aiFeedback(long eid,long uid){
+ @org.springframework.beans.factory.annotation.Value("${app.ai.key:}") String aiKey;
+ @org.springframework.beans.factory.annotation.Value("${app.ai.base:https://api.stepfun.com/step_plan/v1}") String aiBase;
+ @org.springframework.beans.factory.annotation.Value("${app.ai.model:step-3.7-flash}") String aiModel;
+ public Map<String,Object> aiFeedback(long eid,long uid){return aiFeedback(eid,uid,false);}
+ public Map<String,Object> aiFeedback(long eid,long uid,boolean generate){
   var e=entry(eid);String role=s.role(s.id(e,"course_id"),uid);
   if(s.id(e,"author_id")!=uid&&!"TEACHER".equals(role))throw fail(403,"AI 反馈仅作者与任课教师可见");
   boolean enabled=Boolean.TRUE.equals(assignment(s.id(e,"assignment_id")).get("ai_feedback_enabled"));
-  return Map.of("enabled",enabled,"status",enabled?"NOT_CONFIGURED":"DISABLED","suggestions",List.of(),"formalScore",false);
+  if(!enabled)return Map.of("enabled",false,"status","DISABLED","suggestions",List.of(),"formalScore",false);
+  if(aiKey==null||aiKey.isBlank())return Map.of("enabled",true,"status","NOT_CONFIGURED","suggestions",List.of(),"formalScore",false);
+  int rev=((Number)e.get("revision")).intValue();
+  var cached=s.db.queryForList("SELECT payload_json FROM ai_feedback_cache WHERE entry_id=? AND revision=?",eid,rev);
+  if(!cached.isEmpty()){
+   var node=decode(cached.getFirst().get("payload_json"));var list=new ArrayList<Map<String,Object>>();
+   for(var item:node.path("suggestions"))list.add(Map.of("dimension",item.path("dimension").asText("C"),"title",item.path("title").asText(""),"body",item.path("body").asText("")));
+   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"cached",true,"model",aiModel);
+  }
+  if(!generate)return Map.of("enabled",true,"status","NOT_GENERATED","suggestions",List.of(),"formalScore",false,"model",aiModel);
+  String body=text(decode(e.get("draft_json")));
+  if(body.isBlank())return Map.of("enabled",true,"status","EMPTY","suggestions",List.of(),"formalScore",false);
+  if(body.length()>6000)body=body.substring(0,6000);
+  String title=(String)e.get("title");
+  try{
+   String content=requestSuggestions(title,body);
+   var node=decode(stripFence(content));
+   if(!node.path("suggestions").isArray()||node.path("suggestions").isEmpty())throw new IllegalStateException("模型未返回可用建议");
+   s.db.update("DELETE FROM ai_feedback_cache WHERE entry_id=?",eid);
+   s.db.update("INSERT INTO ai_feedback_cache(entry_id,revision,payload_json,created_at) VALUES(?,?,?,?)",eid,rev,encode(node),now());
+   s.audit(uid,"AI_FEEDBACK_GENERATE","entry",eid);
+   var list=new ArrayList<Map<String,Object>>();
+   int count=0;
+   for(var item:node.path("suggestions")){
+    if(count++>=4)break;
+    list.add(Map.of("dimension",item.path("dimension").asText("C"),"title",item.path("title").asText(""),"body",item.path("body").asText("")));
+   }
+   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"cached",false,"model",aiModel);
+  }catch(Exception ex){
+   org.slf4j.LoggerFactory.getLogger(CommunityService.class).warn("AI feedback failed for entry {}: {}",eid,ex.toString());
+   return Map.of("enabled",true,"status","FAILED","message","模型服务暂时不可用，请稍后重试","suggestions",List.of(),"formalScore",false);
+  }
+ }
+ private String stripFence(String raw){
+  String t=raw==null?"":raw.trim();
+  if(t.startsWith("```")){int nl=t.indexOf('\n');if(nl>0)t=t.substring(nl+1);int end=t.lastIndexOf("```");if(end>=0)t=t.substring(0,end);}
+  int start=t.indexOf('{'),end=t.lastIndexOf('}');
+  if(start>=0&&end>start)return t.substring(start,end+1);
+  return t;
+ }
+ private String requestSuggestions(String title,String body){
+  var factory=new org.springframework.http.client.SimpleClientHttpRequestFactory();
+  factory.setConnectTimeout(8000);factory.setReadTimeout(120000);
+  var client=org.springframework.web.client.RestClient.builder().baseUrl(aiBase).requestFactory(factory).build();
+  String system=("你是课程写作助教，帮助学生改进知识帖。只能依据四维量规给出可执行的修改建议，不得编造来源。"
+   +"四个维度：S 科学性（概念与机制是否正确）、A 准确性（表述与数据是否有据）、C 完整性（关键环节是否交代）、L 逻辑性（论证链条是否连贯）。"
+   +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出问题并给出改法\"}]}。最多 4 条，按重要程度排序。");
+  String user="标题："+(title==null?"":title)+"\n正文：\n"+body+"\n\n请给出 3 到 4 条修改建议。";
+  Map<String,Object> payload=new LinkedHashMap<>();
+  payload.put("model",aiModel);
+  payload.put("temperature",0.3);
+  payload.put("max_tokens",3000);
+  // 该系列模型默认会先输出较长推理，挤占正文配额；降到 low 档才能稳定拿到 JSON。
+  payload.put("reasoning_effort","low");
+  payload.put("messages",List.of(Map.of("role","system","content",system),Map.of("role","user","content",user)));
+  Map<?,?> resp=client.post().uri("/chat/completions").header("Authorization","Bearer "+aiKey)
+   .contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(payload).retrieve().body(Map.class);
+  if(resp==null)throw new IllegalStateException("空响应");
+  var choices=(List<?>)resp.get("choices");
+  var message=(Map<?,?>)((Map<?,?>)choices.getFirst()).get("message");
+  Object content=message.get("content");
+  if(content==null||content.toString().isBlank())throw new IllegalStateException("模型无输出");
+  return content.toString();
  }
  @Transactional public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM assignment WHERE id=? FOR UPDATE",aid);s.student(s.id(a,"course_id"),uid);var existing=s.db.queryForList("SELECT id FROM entry WHERE assignment_id=? AND author_id=?",aid,uid);if(!existing.isEmpty())return getEntry(s.id(existing.getFirst(),"id"),uid);if(Boolean.TRUE.equals(a.get("manually_closed"))||!Instant.parse((String)a.get("due_at")).isAfter(Instant.now()))throw fail(422,"作业已结束或截止，不能新建作答；已有草稿仍可整理保存");
   String block=UUID.randomUUID().toString();String doc="{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"attrs\":{\"blockId\":\""+block+"\"}}]}";
@@ -71,13 +142,14 @@ public class CommunityService {
  private void walk(JsonNode node,Set<String> ids,int depth,int[] count){
   if(depth>12||++count[0]>5000)throw fail(422,"正文结构过深或节点过多");
   String type=node.path("type").asText();
-  if(!Set.of("doc","paragraph","heading","text","bulletList","orderedList","listItem","bold","italic","codeBlock","blockquote","hardBreak","horizontalRule","figure","mathBlock","callout","table","tableRow","tableCell","tableHeader").contains(type))throw fail(422,"正文含不支持的节点类型");
+  if(!Set.of("doc","paragraph","heading","text","bulletList","orderedList","listItem","bold","italic","codeBlock","blockquote","hardBreak","horizontalRule","figure","mathBlock","inlineMath","callout","table","tableRow","tableCell","tableHeader").contains(type))throw fail(422,"正文含不支持的节点类型");
   boolean required=Set.of("paragraph","heading","figure","mathBlock").contains(type);
   var attrs=node.path("attrs");
   if(type.equals("figure")){
    if(!attrs.path("src").asText().matches("/api/media/[a-f0-9-]{36}")||attrs.path("alt").asText().length()>300||attrs.path("caption").asText().length()>1000||attrs.path("source").asText().length()>1000)throw fail(422,"图片引用或图注格式无效");
   }
   if(type.equals("mathBlock")&&(attrs.path("latex").asText().isBlank()||attrs.path("latex").asText().length()>2000))throw fail(422,"公式须为 1–2000 字符的 LaTeX");
+  if(type.equals("inlineMath")&&(attrs.path("latex").asText().isBlank()||attrs.path("latex").asText().length()>300))throw fail(422,"行内公式须为 1–300 字符的 LaTeX");
   if(type.equals("table")&&(node.path("content").size()<1||node.path("content").size()>50))throw fail(422,"表格最多 50 行");
   if(type.equals("tableRow")&&(node.path("content").size()<1||node.path("content").size()>12))throw fail(422,"表格最多 12 列");
   if(Set.of("tableCell","tableHeader").contains(type)&&(attrs.path("colspan").asInt(1)<1||attrs.path("colspan").asInt(1)>12||attrs.path("rowspan").asInt(1)<1||attrs.path("rowspan").asInt(1)>50))throw fail(422,"表格单元格跨度无效");
@@ -105,7 +177,7 @@ public class CommunityService {
  private void collectMedia(JsonNode n,Set<String> out){if(n.path("type").asText().equals("figure"))out.add(n.path("attrs").path("src").asText());for(var c:n.path("content"))collectMedia(c,out);}
  private String text(JsonNode n){StringBuilder b=new StringBuilder(n.path("text").asText());
   if(n.path("type").asText().equals("figure"))b.append("[图片] ").append(n.path("attrs").path("alt").asText()).append(" ").append(n.path("attrs").path("caption").asText()).append(" ").append(n.path("attrs").path("source").asText());
-  if(n.path("type").asText().equals("mathBlock"))b.append(n.path("attrs").path("latex").asText());for(var c:n.path("content"))b.append(text(c));return b.toString();}
+  if(n.path("type").asText().equals("mathBlock")||n.path("type").asText().equals("inlineMath"))b.append(n.path("attrs").path("latex").asText());for(var c:n.path("content"))b.append(text(c));return b.toString();}
  @Transactional public Map<String,Object> save(long eid,ApiController.DraftRequest req,long uid){var e=entry(eid);own(e,uid);s.student(s.id(e,"course_id"),uid);validateContent(req.content());for(String src:mediaSources(req.content())){if(s.db.queryForObject("SELECT COUNT(*) FROM entry_media WHERE id=? AND entry_id=?",Integer.class,src.substring("/api/media/".length()),eid)!=1)throw fail(422,"正文图片不属于当前作品，请重新上传");}if(req.evidence()==null||req.evidence().size()>30)throw fail(422,"每篇最多挂载 30 条证据");var ids=anchors(req.content());for(var v:req.evidence()){if(!ids.containsKey(v.paragraphId()))throw fail(422,"证据引用的段落不存在");if(!v.sourceUrl().isBlank()&&!v.sourceUrl().matches("https?://[^\\s]+"))throw fail(422,"证据链接必须使用 http 或 https");}
   int changed=s.db.update("UPDATE entry SET title=?,draft_json=?,evidence_json=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?",req.title(),encode(req.content()),encode(req.evidence()),now(),eid,req.revision());if(changed!=1)throw fail(409,"草稿已被另一窗口修改。当前输入仍在本页，请先复制，再重新加载后合并");return getEntry(eid,uid);}
  @Transactional public Map<String,Object> submit(long eid,int revision,String key,long uid){var e=entry(eid);own(e,uid);s.student(s.id(e,"course_id"),uid);s.one("SELECT id FROM entry WHERE id=? FOR UPDATE",eid);e=entry(eid);
@@ -124,7 +196,14 @@ public class CommunityService {
   for(JsonNode v:decode(e.get("evidence_json")))s.db.update("INSERT INTO evidence(submission_id,paragraph_id,source_title,source_url,excerpt,claim_text,state) VALUES(?,?,?,?,?,?,'PENDING')",sid,v.path("paragraphId").asText(),v.path("sourceTitle").asText(),v.path("sourceUrl").asText(),v.path("excerpt").asText(),v.path("claim").asText());s.audit(uid,"SUBMISSION_CREATE","submission",sid);notices.teachers(s.id(e,"course_id"),"SUBMISSION","有新版本等待评审","submission",sid,uid);return submission(sid);}
  public Map<String,Object> getSubmission(long sid,long uid){var v=submission(sid);visible(v,uid);v.put("rubricSnapshot",rubrics.forSubmission(v));v.put("rubricSnapshotSource",v.get("rubric_snapshot_json")==null?"BUILTIN_LEGACY":"SUBMISSION_SNAPSHOT");v.remove("rubric_snapshot_json");v.put("changes",changes(v));v.put("content",decode(v.remove("content_json")));Object task=v.remove("assignment_snapshot_json");v.put("assignmentSnapshot",task==null?null:decode(task));v.put("evaluation",getEvaluation(sid));v.put("feedback",feedback(sid));v.put("evidence",s.db.queryForList("SELECT * FROM evidence WHERE submission_id=?",sid));var publications=s.db.queryForList("SELECT * FROM publication WHERE submission_id=?",sid);if(s.id(v,"author_id")!=uid&&!s.role(s.id(v,"course_id"),uid).equals("TEACHER"))for(var pub:publications){pub.remove("last_reason");pub.remove("requested_evaluation_revision");}v.put("publication",publications);return v;}
  public Object getEvaluation(long sid){var rows=s.db.queryForList("SELECT g.*,u.display_name AS teacher_name FROM evaluation g JOIN app_user u ON u.id=g.teacher_id WHERE g.submission_id=? AND g.active=TRUE",sid);if(rows.isEmpty())return null;var g=rows.getFirst();g.put("details",decode(g.remove("details_json")));g.put("dimensions",decode(g.remove("dimensions_json")));return g;}
- public List<Map<String,Object>> feedback(long sid){var rows=s.db.queryForList("SELECT f.*,u.display_name AS teacher_name FROM feedback f JOIN app_user u ON u.id=f.teacher_id WHERE f.submission_id=? ORDER BY f.id",sid);for(var f:rows)f.put("actions",s.db.queryForList("SELECT a.*,u.display_name AS actor_name FROM feedback_action a JOIN app_user u ON u.id=a.user_id WHERE a.feedback_id=? ORDER BY a.id",f.get("id")));return rows;}
+ public List<Map<String,Object>> feedback(long sid){var rows=s.db.queryForList("SELECT f.*,u.display_name AS teacher_name FROM feedback f JOIN app_user u ON u.id=f.teacher_id WHERE f.submission_id=? ORDER BY f.id",sid);
+  if(rows.isEmpty())return rows;
+  String ids=rows.stream().map(f->String.valueOf(s.id(f,"id"))).collect(java.util.stream.Collectors.joining(","));
+  var actions=s.db.queryForList("SELECT a.*,u.display_name AS actor_name FROM feedback_action a JOIN app_user u ON u.id=a.user_id WHERE a.feedback_id IN ("+ids+") ORDER BY a.feedback_id,a.id");
+  Map<Long,List<Map<String,Object>>> grouped=new HashMap<>();
+  for(var a:actions)grouped.computeIfAbsent(((Number)a.get("feedback_id")).longValue(),k->new ArrayList<>()).add(a);
+  for(var f:rows)f.put("actions",grouped.getOrDefault(s.id(f,"id"),List.of()));
+  return rows;}
  public List<Map<String,Object>> queue(long cid,long uid){String role=s.role(cid,uid);if(!List.of("TEACHER","ASSISTANT").contains(role))throw fail(403,"批改队列仅教师或助教可见");return s.db.queryForList("SELECT v.id,v.title,v.version_no,v.created_at,e.author_id,u.display_name AS author_name,a.title AS assignment_title,g.q_final,d.updated_at AS review_draft_updated_at FROM submission v JOIN entry e ON e.id=v.entry_id JOIN app_user u ON u.id=e.author_id JOIN assignment a ON a.id=e.assignment_id LEFT JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE LEFT JOIN review_draft d ON d.submission_id=v.id AND d.teacher_id=? AND ?=TRUE WHERE a.course_id=? ORDER BY v.created_at DESC",uid,role.equals("TEACHER"),cid);}
  @Transactional public Map<String,Object> evaluate(long sid,ApiController.EvaluationRequest req,long uid){var v=submission(sid);s.teacher(s.id(v,"course_id"),uid);s.one("SELECT id FROM submission WHERE id=? FOR UPDATE",sid);rubrics.forSubmission(v);int current=s.db.queryForObject("SELECT COUNT(*) FROM evaluation WHERE submission_id=?",Integer.class,sid);if(req.expectedRevision()!=current)throw fail(409,"评价已被其他窗口更新，请重新加载后再评");
   var result=QualityCalculator.calculate(req.items(),req.gateReason());
@@ -133,7 +212,15 @@ public class CommunityService {
   long gid=s.insert("INSERT INTO evaluation(submission_id,teacher_id,revision_no,details_json,dimensions_json,q_raw,q_final,gate_reason,summary,active,created_at) VALUES(?,?,?,?,?,?,?,?,?,TRUE,?)",sid,uid,current+1,encode(req.items()),encode(result.dimensions()),result.raw(),result.total(),req.gateReason(),req.summary(),now());
   // A regrade revokes public visibility until the author requests review again.
   publicationAfterEvaluation(sid,uid);s.audit(uid,"EVALUATION_PUBLISH","evaluation",gid);s.db.update("DELETE FROM review_draft WHERE submission_id=? AND teacher_id=?",sid,uid);notices.send(s.id(v,"author_id"),s.id(v,"course_id"),"EVALUATION","MEMBER","教师已发布 v"+v.get("version_no")+" 的正式评价","submission",sid,"",uid);return (Map<String,Object>)getEvaluation(sid);}
- @Transactional public Map<String,Object> addFeedback(long sid,ApiController.FeedbackRequest req,long uid){var v=submission(sid);s.teacher(s.id(v,"course_id"),uid);var a=anchors(decode(v.get("content_json")));if(!a.containsKey(req.paragraphId()))throw fail(422,"段落不存在");if(!QualityCalculator.CODES.contains(req.indicator()))throw fail(422,"指标编码不存在");long id=s.insert("INSERT INTO feedback(submission_id,teacher_id,paragraph_id,original_text,indicator_code,body,resolved,created_at) VALUES(?,?,?,?,?,?,FALSE,?)",sid,uid,req.paragraphId(),a.get(req.paragraphId()).substring(0,Math.min(4000,a.get(req.paragraphId()).length())),req.indicator(),req.body(),now());s.audit(uid,"FEEDBACK_CREATE","feedback",id);notices.send(s.id(v,"author_id"),s.id(v,"course_id"),"FEEDBACK","MEMBER","收到新的教师批注","submission",sid,req.paragraphId(),uid);return s.one("SELECT * FROM feedback WHERE id=?",id);}
+ @Transactional public Map<String,Object> addFeedback(long sid,ApiController.FeedbackRequest req,long uid){var v=submission(sid);s.teacher(s.id(v,"course_id"),uid);var a=anchors(decode(v.get("content_json")));if(!a.containsKey(req.paragraphId()))throw fail(422,"段落不存在");
+  // 教师批注支持四维（S/A/C/L）轻量标注，同时兼容历史的 11 项二级指标编码。
+  boolean dimension=Set.of("S","A","C","L").contains(req.indicator());
+  if(!dimension&&!QualityCalculator.CODES.contains(req.indicator()))throw fail(422,"批注维度不存在");
+  String quote=req.quote()==null?"":req.quote().trim();
+  if(quote.length()>600)throw fail(422,"批注引文不得超过 600 字");
+  String anchor=a.get(req.paragraphId());
+  if(!quote.isEmpty()&&!anchor.contains(quote))throw fail(422,"引文与所选段落不一致，请重新选中文字");
+  long id=s.insert("INSERT INTO feedback(submission_id,teacher_id,paragraph_id,original_text,indicator_code,body,resolved,created_at,quote_text) VALUES(?,?,?,?,?,?,FALSE,?,?)",sid,uid,req.paragraphId(),anchor.substring(0,Math.min(4000,anchor.length())),req.indicator(),req.body(),now(),quote.isEmpty()?null:quote);s.audit(uid,"FEEDBACK_CREATE","feedback",id);notices.send(s.id(v,"author_id"),s.id(v,"course_id"),"FEEDBACK","MEMBER","收到新的教师批注","submission",sid,req.paragraphId(),uid);return s.one("SELECT * FROM feedback WHERE id=?",id);}
  @Transactional public void action(long fid,String action,String body,long uid){var f=s.one("SELECT * FROM feedback WHERE id=?",fid);var v=submission(s.id(f,"submission_id"));String role=s.role(s.id(v,"course_id"),uid);boolean teacher=role.equals("TEACHER");if(!teacher&&s.id(v,"author_id")!=uid)throw fail(403,"无权处理该反馈");if(!Set.of("REPLY","ADOPT","IGNORE","RESOLVE","REOPEN").contains(action))throw fail(422,"未知反馈操作");if(!teacher&&Set.of("RESOLVE","REOPEN").contains(action))throw fail(403,"只有教师可以确认问题解决");if((action.equals("IGNORE")||action.equals("REPLY"))&&body.isBlank())throw fail(422,"请填写回应或忽略理由");s.db.update("INSERT INTO feedback_action(feedback_id,user_id,action_type,body,created_at) VALUES(?,?,?,?,?)",fid,uid,action,body,now());if(teacher&&Set.of("RESOLVE","REOPEN").contains(action))s.db.update("UPDATE feedback SET resolved=? WHERE id=?",action.equals("RESOLVE"),fid);s.audit(uid,"FEEDBACK_"+action,"feedback",fid);if(teacher)notices.send(s.id(v,"author_id"),s.id(v,"course_id"),"FEEDBACK","MEMBER",action.equals("RESOLVE")?"教师已确认反馈问题解决":"教师更新了批注回应","submission",s.id(v,"id"),(String)f.get("paragraph_id"),uid);else notices.teachers(s.id(v,"course_id"),"FEEDBACK_REPLY","学生回应了教师批注","submission",s.id(v,"id"),uid);}
  public List<Map<String,Object>> evidenceTasks(long cid,long uid){s.role(cid,uid);return s.db.queryForList("SELECT x.*,e.author_id,u.display_name AS author_name,v.title,v.version_no FROM evidence x JOIN submission v ON v.id=x.submission_id JOIN entry e ON e.id=v.entry_id JOIN assignment a ON a.id=e.assignment_id JOIN app_user u ON u.id=e.author_id WHERE a.course_id=? ORDER BY x.id DESC",cid);}
  @Transactional public void verify(long id,String verdict,String reason,long uid){verify(id,verdict,reason,uid,null);}
@@ -192,5 +279,5 @@ public class CommunityService {
   p.put("title",v.get("title"));p.put("version_no",v.get("version_no"));p.put("author_name",v.get("author_name"));p.put("events",s.db.queryForList("SELECT h.*,u.display_name AS actor_name FROM publication_event h JOIN app_user u ON u.id=h.actor_id WHERE h.publication_id=? ORDER BY h.revision_no DESC",id));return p;
  }
  public List<Map<String,Object>> publicationRecords(long cid,long uid){String role=s.role(cid,uid);return s.db.queryForList("SELECT p.*,v.title,v.version_no,u.display_name AS author_name,a.title AS assignment_title FROM publication p JOIN submission v ON v.id=p.submission_id JOIN entry e ON e.id=v.entry_id JOIN assignment a ON a.id=e.assignment_id JOIN app_user u ON u.id=e.author_id WHERE a.course_id=?"+(role.equals("TEACHER")?"":" AND p.author_id="+uid)+" ORDER BY p.requested_at DESC,p.id DESC",cid);}
- public List<Map<String,Object>> publications(long cid,long uid,boolean pending){if(pending)s.teacher(cid,uid);else s.role(cid,uid);var rows=s.db.queryForList("SELECT p.*,v.title,v.version_no,v.content_json,u.display_name AS author_name,g.q_final,g.summary FROM publication p JOIN submission v ON v.id=p.submission_id JOIN entry e ON e.id=v.entry_id JOIN app_user u ON u.id=e.author_id JOIN assignment a ON a.id=e.assignment_id JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE a.course_id=? AND p.state=? ORDER BY COALESCE(p.published_at,p.reviewed_at,p.requested_at) DESC,p.id DESC",cid,pending?"PENDING":"PUBLISHED");for(var row:rows){var content=decode(row.remove("content_json"));row.put("cover",mediaSources(content).stream().findFirst().orElse(""));if(!pending){row.remove("last_reason");row.remove("requested_evaluation_revision");}}return rows;}
+ public List<Map<String,Object>> publications(long cid,long uid,boolean pending){if(pending)s.teacher(cid,uid);else s.role(cid,uid);var rows=s.db.queryForList("SELECT p.*,v.title,v.version_no,v.content_json,u.display_name AS author_name,g.q_final,g.summary,g.dimensions_json,(SELECT COUNT(*) FROM feedback f WHERE f.submission_id=v.id) AS discussion_count FROM publication p JOIN submission v ON v.id=p.submission_id JOIN entry e ON e.id=v.entry_id JOIN app_user u ON u.id=e.author_id JOIN assignment a ON a.id=e.assignment_id JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE a.course_id=? AND p.state=? ORDER BY COALESCE(p.published_at,p.reviewed_at,p.requested_at) DESC,p.id DESC",cid,pending?"PENDING":"PUBLISHED");for(var row:rows){var content=decode(row.remove("content_json"));row.put("cover",mediaSources(content).stream().findFirst().orElse(""));Object dims=row.remove("dimensions_json");row.put("dims",dims==null?Map.of():decode(dims));if(!pending){row.remove("last_reason");row.remove("requested_evaluation_revision");}}return rows;}
 }
