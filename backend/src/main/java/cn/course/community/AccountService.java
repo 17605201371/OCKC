@@ -9,7 +9,7 @@ import static cn.course.community.ApiError.fail;
 @Service
 public class AccountService {
  final Store s;final PasswordEncoder encoder;AccountService(Store s,PasswordEncoder encoder){this.s=s;this.encoder=encoder;}
- public Map<String,Object> profile(String email){return s.one("SELECT id,email,display_name,profile_revision,password_changed_at FROM app_user WHERE email=?",email);}
+ public Map<String,Object> profile(String email){return s.one("SELECT id,email,display_name,is_teacher,profile_revision,password_changed_at FROM app_user WHERE email=?",email);}
  @Transactional public Map<String,Object> updateName(String email,String name,Long revision){
   if(name==null||revision==null||revision<0)throw fail(400,"请填写显示名称并刷新账号资料");
   name=name.strip();if(name.isBlank()||name.codePointCount(0,name.length())>40||name.codePoints().anyMatch(c->Character.isISOControl(c)||Character.getType(c)==Character.FORMAT))throw fail(400,"显示名称应为 1–40 个字符，不包含控制字符");

@@ -211,12 +211,8 @@ const grading = ref<any[]>([]),
   gateReason = ref("");
 const course = computed(() => courses.value.find((c) => c.id === cid.value));
 const isTeacher = computed(() => course.value?.role === "TEACHER");
-// 一门课都没有时任何人都不该被卡死；已经教课的老师可以继续开新课。
-const canCreateCourse = computed(
-  () =>
-    courses.value.length === 0 ||
-    courses.value.some((c: any) => c.role === "TEACHER"),
-);
+// 开课权限来自账号本身（app_user.is_teacher），不是「当前这门课里是不是教师」。
+const canCreateCourse = computed(() => me.value?.is_teacher === true);
 const isStaff = computed(() =>
   ["TEACHER", "ASSISTANT"].includes(course.value?.role),
 );
@@ -1579,7 +1575,11 @@ onBeforeUnmount(() => {
                 ? "任课教师"
                 : course?.role === "ASSISTANT"
                   ? "课程助教"
-                  : "课程学生"
+                  : course
+                    ? "课程学生"
+                    : canCreateCourse
+                      ? "教师账号"
+                      : "学生账号"
             }}</span>
           </div>
           <button class="icon-btn" title="账号设置" aria-label="打开账号设置" @click="openAccount"><Settings :size="17" /></button>
@@ -1667,8 +1667,11 @@ onBeforeUnmount(() => {
       <section v-if="!cid" class="page empty">
         <BookOpen :size="36" />
         <h1>还没有可访问的课程</h1>
-        <p>可以自己开一门课（你将成为该课教师），或请任课教师把你的账号加入课程。</p>
-        <div class="button-row">
+        <p v-if="canCreateCourse">
+          可以自己开一门课（你将成为该课教师），或请任课教师把你的账号加入课程。
+        </p>
+        <p v-else>请联系任课教师将你的账号加入课程。</p>
+        <div v-if="canCreateCourse" class="button-row">
           <button class="btn primary" @click="showModal('course')">
             <Plus :size="16" />创建我的第一门课程
           </button>
@@ -1783,7 +1786,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <button
-            v-if="isTeacher"
+            v-if="canCreateCourse"
             class="text-btn more-space"
             @click="showModal('course')"
           >

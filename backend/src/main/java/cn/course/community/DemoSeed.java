@@ -18,7 +18,8 @@ public class DemoSeed implements CommandLineRunner {
   if(!enabled||s.db.queryForObject("SELECT COUNT(*) FROM app_user",Integer.class)>0)return;
   if(password.length()<12)throw new IllegalStateException("DEMO_SEED=true 时必须设置至少 12 位的 DEMO_PASSWORD；禁止生产环境启用演示数据");
   var emails=List.of("teacher@example.test","student@example.test","peer@example.test","outsider@example.test");var names=List.of("陈老师","林同学","周同学","其他课程学生");
-  for(int i=0;i<emails.size();i++)s.db.update("INSERT INTO app_user(email,display_name,password_hash) VALUES(?,?,?)",emails.get(i),names.get(i),passwords.encode(password));
+  // 只有第一个账号是教师账号（可开课），其余为普通学生账号。
+  for(int i=0;i<emails.size();i++)s.db.update("INSERT INTO app_user(email,display_name,password_hash,is_teacher) VALUES(?,?,?,?)",emails.get(i),names.get(i),passwords.encode(password),i==0);
   long teacher=s.uid(emails.get(0)),student=s.uid(emails.get(1)),peer=s.uid(emails.get(2)),outsider=s.uid(emails.get(3));
   long cid=s.id(service.createCourse("教学设计 · 演示课程","以可追溯的知识作品，连接创作、评价与改进。演示数据由系统初始化。",teacher),"id");
   service.addMember(cid,emails.get(1),"STUDENT",teacher);service.addMember(cid,emails.get(2),"STUDENT",teacher);

@@ -23,10 +23,10 @@ public class ApiController {
  public record ActionRequest(@NotBlank String action,@NotNull @Size(max=2000) String body){}
  public record VerifyRequest(@NotBlank String verdict,@NotBlank @Size(max=2000) String reason){}
  @GetMapping("/auth/csrf") public Map<String,String> csrf(CsrfToken token){return Map.of("token",token.getToken(),"headerName",token.getHeaderName());}
- @GetMapping("/auth/me") public Map<String,Object> me(Principal p){return s.one("SELECT id,email,display_name FROM app_user WHERE email=?",p.getName());}
+ @GetMapping("/auth/me") public Map<String,Object> me(Principal p){return s.one("SELECT id,email,display_name,is_teacher FROM app_user WHERE email=?",p.getName());}
  @GetMapping("/courses") public Object courses(Principal p){return service.courses(uid(p));}
- // 任何已登录用户都可以开课并成为该课教师：此前要求「已有教师身份」会让新账号永远建不出第一门课。
- @PostMapping("/courses") public Object createCourse(@Valid @RequestBody CourseRequest r,Principal p){return service.createCourse(r.title(),r.description(),uid(p));}
+ // 开课只认账号级的教师身份（app_user.is_teacher），与「在这门课里是不是教师」无关。
+ @PostMapping("/courses") public Object createCourse(@Valid @RequestBody CourseRequest r,Principal p){long u=uid(p);var row=s.one("SELECT is_teacher FROM app_user WHERE id=?",u);if(!Boolean.TRUE.equals(row.get("is_teacher")))throw ApiError.fail(403,"只有教师账号可以创建课程，请联系管理员开通教师权限");return service.createCourse(r.title(),r.description(),u);}
  @PostMapping("/courses/{cid}/members") public Object member(@PathVariable long cid,@Valid @RequestBody MemberRequest r,Principal p){service.addMember(cid,r.email(),r.role(),uid(p),r.revision(),r.reason());return Map.of("ok",true);}
  @GetMapping("/courses/{cid}/progress") public Object progress(@PathVariable long cid,Principal p){return service.progress(cid,uid(p));}
  @GetMapping("/courses/{cid}/assignments") public Object assignments(@PathVariable long cid,Principal p){return service.assignments(cid,uid(p));}
