@@ -73,6 +73,8 @@ import ProgressPage from "./ProgressPage.vue";
 import MembersPage from "./MembersPage.vue";
 const accessBackup=ref<any>(null),accessMessage=ref(''),backupDownloadRequired=ref(false);
 import QualitySummary from "./QualitySummary.vue";
+import StepAnswer from "./StepAnswer.vue";
+import StepEditor from "./StepEditor.vue";
 import AiFeedback from "./AiFeedback.vue";
 import NotificationCenter from "./NotificationCenter.vue";
 import AccountSettings from "./AccountSettings.vue";
@@ -239,13 +241,34 @@ function stepHeadings(doc: any) {
   return h2.length ? h2 : all;
 }
 const gradingAssignment = computed(() => assignments.value.find((a) => a.id === version.value?.assignment_id));
-const isStepAssignment = computed(() => (gradingAssignment.value?.kind || version.value?.assignmentSnapshot?.kind) === 'STEP');
+// 编辑页看草稿所属作业，批改/阅读页看提交所属作业；历史提交再退到任务快照。
+const isStepAssignment = computed(() => {
+  const a = version.value ? gradingAssignment.value : currentAssignment.value;
+  return (a?.kind || version.value?.assignmentSnapshot?.kind) === "STEP";
+});
 const gradingSteps = computed(() => (version.value?.content ? stepHeadings(version.value.content) : []));
 const editorSteps = computed(() => (entry.value?.content ? stepHeadings(entry.value.content) : []));
 const stepTotal = computed(() => stepScores.value.reduce((sum, s) => sum + (Number(s.score) || 0), 0));
 const stepMax = computed(() => stepScores.value.reduce((sum, s) => sum + (Number(s.max) || STEP_DEFAULT_MAX), 0));
+const scoredStepCount = computed(() => stepScores.value.filter((s) => s.score !== '' && s.score != null).length);
+// 右侧只列步骤与分数；标签和点评写在下方卡片里，点哪一步就编辑哪一步。
+const activeStep = ref(0);
+function selectStep(index: number) {
+  activeStep.value = index;
+  scrollToStep(index);
+}
 // 已发布的步骤分（学生与教师都看这一份，来自 evaluation.stepScores）。
 const publishedStepScores = computed<any[]>(() => version.value?.evaluation?.stepScores || []);
+// 批改时卡片徽标跟随当前填写，阅读时看已发布的步骤分。
+const stepScoresForDisplay = computed(() => (page.value === "grading" ? stepScores.value : publishedStepScores.value));
+function scrollToStep(index: number) {
+  const el = document.getElementById("step-card-" + index);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  // 右侧点一下，正文里对应的那一步短暂高亮，避免滚过去还找不到。
+  el.classList.add("step-card-focus");
+  setTimeout(() => el.classList.remove("step-card-focus"), 1400);
+}
 const publishedStepTotal = computed(() => publishedStepScores.value.reduce((sum, s) => sum + (Number(s.score) || 0), 0));
 const publishedStepMax = computed(() => publishedStepScores.value.reduce((sum, s) => sum + (Number(s.max) || STEP_DEFAULT_MAX), 0));
 function initStepScores(saved?: any[]) {
@@ -273,16 +296,14 @@ function filledStepScores() {
     .filter((s) => s.score !== '' && s.score != null)
     .map((s) => ({ index: s.index, title: s.title, score: Number(s.score), max: Number(s.max) || STEP_DEFAULT_MAX, tags: [...s.tags], comment: s.comment || '' }));
 }
-function addStep() {
+// 步骤卡写作面把整份文档回传，落盘逻辑与富文本编辑一致，避免两套保存路径。
+function setEntryContent(doc: any) {
   if (!entry.value) return;
-  const doc = entry.value.content || { type: 'doc', content: [] };
-  const n = editorSteps.value.length + 1;
-  doc.content = doc.content || [];
-  doc.content.push({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: `步骤 ${n}` }] });
-  doc.content.push({ type: 'paragraph', content: [] });
-  entry.value.content = { ...doc, content: [...doc.content] };
+  entry.value.content = doc;
   changed();
-  notify(`已添加「步骤 ${n}」，把标题改成这一步要做什么即可`);
+}
+function openStepEvidence(paragraphId: string) {
+  showModal('evidence', paragraphId ? { paragraphId } : {});
 }
 async function reloadReview() { await run(async()=>{version.value=await api(`/submissions/${version.value.id}`);applyReviewData({items:version.value.evaluation?.details,summary:version.value.evaluation?.summary,gateReason:version.value.evaluation?.gate_reason});await review.load(version.value.id);}); }
 async function restoreReview(data:any) { if(confirm('将这份草稿恢复到当前评分表单？恢复后请重新核对各项分数与总评；不会直接发布正式评价。'))await review.restore(data); }
@@ -2156,18 +2177,31 @@ onBeforeUnmount(() => {
                   ><span>{{ me.display_name }}</span
                   ><span>未提交的修改只保存在草稿中</span>
                 </div>
-                <div v-if="isStepAssignment" class="step-mode-bar">
-                  <div>
-                    <ListOrdered :size="16" /><strong>步骤型作业</strong>
-                    <span
-                      >每个二级标题算一步，当前 {{ editorSteps.length }} 步；提交后教师逐步给分并标注问题类型。</span
-                    >
+                <section v-if="isStepAssignment && currentAssignment" class="step-task-card">
+                  <h3>题目</h3>
+                  <strong>{{ currentAssignment.title }}</strong>
+                  <p>{{ currentAssignment.requirements }}</p>
+                  <div class="step-task-meta">
+                    <span>{{ fmt(currentAssignment.due_at) }} 截止</span>
+                    <span>步骤由你划分</span>
                   </div>
-                  <button type="button" class="btn compact" @click="addStep">
-                    <Plus :size="15" />添加一步
-                  </button>
-                </div>
+                </section>
+                <StepEditor
+                  v-if="isStepAssignment"
+                  :content="entry.content"
+                  :evidence="entry.evidence"
+                  :highlight-id="selectedAnchor"
+                  :annotations="draftAnnotations"
+                  :entry-id="entry.id"
+                  :evidence-count="entry.evidence.length"
+                  @update:content="setEntryContent"
+                  @evidence="openStepEvidence"
+                  @selected="selectedParagraph = $event"
+                  @annotation="jumpToFeedback"
+                  @uploading="uploadingMedia = $event"
+                />
                 <Editor
+                  v-else
                   :highlight-id="selectedAnchor"
                   :annotations="draftAnnotations"
                   :document-title="entry.title"
@@ -2439,7 +2473,21 @@ onBeforeUnmount(() => {
                   ><span>v{{ version.version_no }}</span>
                 </div>
                 <details class="assignment-snapshot"><summary>提交时的任务规则{{ version.assignmentSnapshot ? ' · r'+version.assignmentSnapshot.management_revision : ' · 未记录' }}</summary><template v-if="version.assignmentSnapshot"><p><strong>{{ version.assignmentSnapshot.title }}</strong></p><p>{{ version.assignmentSnapshot.requirements }}</p><p>{{ fmt(version.assignmentSnapshot.due_at) }} 截止 · {{ version.assignmentSnapshot.rubric_version }}</p><p class="muted">本规则快照随该提交保存，后续调整不改写本记录。</p></template><p v-else class="muted">此历史提交早于任务快照功能，未保存当时的规则；不使用当前规则冒充历史记录。</p></details>
+                <StepAnswer
+                  v-if="isStepAssignment"
+                  :content="version.content"
+                  :evidence="version.evidence"
+                  :scores="stepScoresForDisplay"
+                  :mode="page === 'grading' ? 'grade' : 'read'"
+                  :highlight-id="selectedAnchor"
+                  :annotations="versionAnnotations"
+                  :can-annotate="isTeacher"
+                  @selected="selectedAnchor = $event"
+                  @annotation="jumpToFeedback"
+                  @annotate="annotateFigure"
+                />
                 <Editor
+                  v-else
                   :highlight-id="selectedAnchor"
                   :annotations="versionAnnotations"
                   :can-annotate="isTeacher"
@@ -2607,10 +2655,14 @@ onBeforeUnmount(() => {
                 "
               >
                 <section v-if="isStepAssignment" class="grade-block step-grade-block">
-                  <div class="grade-block-head">
-                    <h4>步骤分</h4>
+                  <div class="step-head">
+                    <div>
+                      <h4>步骤分</h4>
+                      <p>{{ scoredStepCount }} / {{ gradingSteps.length }} 步已评</p>
+                    </div>
                     <span class="step-sum"
-                      >{{ number(stepTotal) }} / {{ number(stepMax) }}</span
+                      ><strong>{{ number(stepTotal) }}</strong
+                      ><em>/ {{ number(stepMax) }} 分</em></span
                     >
                   </div>
                   <p v-if="!gradingSteps.length" class="muted">
@@ -2620,31 +2672,22 @@ onBeforeUnmount(() => {
                     v-for="(s, i) in gradingSteps"
                     :key="i"
                     class="step-row"
+                    :class="{ active: activeStep === i }"
+                    @click="selectStep(i)"
                   >
-                    <span class="step-index">{{ i + 1 }}</span>
+                    <button
+                      type="button"
+                      class="step-index"
+                      :aria-label="`定位到第 ${i + 1} 步`"
+                      @click.stop="selectStep(i)"
+                    >
+                      {{ i + 1 }}
+                    </button>
                     <div class="step-main">
                       <strong>{{ s.text }}</strong>
-                      <div class="step-tags" role="group" :aria-label="s.text + '问题类型'">
-                        <button
-                          v-for="t in STEP_TAGS"
-                          :key="t"
-                          type="button"
-                          class="step-tag"
-                          :class="{ on: stepScores[i]?.tags.includes(t) }"
-                          :aria-pressed="!!stepScores[i]?.tags.includes(t)"
-                          @click="toggleStepTag(stepScores[i], t)"
-                        >
-                          {{ t }}
-                        </button>
+                      <div v-if="stepScores[i]?.tags.length" class="step-tags static">
+                        <span v-for="t in stepScores[i].tags" :key="t" class="step-tag on">{{ t }}</span>
                       </div>
-                      <input
-                        v-if="stepScores[i]"
-                        v-model="stepScores[i].comment"
-                        class="step-comment"
-                        maxlength="300"
-                        :aria-label="s.text + '点评'"
-                        placeholder="这一步的简短点评（可选）"
-                      />
                     </div>
                     <input
                       v-if="stepScores[i]"
@@ -2656,8 +2699,39 @@ onBeforeUnmount(() => {
                       step="0.5"
                       :aria-label="s.text + '得分'"
                       placeholder="—"
+                      @click.stop
                     />
                     <span class="step-max">/ {{ stepScores[i]?.max ?? 10 }}</span>
+                  </div>
+
+                  <div v-if="stepScores[activeStep]" class="step-comment-card">
+                    <div class="step-comment-head">
+                      <strong>老师点评 · 第 {{ activeStep + 1 }} 步</strong>
+                      <span
+                        >{{ stepScores[activeStep].score === "" ? "—" : stepScores[activeStep].score }} /
+                        {{ stepScores[activeStep].max }} 分</span
+                      >
+                    </div>
+                    <div class="step-tags" role="group" aria-label="问题类型">
+                      <button
+                        v-for="t in STEP_TAGS"
+                        :key="t"
+                        type="button"
+                        class="step-tag"
+                        :class="{ on: stepScores[activeStep].tags.includes(t) }"
+                        :aria-pressed="stepScores[activeStep].tags.includes(t)"
+                        @click="toggleStepTag(stepScores[activeStep], t)"
+                      >
+                        {{ t }}
+                      </button>
+                    </div>
+                    <textarea
+                      v-model="stepScores[activeStep].comment"
+                      class="step-comment"
+                      rows="4"
+                      maxlength="300"
+                      placeholder="这一步的问题与下一步怎么做；会显示在这一步下面"
+                    />
                   </div>
                 </section>
 
@@ -2845,7 +2919,7 @@ onBeforeUnmount(() => {
                 <span class="badge">v{{ version.version_no }}</span>
                 <button class="panel-collapse" title="收起反馈面板" aria-label="收起反馈面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
-              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><div v-if="publishedStepScores.length" class="step-readonly"><div class="step-readonly-head"><h4>步骤分</h4><span>{{ number(publishedStepTotal) }} / {{ number(publishedStepMax) }}</span></div><div v-for="s in publishedStepScores" :key="s.index" class="step-readonly-row"><span class="step-index">{{ Number(s.index) + 1 }}</span><div class="step-readonly-main"><strong>{{ s.title || '步骤 ' + (Number(s.index) + 1) }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div><p v-if="s.comment">{{ s.comment }}</p></div><em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em></div></div><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
+              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><div v-if="publishedStepScores.length" class="step-readonly"><div class="step-readonly-head"><h4>步骤分</h4><span>{{ number(publishedStepTotal) }} / {{ number(publishedStepMax) }}</span></div><div v-for="s in publishedStepScores" :key="s.index" class="step-readonly-row" role="button" tabindex="0" :aria-label="'定位到第 ' + (Number(s.index) + 1) + ' 步'" @click="scrollToStep(Number(s.index))" @keydown.enter="scrollToStep(Number(s.index))"><span class="step-index">{{ Number(s.index) + 1 }}</span><div class="step-readonly-main"><strong>{{ s.title || '步骤 ' + (Number(s.index) + 1) }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div><p v-if="s.comment">{{ s.comment }}</p></div><em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em></div></div><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
               <div v-else class="empty">
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>
