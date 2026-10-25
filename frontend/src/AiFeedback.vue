@@ -2,11 +2,11 @@
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { Sparkles, RefreshCw, ShieldCheck, AlertCircle, Wand2 } from 'lucide-vue-next';
 import { api } from './api';
-const props = defineProps<{ entryId: number; assignmentEnabled?: boolean }>();
+const props = defineProps<{ entryId: number; assignmentEnabled?: boolean; stepMode?: boolean }>();
 const emit = defineEmits<{ visibility: [enabled: boolean]; locate: [paragraphId: string] }>();
 const enabled = ref(false), loading = ref(false), failed = ref(false);
 const status = ref(''), message = ref(''), model = ref('');
-const suggestions = ref<Array<{ id?: number; paragraph_id?: string | null; quote_text?: string | null; dimension: string; title: string; body: string; state?: string }>>([]);
+const suggestions = ref<Array<{ id?: number; paragraph_id?: string | null; quote_text?: string | null; dimension: string; title: string; body: string; state?: string; step_index?: number | null }>>([]);
 let sequence = 0;
 const DIM: Record<string, string> = { S: '科学性', A: '准确性', C: '完整性', L: '逻辑性' };
 function dimName(code: string) { return DIM[String(code || 'C').charAt(0)] || '建议'; }
@@ -43,11 +43,15 @@ onBeforeUnmount(() => { sequence++; });
 </script>
 <template>
   <section v-if="enabled" id="sidebar-ai" class="sidebar-section ai-feedback-section" aria-label="AI 反馈">
-    <header class="sidebar-section-heading"><h3><Sparkles :size="15" />AI 反馈</h3><span class="small-label">{{ status === 'READY' ? (model || '已生成') : '教师已开启' }}</span></header>
+    <header class="sidebar-section-heading"><h3><Sparkles :size="15" />AI 反馈</h3><span class="small-label">{{ status === 'READY' ? (stepMode ? '逐步骤建议' : (model || '已生成')) : '教师已开启' }}</span></header>
 
     <div v-if="status === 'READY' && suggestions.length" class="ai-suggestion-list">
       <article v-for="(s, i) in suggestions" :key="s.id || i" class="ai-suggestion" :class="{ adopted: s.state === 'ADOPTED' }">
-        <div class="ai-suggestion-top"><span class="ai-dim">{{ dimName(s.dimension) }}</span><strong>{{ s.title }}</strong></div>
+        <div class="ai-suggestion-top">
+          <span v-if="s.step_index !== null && s.step_index !== undefined" class="ai-dim step">第 {{ Number(s.step_index) + 1 }} 步</span>
+          <span v-else class="ai-dim">{{ dimName(s.dimension) }}</span>
+          <strong>{{ s.title }}</strong>
+        </div>
         <p>{{ s.body }}</p>
         <blockquote v-if="s.quote_text" class="ai-quote">{{ s.quote_text }}</blockquote>
         <div class="ai-suggestion-actions">
@@ -61,7 +65,8 @@ onBeforeUnmount(() => { sequence++; });
     <div v-else-if="status === 'NOT_GENERATED'" class="ai-service-state">
       <span class="ai-state-icon"><Sparkles :size="19" /></span>
       <h4>还没有生成建议</h4>
-      <p>将把当前草稿正文发送给模型，生成四维修改建议；不会上传图片与证据原文。</p>
+      <p v-if="stepMode">按步骤把正文发送给模型，逐条指出每一步的具体问题与最小改法；不代写答案，也不上传图片与证据原文。</p>
+      <p v-else>将把当前草稿正文发送给模型，生成四维修改建议；不会上传图片与证据原文。</p>
       <button class="btn secondary" :disabled="loading" @click="load(true)"><Wand2 :size="15" />{{ loading ? '生成中…' : '生成 AI 建议' }}</button>
     </div>
 

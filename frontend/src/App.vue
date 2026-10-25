@@ -1158,6 +1158,10 @@ const annotationBody = ref("");
 const annotationDim = ref("C");
 const annotationBusy = ref(false);
 const annotationError = ref("");
+// 切换页面时收起批注浮层：否则它会留在创作页面上，看起来像「填了却没保存」。
+watch(page, () => { annotation.value = null; annotationError.value = ""; });
+// 切换页面时收起批注浮层：否则它会留在创作页面上，看起来像「填了却没保存」。
+watch(page, () => { annotation.value = null; annotationError.value = ""; });
 function clearAnnotation() { annotation.value = null; annotationBody.value = ""; annotationError.value = ""; }
 function onOutsideMouseDown(e: MouseEvent) {
   if (!annotation.value) return;
@@ -1181,12 +1185,15 @@ function captureSelection() {
   const rect = range.getBoundingClientRect();
   const below = rect.bottom + 10;
   const top = below + 320 > innerHeight ? Math.max(70, rect.top - 330) : below;
+  // 浮层不能压到右侧评分栏，否则「添加批注」按钮会被面板盖住，看起来像加了却没保存。
+  const col = (document.querySelector(".document-column") || document.querySelector(".document-paper"))?.getBoundingClientRect();
+  const limit = col ? Math.min(col.right, innerWidth) : innerWidth;
   annotation.value = {
     blockId: block.dataset.blockId,
     quote: text,
     label: text,
     kind: "text",
-    left: Math.min(Math.max(12, rect.left), Math.max(12, innerWidth - 344)),
+    left: Math.max(12, Math.min(rect.left, limit - 352)),
     top,
   };
   annotationError.value = "";
@@ -2352,7 +2359,7 @@ onBeforeUnmount(() => {
                 </article>
                 <div v-if="!latest?.feedback?.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? '还没有教师批注' : '提交后，在这里查看教师批注' }}</p><span>批注会定位到对应段落或图片。</span></div>
               </section>
-              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" />
+              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" :step-mode="isStepAssignment" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" />
               <details class="sidebar-version-history" :open="feedbackTab === 'versions'"><summary><History :size="14" />版本记录<span>{{ entry.versions.length }}</span><ChevronRight :size="14" class="history-chevron" /></summary>
               <div class="version-list">
                 <button

@@ -78,18 +78,30 @@ public class CommunityService {
  public Map<String,Object> aiFeedback(long eid,long uid,boolean generate){
   var e=entry(eid);String role=s.role(s.id(e,"course_id"),uid);
   if(s.id(e,"author_id")!=uid&&!"TEACHER".equals(role))throw fail(403,"AI 反馈仅作者与任课教师可见");
-  boolean enabled=Boolean.TRUE.equals(assignment(s.id(e,"assignment_id")).get("ai_feedback_enabled"));
+  var rule=assignment(s.id(e,"assignment_id"));
+  boolean enabled=Boolean.TRUE.equals(rule.get("ai_feedback_enabled"));
+  boolean stepMode="STEP".equals(rule.get("kind"));
   if(!enabled)return Map.of("enabled",false,"status","DISABLED","suggestions",List.of(),"formalScore",false);
   if(aiKey==null||aiKey.isBlank())return Map.of("enabled",true,"status","NOT_CONFIGURED","suggestions",List.of(),"formalScore",false);
   int rev=((Number)e.get("revision")).intValue();
-  var saved=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY id",eid,rev);
+  var saved=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state,step_index FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY step_index NULLS FIRST,id",eid,rev);
   if(!saved.isEmpty())return Map.of("enabled",true,"status","READY","suggestions",saved,"formalScore",false,"saved",true,"model",aiModel);
   if(!generate)return Map.of("enabled",true,"status","NOT_GENERATED","suggestions",List.of(),"formalScore",false,"model",aiModel);
   var paragraphs=anchors(decode(e.get("draft_json")));
   if(paragraphs.isEmpty()||text(decode(e.get("draft_json"))).isBlank())return Map.of("enabled",true,"status","EMPTY","suggestions",List.of(),"formalScore",false);
   // 只把段落标识与正文交给模型，图片与证据原文不出网。
   StringBuilder listing=new StringBuilder();
+  var sections=stepMode?stepSections(decode(e.get("draft_json"))):List.<Map<String,Object>>of();
+  if(stepMode){
+   // 步骤作业：按步骤分组送审，模型才知道「这是第几步的哪句话」。
+   for(int i=0;i<sections.size();i++){
+    var sec=sections.get(i);listing.append("第").append(i+1).append("步 ").append(sec.get("title")).append('\n');
+    for(Object line:(List<?>)sec.get("lines"))listing.append("  ").append(line).append('\n');
+    if(listing.length()>6000)break;
+   }
+  }
   for(var en:paragraphs.entrySet()){
+   if(stepMode)break;
    String value=en.getValue().trim();
    if(value.isEmpty())continue;
    listing.append('[').append(en.getKey()).append("] ").append(value).append('\n');
@@ -97,8 +109,15 @@ public class CommunityService {
   }
   String title=(String)e.get("title");
   try{
-   String content=requestSuggestions(title,listing.substring(0,Math.min(listing.length(),6000)));
-   var node=decode(stripFence(content));
+   int stepCount=stepMode?sections.size():0;
+   String content=requestSuggestions(title,listing.substring(0,Math.min(listing.length(),6000)),stepMode,stepCount);
+   JsonNode node;
+   try{node=decode(stripFence(content));}
+   catch(Exception parseError){
+    // 模型偶发把 JSON 截断；同一份输入再要一次通常就完整了。
+    content=requestSuggestions(title,listing.substring(0,Math.min(listing.length(),6000)),stepMode,stepCount);
+    node=decode(stripFence(content));
+   }
    if(!node.path("suggestions").isArray()||node.path("suggestions").isEmpty())throw new IllegalStateException("模型未返回可用建议");
    s.db.update("DELETE FROM ai_suggestion WHERE entry_id=? AND revision=?",eid,rev);
    int count=0;
@@ -109,18 +128,21 @@ public class CommunityService {
     if(!paragraphs.containsKey(pid))pid="";
     String quote=item.path("quote").asText("").trim();
     if(quote.length()>600||(!pid.isEmpty()&&!paragraphs.get(pid).contains(quote)))quote="";
-    s.db.update("INSERT INTO ai_suggestion(entry_id,revision,paragraph_id,quote_text,dimension,title,body,state,created_at) VALUES(?,?,?,?,?,?,?,'OPEN',?)",
+    Integer stepIndex=null;
+    if(stepMode&&stepCount>0){int si=item.path("stepIndex").asInt(-1);if(si>=0&&si<stepCount)stepIndex=si;}
+    s.db.update("INSERT INTO ai_suggestion(entry_id,revision,paragraph_id,quote_text,dimension,title,body,state,created_at,step_index) VALUES(?,?,?,?,?,?,?,'OPEN',?,?)",
      eid,rev,pid.isEmpty()?null:pid,quote.isEmpty()?null:quote,
-     item.path("dimension").asText("C"),trimTo(item.path("title").asText(""),200),trimTo(item.path("body").asText(""),1000),now());
+     item.path("dimension").asText("C"),trimTo(stripStepPrefix(item.path("title").asText("")),200),trimTo(item.path("body").asText(""),1000),now(),stepIndex);
    }
    s.audit(uid,"AI_FEEDBACK_GENERATE","entry",eid);
-   var list=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY id",eid,rev);
+   var list=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state,step_index FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY step_index NULLS FIRST,id",eid,rev);
    return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"saved",true,"model",aiModel);
   }catch(Exception ex){
    org.slf4j.LoggerFactory.getLogger(CommunityService.class).warn("AI feedback failed for entry {}: {}",eid,ex.toString());
    return Map.of("enabled",true,"status","FAILED","message","模型服务暂时不可用，请稍后重试","suggestions",List.of(),"formalScore",false);
   }
  }
+ private String stripStepPrefix(String title){String t=title==null?"":title.trim();return t.replaceFirst("^第[0-9一二三四五六七八九十]+步[\\s:：、.。]*","");}
  private String trimTo(String value,int max){String v=value==null?"":value.trim();return v.length()>max?v.substring(0,max):v;}
  @Transactional public void setAiSuggestionState(long id,String state,long uid){
   if(!Set.of("OPEN","ADOPTED","DISMISSED").contains(state))throw fail(422,"未知的建议状态");
@@ -131,6 +153,27 @@ public class CommunityService {
   s.db.update("UPDATE ai_suggestion SET state=? WHERE id=?",state,id);
   s.audit(uid,"AI_SUGGESTION_"+state,"ai_suggestion",id);
  }
+
+ // 步骤作业送审前按标题分步：优先二级标题，退化到实际用到的最高一级。
+ List<Map<String,Object>> stepSections(JsonNode doc){
+  List<JsonNode> nodes=new ArrayList<>();if(doc!=null)doc.path("content").forEach(nodes::add);
+  boolean has2=false;int min=99;
+  for(var n:nodes){if(!"heading".equals(n.path("type").asText()))continue;int lv=n.path("attrs").path("level").asInt(1);if(lv==2)has2=true;min=Math.min(min,lv);}
+  int level=has2?2:(min==99?0:min);
+  List<Map<String,Object>> out=new ArrayList<>();Map<String,Object> cur=null;
+  for(var n:nodes){
+   boolean heading="heading".equals(n.path("type").asText());
+   if(heading&&level>0&&n.path("attrs").path("level").asInt(1)==level){
+    cur=new LinkedHashMap<>();cur.put("title",n.path("content").isEmpty()||n.path("content").get(0).path("text").asText("").isBlank()?"未命名步骤":n.path("content").get(0).path("text").asText(""));cur.put("lines",new ArrayList<String>());out.add(cur);
+   }else if(cur!=null){
+    String id=n.path("attrs").path("blockId").asText("");String txt=inlineText(n).trim();
+    if(!txt.isEmpty())((List<String>)cur.get("lines")).add((id.isEmpty()?"":"["+id+"] ")+txt);
+   }
+  }
+  return out;
+ }
+ String inlineText(JsonNode node){StringBuilder b=new StringBuilder();collectText(node,b);return b.toString();}
+ void collectText(JsonNode node,StringBuilder b){if(node==null)return;if(node.has("text"))b.append(node.path("text").asText());node.path("content").forEach(c->collectText(c,b));}
  private String stripFence(String raw){
   String t=raw==null?"":raw.trim();
   if(t.startsWith("```")){int nl=t.indexOf('\n');if(nl>0)t=t.substring(nl+1);int end=t.lastIndexOf("```");if(end>=0)t=t.substring(0,end);}
@@ -138,20 +181,31 @@ public class CommunityService {
   if(start>=0&&end>start)return t.substring(start,end+1);
   return t;
  }
- private String requestSuggestions(String title,String body){
+ private String requestSuggestions(String title,String body,boolean stepMode,int stepCount){
   var factory=new org.springframework.http.client.SimpleClientHttpRequestFactory();
   factory.setConnectTimeout(8000);factory.setReadTimeout(120000);
   var client=org.springframework.web.client.RestClient.builder().baseUrl(aiBase).requestFactory(factory).build();
-  String system=("你是课程写作助教，帮助学生改进知识帖。只能依据四维量规给出可执行的修改建议，不得编造来源。"
-   +"四个维度：S 科学性（概念与机制是否正确）、A 准确性（表述与数据是否有据）、C 完整性（关键环节是否交代）、L 逻辑性（论证链条是否连贯）。"
-   +"我会给你带段落标识的正文，每行形如 [p_xxx] 段落内容。"
-   +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中 10-40 字的原文片段\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出问题并给出改法\"}]}。"
-   +"paragraphId 必须来自我给出的列表；quote 必须逐字出现在该段落里。最多 4 条，按重要程度排序。");
-  String user="标题："+(title==null?"":title)+"\n正文（带段落标识）：\n"+body+"\n\n请给出 3 到 4 条修改建议。";
+  String system=stepMode
+   ?("你是课程写作助教，学生在写步骤型作业：用若干步把推理写清楚。"
+    +"你的任务是逐条指出某一步里最具体的问题，并给出最小改法（改哪一句、补哪个量或单位、加什么限定条件）。"
+    +"禁止给出完整解答、标准答案或重写全文，也不要把学生没写的推理替他补完。"
+    +"四个维度：S 科学性、A 准确性、C 完整性、L 逻辑性。"
+    +"我会给你按步分组的正文，每步行如「第2步 标题」，下面每行形如 [p_xxx] 段落内容。"
+    +"严格只输出 JSON，不要解释或代码块标记。格式：{\"suggestions\":[{\"stepIndex\":0,\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中 10-40 字原文\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出这一步的问题并给最小改法\"}]}。"
+    +"stepIndex 从 0 开始，必须对应我给出的步序；paragraphId 必须来自该步；每步最多 2 条，总数不超过 5 条；每条 body 不超过 60 字，务必保证 JSON 完整闭合。")
+   :("你是课程写作助教，帮助学生改进知识帖。只能依据四维量规给出可执行的修改建议，不得编造来源。"
+    +"四个维度：S 科学性（概念与机制是否正确）、A 准确性（表述与数据是否有据）、C 完整性（关键环节是否交代）、L 逻辑性（论证链条是否连贯）。"
+    +"我会给你带段落标识的正文，每行形如 [p_xxx] 段落内容。"
+    +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中 10-40 字的原文片段\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出问题并给出改法\"}]}。"
+    +"paragraphId 必须来自我给出的列表；quote 必须逐字出现在该段落里。最多 4 条，按重要程度排序。");
+  String user=stepMode
+   ?"标题："+(title==null?"":title)+"\n分步正文（共 "+stepCount+" 步）：\n"+body+"\n\n请针对每一步指出具体问题，最多 6 条，每条都要能定位到某一步。"
+   :"标题："+(title==null?"":title)+"\n正文（带段落标识）：\n"+body+"\n\n请给出 3 到 4 条修改建议。";
   Map<String,Object> payload=new LinkedHashMap<>();
   payload.put("model",aiModel);
   payload.put("temperature",0.3);
-  payload.put("max_tokens",3000);
+  // 步骤作业一次要给多步、每条正文更长，给足额度，否则 JSON 会被截断。
+  payload.put("max_tokens",stepMode?4096:3000);
   // 该系列模型默认会先输出较长推理，挤占正文配额；降到 low 档才能稳定拿到 JSON。
   payload.put("reasoning_effort","low");
   payload.put("messages",List.of(Map.of("role","system","content",system),Map.of("role","user","content",user)));

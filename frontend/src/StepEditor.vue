@@ -247,18 +247,6 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
         <p><strong>老师要求：</strong>{{ stepScore(i)!.comment }}</p>
       </div>
 
-      <div v-if="stepScore(i)" class="step-card-foot">
-        <span v-if="stepScore(i)!.tags.length" class="step-tags static">
-          <span v-for="t in stepScore(i)!.tags" :key="t" class="step-tag on">{{ t }}</span>
-        </span>
-        <span class="grow"></span>
-        <strong class="step-score-inline">{{ stepScore(i)!.score }} / {{ stepScore(i)!.max }}</strong>
-      </div>
-      <div v-if="stepScore(i)?.comment" class="step-comment-block">
-        <span class="step-comment-avatar">师</span>
-        <p><strong>老师要求：</strong>{{ stepScore(i)!.comment }}</p>
-      </div>
-
       <div v-for="f in feedbackOf(i)" :key="f.id" class="step-anno-block">
         <span class="step-anno-avatar">批</span>
         <p><strong>{{ f.teacher_name || "教师" }}：</strong>{{ f.body }}<em v-if="f.quote_text || f.original_text">「{{ f.quote_text || f.original_text }}」</em></p>
