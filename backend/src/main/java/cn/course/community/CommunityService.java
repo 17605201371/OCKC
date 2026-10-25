@@ -296,7 +296,15 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
   if(submitLimit>0&&submitted>=submitLimit)throw fail(422,"本作业最多提交 "+submitLimit+" 个版本，你已用完；可以继续修改草稿，但不能再提交新版本");
   JsonNode doc=decode(e.get("draft_json"));validateContent(doc);if(text(doc).isBlank())throw fail(422,"请先填写正文");
   var latest=s.db.queryForList("SELECT id,content_hash FROM submission WHERE entry_id=? ORDER BY version_no DESC LIMIT 1",eid);
-  if(!latest.isEmpty()&&s.db.queryForObject("SELECT COUNT(*) FROM evaluation WHERE submission_id=? AND active=TRUE",Integer.class,latest.getFirst().get("id"))==0)throw fail(422,"上一版本尚未完成教师评审，请等待反馈后修订");
+  // 上一版必须有教师反馈才允许交新版，否则老师还没看，学生就反复刷版本。
+  // 「反馈」有三种：正式评分、段落批注、老师明确打回——任一存在即视为已反馈。
+  // 打回必须放行，否则「打回→修订→再提交」会死锁：被打回的那版往往还没评分。
+  if(!latest.isEmpty()){
+   long last=s.id(latest.getFirst(),"id");
+   boolean graded=s.db.queryForObject("SELECT COUNT(*) FROM evaluation WHERE submission_id=? AND active=TRUE",Integer.class,last)>0;
+   boolean annotated=s.db.queryForObject("SELECT COUNT(*) FROM feedback WHERE submission_id=?",Integer.class,last)>0;
+   if(!graded&&!annotated&&!"REVISION".equals(e.get("state")))throw fail(422,"上一版本还没有教师反馈，请等待老师评阅或批注后再修订");
+  }
   String hash;try{hash=HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest((e.get("title")+"\n"+e.get("draft_json")+"\n"+e.get("evidence_json")).getBytes(StandardCharsets.UTF_8)));}catch(Exception x){throw new IllegalStateException(x);}
   if(!latest.isEmpty()&&hash.equals(latest.getFirst().get("content_hash")))throw fail(422,"内容与证据均未变化，无需重复提交");
   int version=s.db.queryForObject("SELECT COUNT(*) FROM submission WHERE entry_id=?",Integer.class,eid)+1;
