@@ -2208,6 +2208,8 @@ onBeforeUnmount(() => {
                   :annotations="draftAnnotations"
                   :entry-id="entry.id"
                   :evidence-count="entry.evidence.length"
+                  :scores="latest?.evaluation?.stepScores"
+                  :feedback="latest?.feedback"
                   @update:content="setEntryContent"
                   @evidence="openStepEvidence"
                   @selected="selectedParagraph = $event"
@@ -2279,7 +2281,7 @@ onBeforeUnmount(() => {
                 <div v-if="latest?.evaluation?.stepScores?.length">
                   <div v-for="s in latest.evaluation.stepScores" :key="s.index" class="step-readonly-row">
                     <span class="step-index">{{ Number(s.index) + 1 }}</span>
-                    <div class="step-readonly-main"><strong>{{ s.title || '第 ' + (Number(s.index) + 1) + ' 步' }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div></div>
+                    <div class="step-readonly-main"><strong>{{ s.title || '第 ' + (Number(s.index) + 1) + ' 步' }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div><p v-if="s.comment" class="step-side-comment">{{ s.comment }}</p></div>
                     <em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em>
                   </div>
                 </div>
@@ -2502,6 +2504,7 @@ onBeforeUnmount(() => {
                   v-if="isStepAssignment"
                   :content="version.content"
                   :evidence="version.evidence"
+                  :feedback="version.feedback"
                   :scores="stepScoresForDisplay"
                   :mode="page === 'grading' ? 'grade' : 'read'"
                   :highlight-id="selectedAnchor"

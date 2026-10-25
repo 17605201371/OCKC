@@ -8,6 +8,7 @@ const props = defineProps<{
   content: any;
   evidence?: any[];
   scores?: any[];
+  feedback?: any[];
   mode?: "read" | "grade";
   highlightId?: string;
   annotations?: Array<{ id: number; blockId: string; quote: string; dimension: string }>;
@@ -71,6 +72,10 @@ function scoreOf(index: number) {
 function evidenceOf(step: { nodes: any[] }) {
   const ids = new Set(idsOf(step.nodes));
   return (props.evidence || []).filter((e: any) => ids.has(e.paragraph_id));
+}
+function feedbackOf(step: { nodes: any[] }) {
+  const ids = new Set(idsOf(step.nodes));
+  return (props.feedback || []).filter((f: any) => ids.has(f.paragraph_id));
 }
 function stateLabel(state: string) {
   return STATE_LABEL[state] || "待核验";
@@ -141,6 +146,10 @@ defineExpose({ scrollTo });
         <span v-if="scoreOf(i)?.tags.length" class="step-tags static">
           <span v-for="t in scoreOf(i)!.tags" :key="t" class="step-tag on">{{ t }}</span>
         </span>
+      </div>
+      <div v-for="f in feedbackOf(step)" :key="f.id" class="step-anno-block">
+        <span class="step-anno-avatar">批</span>
+        <p><strong>{{ f.teacher_name || "教师" }}：</strong>{{ f.body }}<em v-if="f.quote_text || f.original_text">「{{ f.quote_text || f.original_text }}」</em></p>
       </div>
       <div v-if="scoreOf(i)?.comment" class="step-comment-block">
         <span class="step-comment-avatar">师</span>

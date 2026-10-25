@@ -13,6 +13,8 @@ const props = defineProps<{
   annotations?: Array<{ id: number; blockId: string; quote: string; dimension: string }>;
   entryId?: number;
   evidenceCount?: number;
+  scores?: any[];
+  feedback?: any[];
 }>();
 const emit = defineEmits(["update:content", "evidence", "selected", "annotation", "uploading"]);
 
@@ -97,6 +99,15 @@ function setTitle(index: number, value: string) {
   steps.value[index].title = value;
   commit();
 }
+const introVisible = computed(() => {
+  const hasText = (nodes: any[]): boolean =>
+    (nodes || []).some((n) => (n.text || "").trim() || (n.type && n.type !== "paragraph") || hasText(n.content || []));
+  return intro.value.length > 0 && hasText(intro.value);
+});
+function removeIntro() {
+  intro.value = [];
+  commit();
+}
 function setIntro(doc: any) {
   intro.value = doc?.content || [];
   commit();
@@ -121,6 +132,15 @@ function blockIds(nodes: any[], out: string[] = []): string[] {
 function firstBlockId(index: number): string {
   return blockIds(steps.value[index].nodes)[0] || "";
 }
+function stepScore(index: number) {
+  const row = props.scores?.find((x: any) => Number(x.index) === index);
+  if (!row || row.score === null || row.score === undefined || row.score === "") return null;
+  return { score: Number(row.score), max: Number(row.max) || 10, tags: row.tags || [], comment: row.comment || "" };
+}
+function feedbackOf(index: number) {
+  const ids = new Set(blockIds(steps.value[index].nodes));
+  return (props.feedback || []).filter((f: any) => ids.has(f.paragraph_id));
+}
 function evidenceOf(index: number) {
   const ids = new Set(blockIds(steps.value[index].nodes));
   return (props.evidence || []).filter((e: any) => ids.has(e.paragraph_id));
@@ -138,7 +158,6 @@ function addStep() {
   });
 }
 function removeStep(index: number) {
-  if (steps.value.length <= 1) return;
   if (!confirm(`删除「${steps.value[index].title || "步骤 " + (index + 1)}」这一步？这一步的正文会一起删除。`)) return;
   steps.value.splice(index, 1);
   commit();
@@ -162,10 +181,12 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
       还没有分步。点「添加一步」，给这一步起个名字（例如「先定呼吸速率」），再写这一步的推导。
     </p>
 
-    <section v-if="intro.length" class="step-writer-card intro">
+    <section v-if="introVisible" class="step-writer-card intro">
       <div class="step-writer-head-row">
         <span class="step-num">·</span>
-        <span class="step-intro-label">未分步的内容（会自动保留；想计入某一步可挪进去）</span>
+        <span class="step-intro-label">未分步的内容</span>
+        <span class="grow"></span>
+        <button type="button" class="text-btn muted step-remove" @click="removeIntro">删除</button>
       </div>
       <Editor
         :model-value="introDoc()"
@@ -192,7 +213,6 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
           @input="setTitle(i, ($event.target as HTMLInputElement).value)"
         />
         <button
-          v-if="steps.length > 1"
           type="button"
           class="text-btn muted step-remove"
           :aria-label="`删除步骤 ${i + 1}`"
@@ -214,6 +234,35 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
         @annotation="emit('annotation', $event)"
         @uploading="emit('uploading', $event)"
       />
+
+      <div v-if="stepScore(i)" class="step-card-foot">
+        <span v-if="stepScore(i)!.tags.length" class="step-tags static">
+          <span v-for="t in stepScore(i)!.tags" :key="t" class="step-tag on">{{ t }}</span>
+        </span>
+        <span class="grow"></span>
+        <strong class="step-score-inline">{{ stepScore(i)!.score }} / {{ stepScore(i)!.max }}</strong>
+      </div>
+      <div v-if="stepScore(i)?.comment" class="step-comment-block">
+        <span class="step-comment-avatar">师</span>
+        <p><strong>老师要求：</strong>{{ stepScore(i)!.comment }}</p>
+      </div>
+
+      <div v-if="stepScore(i)" class="step-card-foot">
+        <span v-if="stepScore(i)!.tags.length" class="step-tags static">
+          <span v-for="t in stepScore(i)!.tags" :key="t" class="step-tag on">{{ t }}</span>
+        </span>
+        <span class="grow"></span>
+        <strong class="step-score-inline">{{ stepScore(i)!.score }} / {{ stepScore(i)!.max }}</strong>
+      </div>
+      <div v-if="stepScore(i)?.comment" class="step-comment-block">
+        <span class="step-comment-avatar">师</span>
+        <p><strong>老师要求：</strong>{{ stepScore(i)!.comment }}</p>
+      </div>
+
+      <div v-for="f in feedbackOf(i)" :key="f.id" class="step-anno-block">
+        <span class="step-anno-avatar">批</span>
+        <p><strong>{{ f.teacher_name || "教师" }}：</strong>{{ f.body }}<em v-if="f.quote_text || f.original_text">「{{ f.quote_text || f.original_text }}」</em></p>
+      </div>
 
       <div class="step-writer-foot">
         <span v-for="e in evidenceOf(i)" :key="e.id" class="step-evidence">
