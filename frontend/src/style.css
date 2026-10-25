@@ -4718,3 +4718,25 @@ dialog.account-settings::backdrop{background:#0007;}
 .annotation-popover { z-index: 60; }
 .sidebar-summary-meta { margin-top: 6px; font-size: 11.5px; color: var(--subtle); }
 .sidebar-summary-meta { margin-top: 6px; font-size: 11.5px; color: var(--subtle); }
+
+/* AI 建议的三个操作：定位（描边）、采纳（实心浅蓝）、忽略（灰色文字） */
+.ai-suggestion-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.ai-act { border: 1px solid transparent; border-radius: 7px; padding: 3px 9px; font: inherit; font-size: 12px; line-height: 1.6; cursor: pointer; background: transparent; color: var(--muted); }
+.ai-act.locate { border-color: var(--border); color: var(--text); background: var(--bg); }
+.ai-act.locate:hover { border-color: var(--subtle); }
+.ai-act.adopt { border-color: var(--blue); background: var(--blue-soft); color: var(--blue-text); font-weight: 500; }
+.ai-act.adopt:hover { background: #e3e6ff; }
+.ai-act.adopt.on { background: var(--green-soft); border-color: var(--green); color: var(--green); }
+.ai-act.ignore { color: #9a958e; }
+.ai-act.ignore:hover { background: var(--surface-2); color: var(--subtle); }
+
+/* AI 建议的三个操作：定位（描边）、采纳（实心浅蓝）、忽略（灰色文字） */
+.ai-suggestion-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.ai-act { border: 1px solid transparent; border-radius: 7px; padding: 3px 9px; font: inherit; font-size: 12px; line-height: 1.6; cursor: pointer; background: transparent; color: var(--muted); }
+.ai-act.locate { border-color: var(--border); color: var(--text); background: var(--bg); }
+.ai-act.locate:hover { border-color: var(--subtle); }
+.ai-act.adopt { border-color: var(--blue); background: var(--blue-soft); color: var(--blue-text); font-weight: 500; }
+.ai-act.adopt:hover { background: #e3e6ff; }
+.ai-act.adopt.on { background: var(--green-soft); border-color: var(--green); color: var(--green); }
+.ai-act.ignore { color: #9a958e; }
+.ai-act.ignore:hover { background: var(--surface-2); color: var(--subtle); }

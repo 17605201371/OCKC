@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
-import { Sparkles, RefreshCw, ShieldCheck, AlertCircle, Wand2 } from 'lucide-vue-next';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { Sparkles, RefreshCw, ShieldCheck, AlertCircle, Wand2, Check } from 'lucide-vue-next';
 import { api } from './api';
 const props = defineProps<{ entryId: number; assignmentEnabled?: boolean; stepMode?: boolean }>();
 const emit = defineEmits<{ visibility: [enabled: boolean]; locate: [paragraphId: string] }>();
@@ -19,6 +19,15 @@ async function toggleAdopt(s: any) {
   catch { s.state = previous; }
 }
 function locate(s: any) { if (s.paragraph_id) emit('locate', s.paragraph_id); }
+// 忽略只是隐藏这条建议，不删除记录；教师端仍能看到学生处理过。
+async function dismiss(s: any) {
+  if (!s.id) return;
+  const previous = s.state || 'OPEN';
+  s.state = 'DISMISSED';
+  try { await api(`/ai-suggestions/${s.id}/state`, 'POST', { state: 'DISMISSED' }); }
+  catch { s.state = previous; }
+}
+const visible = computed(() => suggestions.value.filter((s: any) => s.state !== 'DISMISSED'));
 async function load(generate = false) {
   const current = ++sequence; loading.value = true; failed.value = false;
   try {
@@ -45,8 +54,8 @@ onBeforeUnmount(() => { sequence++; });
   <section v-if="enabled" id="sidebar-ai" class="sidebar-section ai-feedback-section" aria-label="AI 反馈">
     <header class="sidebar-section-heading"><h3><Sparkles :size="15" />AI 反馈</h3><span class="small-label">{{ status === 'READY' ? (stepMode ? '逐步骤建议' : (model || '已生成')) : '教师已开启' }}</span></header>
 
-    <div v-if="status === 'READY' && suggestions.length" class="ai-suggestion-list">
-      <article v-for="(s, i) in suggestions" :key="s.id || i" class="ai-suggestion" :class="{ adopted: s.state === 'ADOPTED' }">
+    <div v-if="status === 'READY' && visible.length" class="ai-suggestion-list">
+      <article v-for="(s, i) in visible" :key="s.id || i" class="ai-suggestion" :class="{ adopted: s.state === 'ADOPTED' }">
         <div class="ai-suggestion-top">
           <span v-if="s.step_index !== null && s.step_index !== undefined" class="ai-dim step">第 {{ Number(s.step_index) + 1 }} 步</span>
           <span v-else class="ai-dim">{{ dimName(s.dimension) }}</span>
@@ -55,11 +64,19 @@ onBeforeUnmount(() => { sequence++; });
         <p>{{ s.body }}</p>
         <blockquote v-if="s.quote_text" class="ai-quote">{{ s.quote_text }}</blockquote>
         <div class="ai-suggestion-actions">
-          <button v-if="s.paragraph_id" class="text-btn" @click="locate(s)">定位正文</button>
-          <button class="text-btn" :class="{ adopted: s.state === 'ADOPTED' }" @click="toggleAdopt(s)">{{ s.state === 'ADOPTED' ? '已采纳' : '采纳' }}</button>
+          <button v-if="s.paragraph_id" class="ai-act locate" @click="locate(s)">定位正文</button>
+          <button class="ai-act adopt" :class="{ on: s.state === 'ADOPTED' }" @click="toggleAdopt(s)">{{ s.state === 'ADOPTED' ? '已采纳' : '采纳' }}</button>
+          <button class="ai-act ignore" @click="dismiss(s)">忽略</button>
         </div>
       </article>
       <button class="text-btn ai-refresh" :disabled="loading" @click="load(true)"><RefreshCw :size="13" :class="{ spinning: loading }" />重新生成建议</button>
+    </div>
+
+    <div v-else-if="status === 'READY'" class="ai-service-state">
+      <span class="ai-state-icon"><Check :size="19" /></span>
+      <h4>建议都已处理</h4>
+      <p>你可以重新生成一轮，或按已采纳的建议继续修改。</p>
+      <button class="btn secondary" :disabled="loading" @click="load(true)"><RefreshCw :size="15" />重新生成建议</button>
     </div>
 
     <div v-else-if="status === 'NOT_GENERATED'" class="ai-service-state">
