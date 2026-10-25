@@ -52,6 +52,10 @@ const quality = computed(() =>
     ? featured.value?.q_final
     : props.homeSubmission?.evaluation?.q_final,
 );
+// 步骤型作业按步骤分换算百分制，没有四维；标签跟着评分口径走，别再说「四维加权」。
+const gradeBasis = computed(() =>
+  (props.homeSubmission?.evaluation?.stepScores?.length || 0) > 0 ? "步骤分换算" : "四维加权",
+);
 const feedback = computed(
   () => props.homeSubmission?.feedback?.filter((x: any) => !x.resolved) || [],
 );
@@ -273,7 +277,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
         </ol>
         <div class="hero-quality">
           <span class="muted"
-            >{{ staff ? "此提交质量分" : "最近提交质量分" }} · 四维加权</span
+            >{{ staff ? "此提交质量分" : "最近提交质量分" }} · {{ gradeBasis }}</span
           >
           <div>
             <strong>{{ score(quality) }}</strong

@@ -70,6 +70,7 @@ onBeforeUnmount(() => { sequence++; });
         </div>
       </article>
       <button class="text-btn ai-refresh" :disabled="loading" @click="load(true)"><RefreshCw :size="13" :class="{ spinning: loading }" />重新生成建议</button>
+      <p class="ai-act-note">「采纳」只记录你自己的修订进度；教师批注要老师确认后才会标为「已解决」。</p>
     </div>
 
     <div v-else-if="status === 'READY'" class="ai-service-state">

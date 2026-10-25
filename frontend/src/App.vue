@@ -1115,8 +1115,48 @@ const DIM_LABELS: Record<string, string> = {
 function dimLabel(code: string) { return DIM_LABELS[code] || code || "批注"; }
 
 const highlightFeedbackId = ref(0);
+// 更早版本的批注分两组：未解决的要跟进，已解决的只留档（误点还能重开）。
+const priorOpen = computed<any[]>(() => (version.value?.priorFeedback || []).filter((f: any) => !f.resolved));
+const priorResolved = computed<any[]>(() => (version.value?.priorFeedback || []).filter((f: any) => f.resolved));
+// 学生编辑页看的是最新提交版本，上一轮没解决的批注同样要显示，否则改完没处声明。
+const draftPrior = computed<any[]>(() => (latest.value?.priorFeedback || []).filter((f: any) => !f.resolved));
+const priorBusy = ref(0);
+// 学生最近一次处理：ADOPT 表示「我已修改」，只是声明，不等于问题已解决。
+// priorFeedback 由后端直接带 student_action；本版批注只有 actions 列表，回退到列表里取最后一条。
+function studentAction(f: any) {
+  if (f.student_action) return f.student_action;
+  const acts = (f.actions || []).filter((a: any) => ["ADOPT", "REPLY", "IGNORE"].includes(a.action_type));
+  return acts.length ? acts[acts.length - 1].action_type : "";
+}
+// 「已解决」只有教师能确认：学生的 ADOPT 只是声明，AI 建议的采纳更不参与这个状态。
+// 所以徽标把「学生说了什么」和「段落有没有变」都摆出来，教师看一眼就能决定要不要关掉。
+function priorState(f: any) {
+  const changed = !!f.stale;
+  if (f.student_action === "ADOPT")
+    return changed ? { text: "学生已改 · 段落有变动", cls: "blue" } : { text: "学生已声明修改", cls: "blue" };
+  if (f.student_action === "REPLY") return { text: "学生已回应", cls: "blue" };
+  if (f.student_action === "IGNORE") return { text: "学生未采纳", cls: "grey" };
+  return changed ? { text: "段落已改动", cls: "grey" } : { text: "未解决", cls: "orange" };
+}
+async function resolvePrior(f: any, reopen = false) {
+  if (priorBusy.value) return;
+  priorBusy.value = f.id;
+  try {
+    await api(`/feedback/${f.id}/actions`, "POST", { action: reopen ? "REOPEN" : "RESOLVE", body: "" });
+    version.value = await api(`/submissions/${version.value.id}`);
+    notify(reopen ? "已重新打开，继续跟进" : "已标记为已解决，学生端同步显示");
+  } catch (e: any) {
+    error.value = e.message || "操作失败，请重试";
+  } finally {
+    priorBusy.value = 0;
+  }
+}
+// 本版批注 + 上一版遗留未解决的批注一起高亮：学生改过的段落若还留着旧批注，批改时看得见。
 const versionAnnotations = computed(() =>
-  (version.value?.feedback || [])
+  [
+    ...(version.value?.feedback || []),
+    ...priorOpen.value.filter((f: any) => !f.stale),
+  ]
     .map((f: any) => ({
       id: f.id,
       blockId: f.paragraph_id,
@@ -1158,8 +1198,6 @@ const annotationBody = ref("");
 const annotationDim = ref("C");
 const annotationBusy = ref(false);
 const annotationError = ref("");
-// 切换页面时收起批注浮层：否则它会留在创作页面上，看起来像「填了却没保存」。
-watch(page, () => { annotation.value = null; annotationError.value = ""; });
 // 切换页面时收起批注浮层：否则它会留在创作页面上，看起来像「填了却没保存」。
 watch(page, () => { annotation.value = null; annotationError.value = ""; });
 function clearAnnotation() { annotation.value = null; annotationBody.value = ""; annotationError.value = ""; }
@@ -1383,7 +1421,7 @@ async function modalSubmit() {
       if (page.value === "editor")
         latest.value = await api(`/submissions/${latest.value.id}`);
       else version.value = await api(`/submissions/${version.value.id}`);
-      notify("反馈处理已记录；采纳不自动代表问题已解决");
+      notify("已记录你的修改声明；老师确认后才算解决");
     }
     if (modal.value === "verify") {
       await api(`/evidence/${f.id}/verifications`, "POST", {
@@ -2288,7 +2326,7 @@ onBeforeUnmount(() => {
                 <div v-if="latest?.evaluation?.stepScores?.length">
                   <div v-for="s in latest.evaluation.stepScores" :key="s.index" class="step-readonly-row">
                     <span class="step-index">{{ Number(s.index) + 1 }}</span>
-                    <div class="step-readonly-main"><strong>{{ s.title || '第 ' + (Number(s.index) + 1) + ' 步' }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div><p v-if="s.comment" class="step-side-comment">{{ s.comment }}</p></div>
+                    <div class="step-readonly-main"><strong>{{ s.title || '第 ' + (Number(s.index) + 1) + ' 步' }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div></div>
                     <em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em>
                   </div>
                 </div>
@@ -2300,7 +2338,7 @@ onBeforeUnmount(() => {
                 <p class="sidebar-summary-meta">针对整份作答· 提交 v{{ latest?.version_no }}</p>
               </section>
               <section id="sidebar-teacher" class="sidebar-section teacher-feedback-section" :aria-label="isStepAssignment ? '段落批注' : '教师批注'">
-                <header class="sidebar-section-heading"><h3><MessageSquare :size="15" />{{ isStepAssignment ? '段落批注' : '教师批注' }}</h3><span class="small-label">{{ latest?.feedback?.length || 0 }} 条</span></header>
+                <header class="sidebar-section-heading"><h3><MessageSquare :size="15" />{{ isStepAssignment ? '段落批注' : '教师批注' }}</h3><span class="small-label">{{ (latest?.feedback?.length || 0) + draftPrior.length }} 条</span></header>
                 <article
                   v-for="f in latest?.feedback || []"
                   :key="f.id"
@@ -2313,8 +2351,8 @@ onBeforeUnmount(() => {
                     <span class="indicator-tag">{{ dimLabel(f.indicator_code) }}</span
                     ><span
                       class="badge"
-                      :class="f.resolved ? 'green' : 'orange'"
-                      >{{ f.resolved ? "已解决" : "待修订" }}</span
+                      :class="f.resolved ? 'green' : studentAction(f) === 'ADOPT' ? 'blue' : 'orange'"
+                      >{{ f.resolved ? "已解决" : studentAction(f) === "ADOPT" ? "已声明修改" : "待修订" }}</span
                     >
                   </div>
                   <p class="feedback-version-meta">{{ latest?.evaluation?.teacher_name || '任课教师' }} · 提交 v{{ latest?.version_no }}</p>
@@ -2343,12 +2381,14 @@ onBeforeUnmount(() => {
                     >
                       回应</button
                     ><button
+                      v-if="studentAction(f) !== 'ADOPT'"
                       class="text-btn"
                       @click="
                         showModal('action', { id: f.id, action: 'ADOPT' })
                       "
                     >
-                      标记采纳</button
+                      我已修改</button
+                    ><span v-else class="declared-tag">已声明修改 · 待老师确认</span
                     ><button
                       class="text-btn muted"
                       @click="
@@ -2359,7 +2399,34 @@ onBeforeUnmount(() => {
                     </button>
                   </div>
                 </article>
-                <div v-if="!latest?.feedback?.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? (isStepAssignment ? '还没有段落批注' : '还没有教师批注') : '提交后，在这里查看教师批注' }}</p><span>{{ isStepAssignment ? '老师可在批改页选中文字添加段落批注；每一步的点评见上方「步骤评分」。' : '批注会定位到对应段落或图片。' }}</span></div>
+                <!-- 上一版遗留、老师还没确认的批注：学生在新版本里也要看得见，否则改完没处声明。 -->
+                <article
+                  v-for="f in draftPrior"
+                  :key="'dp-' + f.id"
+                  class="feedback-card is-prior"
+                  :class="{ 'is-target': highlightFeedbackId === f.id }"
+                  @click="!f.stale && focusAnchor(f.paragraph_id, f.original_text)"
+                >
+                  <div class="card-top">
+                    <span class="indicator-tag">{{ dimLabel(f.indicator_code) }}</span>
+                    <span class="badge" :class="f.stale ? 'grey' : studentAction(f) === 'ADOPT' ? 'blue' : 'orange'">{{
+                      f.stale ? "段落已改动" : studentAction(f) === "ADOPT" ? "已声明修改" : "待修订"
+                    }}</span>
+                  </div>
+                  <p class="feedback-version-meta">v{{ f.source_version_no }} 提出 · 尚未确认</p>
+                  <h3 class="feedback-highlight">{{ f.body }}</h3>
+                  <blockquote v-if="f.quote_text">{{ f.quote_text }}</blockquote>
+                  <div class="feedback-controls">
+                    <button
+                      v-if="studentAction(f) !== 'ADOPT'"
+                      class="text-btn"
+                      @click.stop="showModal('action', { id: f.id, action: 'ADOPT' })"
+                    >
+                      我已修改</button
+                    ><span v-else class="declared-tag">已声明修改 · 待老师确认</span>
+                  </div>
+                </article>
+                <div v-if="!latest?.feedback?.length && !draftPrior.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? (isStepAssignment ? '还没有段落批注' : '还没有教师批注') : '提交后，在这里查看教师批注' }}</p><span>{{ isStepAssignment ? '老师可在批改页选中文字添加段落批注；每一步的点评见上方「步骤评分」。' : '批注会定位到对应段落或图片。' }}</span></div>
               </section>
               <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" :step-mode="isStepAssignment" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" />
               <details class="sidebar-version-history" :open="feedbackTab === 'versions'"><summary><History :size="14" />版本记录<span>{{ entry.versions.length }}</span><ChevronRight :size="14" class="history-chevron" /></summary>
@@ -2498,8 +2565,6 @@ onBeforeUnmount(() => {
             </aside>
             <div class="document-column">
               <div class="document-paper" @mouseup="captureSelection">
-                <span class="eyebrow">不可变提交版本</span
-                >
                 <h2 class="reader-title">{{ version.title }}</h2>
                 <div class="document-meta">
                   <span class="avatar small">{{
@@ -2514,6 +2579,7 @@ onBeforeUnmount(() => {
                   :content="version.content"
                   :evidence="version.evidence"
                   :feedback="version.feedback"
+                  :prior-feedback="priorOpen"
                   :scores="stepScoresForDisplay"
                   :mode="page === 'grading' ? 'grade' : 'read'"
                   :highlight-id="selectedAnchor"
@@ -2741,9 +2807,11 @@ onBeforeUnmount(() => {
                     <span class="step-max">/ {{ stepScores[i]?.max ?? 10 }}</span>
                   </div>
 
+                  <!-- 文字点评只保留「段落批注」一条通道：选中正文即可写，会锚在段落上。
+                       步骤这里只留问题类型标签，不再重复一个点评输入框。 -->
                   <div v-if="stepScores[activeStep]" class="step-comment-card">
                     <div class="step-comment-head">
-                      <strong>老师点评 · 第 {{ activeStep + 1 }} 步</strong>
+                      <strong>第 {{ activeStep + 1 }} 步 · 问题类型</strong>
                       <span
                         >{{ stepScores[activeStep].score === "" ? "—" : stepScores[activeStep].score }} /
                         {{ stepScores[activeStep].max }} 分</span
@@ -2762,13 +2830,6 @@ onBeforeUnmount(() => {
                         {{ t }}
                       </button>
                     </div>
-                    <textarea
-                      v-model="stepScores[activeStep].comment"
-                      class="step-comment"
-                      rows="4"
-                      maxlength="300"
-                      placeholder="这一步的问题与下一步怎么做；会显示在这一步下面"
-                    />
                   </div>
                 </section>
 
@@ -2948,6 +3009,53 @@ onBeforeUnmount(() => {
                     </button>
                   </div>
                 </details>
+
+                <details v-if="priorOpen.length || priorResolved.length" class="grade-feedback prior-feedback" open>
+                  <summary>历史批注 {{ priorOpen.length }} 条待跟进<span v-if="priorResolved.length"> · {{ priorResolved.length }} 条已解决</span></summary>
+                  <p class="grade-tip"><MessageSquare :size="14" /><span>来自更早的版本。学生点「我已修改」只是声明，要你在这里确认；确认后不再提醒。</span></p>
+                  <div
+                    v-for="f in priorOpen"
+                    :key="'prior-' + f.id"
+                    class="feedback-card is-prior"
+                    :class="{ 'is-target': highlightFeedbackId === f.id }"
+                  >
+                    <div class="card-top">
+                      <span class="indicator-tag">v{{ f.source_version_no }} 提出</span>
+                      <span class="badge" :class="priorState(f).cls">{{ priorState(f).text }}</span>
+                    </div>
+                    <strong>{{ dimLabel(f.indicator_code) }} · {{ f.body }}</strong>
+                    <blockquote v-if="f.quote_text">{{ f.quote_text }}</blockquote>
+                    <div class="prior-actions">
+                      <button
+                        v-if="!f.stale"
+                        class="text-btn"
+                        @click.stop="focusAnchor(f.paragraph_id, f.original_text)"
+                      >
+                        定位正文
+                      </button>
+                      <button
+                        class="text-btn resolve"
+                        :disabled="priorBusy === f.id"
+                        @click.stop="resolvePrior(f)"
+                      >
+                        标记已解决
+                      </button>
+                    </div>
+                  </div>
+                  <details v-if="priorResolved.length" class="prior-resolved">
+                    <summary>已解决 {{ priorResolved.length }} 条</summary>
+                    <div v-for="f in priorResolved" :key="'done-' + f.id" class="feedback-card is-prior is-done">
+                      <div class="card-top">
+                        <span class="indicator-tag">v{{ f.source_version_no }} 提出</span>
+                        <span class="badge green">已解决</span>
+                      </div>
+                      <strong>{{ dimLabel(f.indicator_code) }} · {{ f.body }}</strong>
+                      <button class="text-btn muted" :disabled="priorBusy === f.id" @click.stop="resolvePrior(f, true)">
+                        重新打开
+                      </button>
+                    </div>
+                  </details>
+                </details>
               </fieldset>
             </aside>
             <aside v-else v-show="panelVisible" class="feedback-sidebar">
@@ -2956,7 +3064,7 @@ onBeforeUnmount(() => {
                 <span class="badge">v{{ version.version_no }}</span>
                 <button class="panel-collapse" title="收起反馈面板" aria-label="收起反馈面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
-              <template v-if="version.evaluation"><QualitySummary v-if="version.evaluation.dimensions && version.evaluation.dimensions.length" :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><div v-if="publishedStepScores.length" class="step-readonly"><div class="step-readonly-head"><h4>步骤分</h4><span>{{ number(publishedStepTotal) }} / {{ number(publishedStepMax) }}</span></div><div v-for="s in publishedStepScores" :key="s.index" class="step-readonly-row" role="button" tabindex="0" :aria-label="'定位到第 ' + (Number(s.index) + 1) + ' 步'" @click="scrollToStep(Number(s.index))" @keydown.enter="scrollToStep(Number(s.index))"><span class="step-index">{{ Number(s.index) + 1 }}</span><div class="step-readonly-main"><strong>{{ s.title || '步骤 ' + (Number(s.index) + 1) }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div><p v-if="s.comment">{{ s.comment }}</p></div><em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em></div></div><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
+              <template v-if="version.evaluation"><QualitySummary v-if="version.evaluation.dimensions && version.evaluation.dimensions.length" :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><div v-if="publishedStepScores.length" class="step-readonly"><div class="step-readonly-head"><h4>步骤分</h4><span>{{ number(publishedStepTotal) }} / {{ number(publishedStepMax) }}</span></div><div v-for="s in publishedStepScores" :key="s.index" class="step-readonly-row" role="button" tabindex="0" :aria-label="'定位到第 ' + (Number(s.index) + 1) + ' 步'" @click="scrollToStep(Number(s.index))" @keydown.enter="scrollToStep(Number(s.index))"><span class="step-index">{{ Number(s.index) + 1 }}</span><div class="step-readonly-main"><strong>{{ s.title || '步骤 ' + (Number(s.index) + 1) }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div></div><em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em></div></div><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
               <div v-else class="empty">
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>
@@ -2979,6 +3087,26 @@ onBeforeUnmount(() => {
                   定位正文<ArrowUpRight :size="14" />
                 </button>
               </article>
+              <template v-if="priorOpen.length">
+                <h3 class="sub-panel-title">历史未解决批注 · {{ priorOpen.length }}</h3>
+                <article
+                  v-for="f in priorOpen"
+                  :key="'prior-' + f.id"
+                  class="feedback-card is-prior"
+                >
+                  <span class="indicator-tag">v{{ f.source_version_no }} 提出</span>
+                  <p>{{ f.body }}</p>
+                  <p v-if="f.student_action === 'ADOPT'" class="prior-declared">你已声明修改，等老师确认。</p>
+                  <button
+                    v-if="!f.stale"
+                    class="text-btn"
+                    @click="focusAnchor(f.paragraph_id, f.original_text)"
+                  >
+                    定位正文<ArrowUpRight :size="14" />
+                  </button>
+                  <p v-else class="muted">这段正文已改动，原批注仅作提醒。</p>
+                </article>
+              </template>
               <div class="ai-boundary">
                 <History :size="18" /><span
                   >本页展示冻结的 v{{
@@ -3251,7 +3379,7 @@ onBeforeUnmount(() => {
               (
                 {
                   REPLY: "回应反馈，说明你的理解或修订计划。",
-                  ADOPT: "仅记录采纳意向，请在正文中完成修改。",
+                  ADOPT: "声明你已按这条批注改过。老师确认后才算「已解决」，在此之前仍显示待跟进。",
                   IGNORE: "请解释本轮不采纳的具体原因。",
                   RESOLVE: "教师确认该问题已解决，原批注和回应仍会保留。",
                   REOPEN: "重新打开问题，继续跟进修订。",

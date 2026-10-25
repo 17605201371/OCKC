@@ -200,7 +200,7 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
       />
     </section>
 
-    <section v-for="(step, i) in steps" :key="i" class="step-writer-card">
+    <section v-for="(step, i) in steps" :id="'step-card-' + i" :key="i" class="step-writer-card">
       <div class="step-writer-head-row">
         <span class="step-num">{{ i + 1 }}</span>
         <input
@@ -241,10 +241,6 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
         </span>
         <span class="grow"></span>
         <strong class="step-score-inline">{{ stepScore(i)!.score }} / {{ stepScore(i)!.max }}</strong>
-      </div>
-      <div v-if="stepScore(i)?.comment" class="step-comment-block">
-        <span class="step-comment-avatar">师</span>
-        <p><strong>老师要求：</strong>{{ stepScore(i)!.comment }}</p>
       </div>
 
       <div v-for="f in feedbackOf(i)" :key="f.id" class="step-anno-block">

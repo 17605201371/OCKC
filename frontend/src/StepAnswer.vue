@@ -9,6 +9,8 @@ const props = defineProps<{
   evidence?: any[];
   scores?: any[];
   feedback?: any[];
+  // 上一版遗留、尚未解决的批注：blockId 跨版本稳定，能直接落回对应步骤。
+  priorFeedback?: any[];
   mode?: "read" | "grade";
   highlightId?: string;
   annotations?: Array<{ id: number; blockId: string; quote: string; dimension: string }>;
@@ -58,8 +60,24 @@ const split = computed(() => {
   return { steps, intro, stepLevel };
 });
 
+// 首段常有一个空段落（光标残留）。它没有内容，渲染成卡片就是一块没用的空格子。
+// 只保留真正有内容的节点：有文字、或有图片/公式/表格/标注等块级节点。
+const LEAF_BLOCKS = new Set(["figure", "mathBlock", "table", "callout", "image", "horizontalRule"]);
+function hasContent(node: any): boolean {
+  if (!node) return false;
+  if (LEAF_BLOCKS.has(node?.type)) return true;
+  if (node?.type === "heading") return textOf(node).trim().length > 0;
+  const walk = (n: any): boolean => {
+    if (!n) return false;
+    if (typeof n.text === "string" && n.text.trim().length > 0) return true;
+    if (LEAF_BLOCKS.has(n?.type)) return true;
+    return (n.content || []).some(walk);
+  };
+  return walk(node);
+}
+
 const steps = computed(() => split.value.steps);
-const intro = computed(() => split.value.intro);
+const intro = computed(() => split.value.intro.filter(hasContent));
 
 function docOf(nodes: any[]) {
   return { type: "doc", content: nodes };
@@ -77,6 +95,10 @@ function feedbackOf(step: { nodes: any[] }) {
   const ids = new Set(idsOf(step.nodes));
   return (props.feedback || []).filter((f: any) => ids.has(f.paragraph_id));
 }
+function priorOf(step: { nodes: any[] }) {
+  const ids = new Set(idsOf(step.nodes));
+  return (props.priorFeedback || []).filter((f: any) => !f.stale && ids.has(f.paragraph_id));
+}
 function stateLabel(state: string) {
   return STATE_LABEL[state] || "待核验";
 }
@@ -89,8 +111,9 @@ defineExpose({ scrollTo });
 <template>
   <article class="step-answer">
     <header class="step-answer-head">
-      <h3>我的作答</h3>
-      <span>{{ steps.length }} 步 · 步骤由你划分</span>
+      <h3>{{ mode === "grade" ? "学生作答" : "我的作答" }}</h3>
+      <span v-if="mode === 'grade'">共 {{ steps.length }} 步</span>
+      <span v-else>{{ steps.length }} 步 · 步骤由你划分</span>
     </header>
 
     <section v-if="intro.length" id="step-card-intro" class="step-card intro">
@@ -151,9 +174,9 @@ defineExpose({ scrollTo });
         <span class="step-anno-avatar">批</span>
         <p><strong>{{ f.teacher_name || "教师" }}：</strong>{{ f.body }}<em v-if="f.quote_text || f.original_text">「{{ f.quote_text || f.original_text }}」</em></p>
       </div>
-      <div v-if="scoreOf(i)?.comment" class="step-comment-block">
-        <span class="step-comment-avatar">师</span>
-        <p><strong>老师要求：</strong>{{ scoreOf(i)!.comment }}</p>
+      <div v-for="f in priorOf(step)" :key="'prior-' + f.id" class="step-anno-block is-prior">
+        <span class="step-anno-avatar prior">旧</span>
+        <p><strong>{{ f.teacher_name || "教师" }}：</strong>{{ f.body }}<em v-if="f.quote_text || f.original_text">「{{ f.quote_text || f.original_text }}」</em><span class="anno-prior-tag">v{{ f.source_version_no }} 提出 · 未解决</span></p>
       </div>
     </section>
   </article>
