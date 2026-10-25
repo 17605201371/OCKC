@@ -264,7 +264,6 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
   var evalRule=s.one("SELECT max_evaluations,evidence_policy,kind FROM assignment WHERE id=?",s.id(v,"assignment_id"));
   int evalLimit=evalRule.get("max_evaluations")==null?0:((Number)evalRule.get("max_evaluations")).intValue();
   if(evalLimit>0&&current>=evalLimit)throw fail(422,"该版本已批阅 "+current+" 次，达到本作业上限（"+evalLimit+" 次），不能再复评");
-  var result=QualityCalculator.calculate(req.items(),req.gateReason(),rubric.path("dimensions"));
   // 证据核验按作业策略放行：REQUIRED 逐条核验后才发分；DISPUTED（默认）只挡有争议的；OFF 不挡。
   // 旧行为是「任一条待核验即不能发分」，等于要求教师核完全班每条证据，实际不可持续。
   String policy=String.valueOf(evalRule.get("evidence_policy"));
@@ -274,9 +273,25 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
   boolean step= "STEP".equals(evalRule.get("kind"));
   List<ApiController.StepScore> steps=req.stepScores()==null?List.of():req.stepScores();
   if(step)validateStepScores(steps);else if(!steps.isEmpty())throw fail(422,"知识帖作业不接受步骤分");
+  // 步骤型作业默认只用步骤分发分，不强制 11 项四维：换算成百分制写入 q_final，
+  // details/dimensions 存空数组，前端据此不显示四维面板。
+  List<QualityCalculator.Item> items=req.items()==null?List.of():req.items();
+  String detailsJson,dimensionsJson;java.math.BigDecimal q;
+  if(step&&items.isEmpty()){
+    if(steps.isEmpty())throw fail(422,"步骤型作业至少要给一步打分");
+    java.math.BigDecimal sum=java.math.BigDecimal.ZERO,max=java.math.BigDecimal.ZERO;
+    for(var x:steps){sum=sum.add(x.score());max=max.add(x.max());}
+    if(max.signum()<=0)throw fail(422,"步骤分满分必须大于 0");
+    q=sum.multiply(java.math.BigDecimal.valueOf(100)).divide(max,2,java.math.RoundingMode.HALF_UP);
+    detailsJson="[]";dimensionsJson="[]";
+  }else{
+    if(items.size()!=QualityCalculator.CODES.size())throw fail(422,"必须包含且仅包含 11 个不重复的二级指标");
+    var result=QualityCalculator.calculate(items,req.gateReason(),rubric.path("dimensions"));
+    q=result.total();detailsJson=encode(items);dimensionsJson=encode(result.dimensions());
+  }
   String stepJson=steps.isEmpty()?null:encode(steps);
   s.db.update("UPDATE evaluation SET active=FALSE WHERE submission_id=? AND active=TRUE",sid);
-  long gid=s.insert("INSERT INTO evaluation(submission_id,teacher_id,revision_no,details_json,dimensions_json,q_raw,q_final,gate_reason,summary,active,created_at,step_scores_json) VALUES(?,?,?,?,?,?,?,?,?,TRUE,?,?)",sid,uid,current+1,encode(req.items()),encode(result.dimensions()),result.raw(),result.total(),req.gateReason(),req.summary(),now(),stepJson);
+  long gid=s.insert("INSERT INTO evaluation(submission_id,teacher_id,revision_no,details_json,dimensions_json,q_raw,q_final,gate_reason,summary,active,created_at,step_scores_json) VALUES(?,?,?,?,?,?,?,?,?,TRUE,?,?)",sid,uid,current+1,detailsJson,dimensionsJson,q,q,req.gateReason(),req.summary(),now(),stepJson);
   // A regrade revokes public visibility until the author requests review again.
   publicationAfterEvaluation(sid,uid);s.audit(uid,"EVALUATION_PUBLISH","evaluation",gid);s.db.update("DELETE FROM review_draft WHERE submission_id=? AND teacher_id=?",sid,uid);notices.send(s.id(v,"author_id"),s.id(v,"course_id"),"EVALUATION","MEMBER","教师已发布 v"+v.get("version_no")+" 的正式评价","submission",sid,"",uid);return (Map<String,Object>)getEvaluation(sid);}
  @Transactional public Map<String,Object> addFeedback(long sid,ApiController.FeedbackRequest req,long uid){var v=submission(sid);s.teacher(s.id(v,"course_id"),uid);var a=anchors(decode(v.get("content_json")));if(!a.containsKey(req.paragraphId()))throw fail(422,"段落不存在");

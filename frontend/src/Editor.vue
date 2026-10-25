@@ -55,6 +55,8 @@ import { toMarkdown } from "./markdown";
 const props = defineProps<{
   modelValue: any;
   readonly?: boolean;
+  // 步骤卡等窄容器用紧凑工具条：只留图标，不显示模式与操作区。
+  compact?: boolean;
   highlightId?: string;
   annotations?: Array<{ id: number; blockId: string; quote: string; dimension: string }>;
   documentTitle?: string;
@@ -759,7 +761,7 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <div class="editor-shell" :class="{ 'writer-editable': !readonly }" @click="onEditorClick">
+  <div class="editor-shell" :class="{ 'writer-editable': !readonly, compact: compact && !readonly }" @click="onEditorClick">
     <div
       v-if="!readonly && editor"
       class="writer-commandbar"

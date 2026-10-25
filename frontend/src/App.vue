@@ -219,7 +219,16 @@ const canCreateCourse = computed(() => me.value?.is_teacher === true);
 const isStaff = computed(() =>
   ["TEACHER", "ASSISTANT"].includes(course.value?.role),
 );
-function reviewSnapshot() { return { items: grading.value.map(i => ({code:i.code,score:i.score === '' || i.score == null ? null : Number(i.score),status:i.status,reason:i.reason || ''})), summary:summary.value, gateReason:gateReason.value, stepScores: filledStepScores() }; }
+function reviewSnapshot() {
+  // 步骤型作业只发步骤分，不带 11 项四维，避免后端按四维校验拦下草稿。
+  const step = isStepAssignment.value;
+  return {
+    items: step ? [] : grading.value.map(i => ({code:i.code,score:i.score === '' || i.score == null ? null : Number(i.score),status:i.status,reason:i.reason || ''})),
+    summary: summary.value,
+    gateReason: gateReason.value,
+    stepScores: step ? filledStepScores() : [],
+  };
+}
 function applyReviewData(data:any) { grading.value = allItems.map(i => ({...i,score:data.items?.find((x:any)=>x.code===i.code)?.score ?? null,status:data.items?.find((x:any)=>x.code===i.code)?.status || 'SCORED',reason:data.items?.find((x:any)=>x.code===i.code)?.reason || ''})); summary.value=data.summary || '';gateReason.value=data.gateReason || '';initStepScores(data.stepScores); }
 const review = useReviewDraft(reviewSnapshot, applyReviewData, () => page.value === 'grading' && isTeacher.value, () => me.value?.id);
 const reviewPublishing=ref(false);
@@ -1385,13 +1394,15 @@ async function modalSubmit() {
 async function publishGrade() {
   await run(async () => {
     if(!review.state.loaded || review.state.stale || review.state.backup || review.state.conflict)throw new Error('请先处理评分草稿的加载、恢复或冲突提示。');
-    if (!previewScore.value)
-      throw new Error("请填写完整的四维评分，待核验项不得发布");
-    if (!summary.value.trim()) throw new Error("请填写总评与下一步建议");
-    if (isStepAssignment.value && gradingSteps.value.length) {
+    const stepMode = isStepAssignment.value;
+    if (stepMode) {
+      if (!gradingSteps.value.length) throw new Error("这份提交没有步骤，无法按步骤发分；请让作者用步骤卡作答");
       const missing = stepScores.value.filter((s) => s.score === "" || s.score == null).length;
-      if (missing) throw new Error(`还有 ${missing} 步没有给分；步骤分填满后再发布，或在总评里说明`);
+      if (missing) throw new Error(`还有 ${missing} 步没有给分；步骤分填满后才能发布`);
+    } else if (!previewScore.value) {
+      throw new Error("请填写完整的四维评分，待核验项不得发布");
     }
+    if (!summary.value.trim()) throw new Error("请填写总评与下一步建议");
     if (
       !confirm(
         "确认发布正式评价？学生将立即看到结果；复评会保留历史并撤回该版社区发布。",
@@ -1402,12 +1413,14 @@ async function publishGrade() {
     try {
     if(!await review.flush())throw new Error(review.state.error || '请先保存评分草稿');
     await api(`/submissions/${version.value.id}/evaluations`, "POST", {
-      items: grading.value.map((i) => ({
-        code: i.code,
-        score: i.status === "SCORED" ? Number(i.score) : null,
-        status: i.status,
-        reason: i.reason,
-      })),
+      items: isStepAssignment.value
+        ? []
+        : grading.value.map((i) => ({
+            code: i.code,
+            score: i.status === "SCORED" ? Number(i.score) : null,
+            status: i.status,
+            reason: i.reason,
+          })),
       summary: summary.value,
       gateReason: gateReason.value,
       expectedRevision: review.state.baseRevision,
@@ -2093,6 +2106,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="button-row"><button class="text-btn history-trigger" @click="panelVisible = true; feedbackTab = 'versions'"><History :size="16" />历史版本</button>
               <button
+                v-if="!isStepAssignment"
                 class="btn secondary"
                 :class="{ pressed: outlineVisible }"
                 @click="outlineVisible = !outlineVisible"
@@ -2140,12 +2154,12 @@ onBeforeUnmount(() => {
           <div
             class="editor-layout"
             :class="{
-              'has-outline': outlineVisible,
+              'has-outline': outlineVisible && !isStepAssignment,
               'without-panel': !panelVisible,
             }"
           >
             <button v-if="!panelVisible" class="panel-reopen" title="展开反馈面板" aria-label="展开反馈面板" @click="panelVisible = true"><MessageSquare :size="16" /><span>反馈</span></button>
-            <aside v-if="outlineVisible" class="document-outline studio-outline">
+            <aside v-if="outlineVisible && !isStepAssignment" class="document-outline studio-outline">
               <div class="outline-section-label"><ListTree :size="16" /><h3>写作大纲</h3><span>{{ entryOutline.length }}</span></div>
               <nav aria-label="文章章节">
                 <button v-for="a in entryOutline" :key="a.id" :class="{ selected: activeOutlineId === a.id, 'sub-heading': a.level > 1 }" :style="{ paddingLeft: 12 + a.depth * 16 + 'px' }" @click="focusAnchor(a.id)"><span>{{ a.number }}</span><span>{{ a.text }}</span></button>
@@ -2257,9 +2271,20 @@ onBeforeUnmount(() => {
                 }}</span>
                 <button class="panel-collapse" title="收起反馈面板" aria-label="收起反馈面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
-              <nav class="feedback-jump-nav" aria-label="反馈分区导航"><button @click="sidebarJump('sidebar-quality')">质量评分</button><button @click="sidebarJump('sidebar-teacher')">教师批注<span>{{ latest?.feedback?.length || 0 }}</span></button><button v-if="aiSidebarVisible" @click="sidebarJump('sidebar-ai')">AI 反馈</button></nav>
+              <nav class="feedback-jump-nav" aria-label="反馈分区导航"><button @click="sidebarJump('sidebar-quality')">{{ isStepAssignment ? '步骤评分' : '质量评分' }}</button><button @click="sidebarJump('sidebar-teacher')">教师批注<span>{{ latest?.feedback?.length || 0 }}</span></button><button v-if="aiSidebarVisible" @click="sidebarJump('sidebar-ai')">AI 反馈</button></nav>
               </div>
-              <div id="sidebar-quality"><QualitySummary :evaluation="latest?.evaluation" :version="latest?.version_no" :dimensions="latest?.rubricSnapshot?.dimensions" draft @rubric="openRubric" /></div>
+              <div v-if="!isStepAssignment" id="sidebar-quality"><QualitySummary :evaluation="latest?.evaluation" :version="latest?.version_no" :dimensions="latest?.rubricSnapshot?.dimensions" draft @rubric="openRubric" /></div>
+              <section v-else id="sidebar-quality" class="sidebar-section" aria-label="步骤评分">
+                <header class="sidebar-section-heading"><h3><ListOrdered :size="15" />步骤评分</h3><span class="small-label">{{ latest?.evaluation?.stepScores?.length || 0 }} 步</span></header>
+                <div v-if="latest?.evaluation?.stepScores?.length">
+                  <div v-for="s in latest.evaluation.stepScores" :key="s.index" class="step-readonly-row">
+                    <span class="step-index">{{ Number(s.index) + 1 }}</span>
+                    <div class="step-readonly-main"><strong>{{ s.title || '第 ' + (Number(s.index) + 1) + ' 步' }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div></div>
+                    <em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em>
+                  </div>
+                </div>
+                <p v-else class="muted">提交后由教师按步骤给分，并标注问题类型。</p>
+              </section>
               <section id="sidebar-teacher" class="sidebar-section teacher-feedback-section" aria-label="教师批注">
                 <header class="sidebar-section-heading"><h3><MessageSquare :size="15" />教师批注</h3><span class="small-label">{{ latest?.feedback?.length || 0 }} 条</span></header>
               <p v-if="latest?.evaluation?.summary" class="teacher-summary">
@@ -2434,12 +2459,12 @@ onBeforeUnmount(() => {
             class="editor-layout"
             :class="{
               'grading-layout': page === 'grading',
-              'has-outline': outlineVisible,
+              'has-outline': outlineVisible && !isStepAssignment,
               'without-panel': !panelVisible,
             }"
           >
             <button v-if="!panelVisible" class="panel-reopen" title="展开反馈面板" aria-label="展开反馈面板" @click="panelVisible = true"><MessageSquare :size="16" /><span>反馈</span></button>
-            <aside v-if="outlineVisible" class="document-outline">
+            <aside v-if="outlineVisible && !isStepAssignment" class="document-outline">
               <h3><ListTree :size="16" />文档大纲</h3>
               <p>点击章节，定位正文</p>
               <nav aria-label="正文段落">
@@ -2619,7 +2644,7 @@ onBeforeUnmount(() => {
               v-if="page === 'grading'"
             >
               <div class="panel-title">
-                <h2>四维评分</h2>
+                <h2>{{ isStepAssignment ? "步骤评分" : "四维评分" }}</h2>
                 <span class="badge blue">教师确认</span>
                 <button class="panel-collapse" title="收起评分面板" aria-label="收起评分面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
@@ -2627,7 +2652,7 @@ onBeforeUnmount(() => {
               <div v-if="review.state.error && isTeacher" class="review-recovery" role="alert"><p>{{ review.state.error }}</p><button class="text-btn" @click="review.state.conflict || !review.state.loaded ? reloadReview() : review.save()">{{ review.state.conflict || !review.state.loaded ? '重新加载并合并' : '重试保存' }}</button></div>
               <div v-if="review.state.stale && isTeacher" class="review-recovery"><strong>正式评价已更新</strong><p>有一份基于旧评价的评分草稿。请先选择恢复并复核，或放弃旧草稿。</p><button class="text-btn" @click="restoreReview(review.state.stale)">恢复旧草稿并复核</button><button class="text-btn muted" @click="review.discardStale()">放弃旧草稿</button></div>
               <div v-if="review.state.backup && isTeacher" class="review-recovery"><strong>发现本机未同步的评分备份</strong><p>可恢复后继续核对；不会直接覆盖正式评价。</p><button class="text-btn" @click="restoreReview(review.state.backup)">恢复本机评分备份</button><button class="text-btn muted" @click="review.discardBackup()">使用服务端草稿</button></div>
-              <div class="grade-summary">
+              <div v-if="!isStepAssignment" class="grade-summary">
                 <span>综合质量 · 四维加权</span>
                 <strong
                   >{{ previewScore ? number(previewScore.total) : "—"
@@ -2735,7 +2760,7 @@ onBeforeUnmount(() => {
                   </div>
                 </section>
 
-                <section class="grade-block">
+                <section v-if="!isStepAssignment" class="grade-block">
                   <div class="grade-block-head">
                     <h4>内容质量</h4>
                   </div>
@@ -2831,7 +2856,7 @@ onBeforeUnmount(() => {
 
                 <section class="grade-block">
                   <div class="grade-block-head">
-                    <h4>总评</h4>
+                    <h4>{{ isStepAssignment ? "整体评语" : "总评" }}</h4>
                     <span>学生可见</span>
                   </div>
                   <textarea
@@ -2852,7 +2877,7 @@ onBeforeUnmount(() => {
                       + {{ t }}
                     </button>
                   </div>
-                  <details class="grade-gate" :open="!!gateReason">
+                  <details v-if="!isStepAssignment" class="grade-gate" :open="!!gateReason">
                     <summary>存在严重缺陷 · 综合分封顶 89</summary>
                     <textarea
                       v-model="gateReason"
@@ -2919,7 +2944,7 @@ onBeforeUnmount(() => {
                 <span class="badge">v{{ version.version_no }}</span>
                 <button class="panel-collapse" title="收起反馈面板" aria-label="收起反馈面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
-              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><div v-if="publishedStepScores.length" class="step-readonly"><div class="step-readonly-head"><h4>步骤分</h4><span>{{ number(publishedStepTotal) }} / {{ number(publishedStepMax) }}</span></div><div v-for="s in publishedStepScores" :key="s.index" class="step-readonly-row" role="button" tabindex="0" :aria-label="'定位到第 ' + (Number(s.index) + 1) + ' 步'" @click="scrollToStep(Number(s.index))" @keydown.enter="scrollToStep(Number(s.index))"><span class="step-index">{{ Number(s.index) + 1 }}</span><div class="step-readonly-main"><strong>{{ s.title || '步骤 ' + (Number(s.index) + 1) }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div><p v-if="s.comment">{{ s.comment }}</p></div><em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em></div></div><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
+              <template v-if="version.evaluation"><QualitySummary v-if="version.evaluation.dimensions && version.evaluation.dimensions.length" :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><div v-if="publishedStepScores.length" class="step-readonly"><div class="step-readonly-head"><h4>步骤分</h4><span>{{ number(publishedStepTotal) }} / {{ number(publishedStepMax) }}</span></div><div v-for="s in publishedStepScores" :key="s.index" class="step-readonly-row" role="button" tabindex="0" :aria-label="'定位到第 ' + (Number(s.index) + 1) + ' 步'" @click="scrollToStep(Number(s.index))" @keydown.enter="scrollToStep(Number(s.index))"><span class="step-index">{{ Number(s.index) + 1 }}</span><div class="step-readonly-main"><strong>{{ s.title || '步骤 ' + (Number(s.index) + 1) }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div><p v-if="s.comment">{{ s.comment }}</p></div><em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em></div></div><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
               <div v-else class="empty">
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>

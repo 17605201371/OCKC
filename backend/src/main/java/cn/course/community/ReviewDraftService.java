@@ -13,7 +13,8 @@ public class ReviewDraftService {
  @Transactional public Map<String,Object> save(long sid,long uid,WorkflowController.ReviewDraftRequest r){
   access(sid,uid);s.one("SELECT id FROM submission WHERE id=? FOR UPDATE",sid);
   if(r.baseEvaluationRevision()!=evaluationRevision(sid))throw fail(409,"正式评价已更新，请重新加载后复核评分草稿");
-  if(r.items().size()!=11||!new HashSet<>(r.items().stream().map(QualityCalculator.Item::code).toList()).equals(new HashSet<>(QualityCalculator.CODES)))throw fail(422,"评分草稿须包含 11 个不重复的二级指标");
+  // 步骤型作业只存步骤分，草稿的 items 允许为空；知识帖仍要求完整 11 项。
+  if(!r.items().isEmpty()&&(r.items().size()!=11||!new HashSet<>(r.items().stream().map(QualityCalculator.Item::code).toList()).equals(new HashSet<>(QualityCalculator.CODES))))throw fail(422,"评分草稿须包含 11 个不重复的二级指标");
   for(var i:r.items())if(!Set.of("SCORED","NA","PENDING").contains(String.valueOf(i.status()))||i.reason()==null||i.reason().length()>500||(i.score()!=null&&(i.score().signum()<0||i.score().compareTo(java.math.BigDecimal.valueOf(100))>0||i.score().scale()>2)))throw fail(422,"评分草稿的分数、状态或理由不正确");
   // 步骤分同样进草稿：教师填了几步就先存几步，不要求一次填完。
   List<ApiController.StepScore> steps=r.stepScores()==null?List.of():r.stepScores();

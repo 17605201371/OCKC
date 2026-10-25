@@ -53,7 +53,23 @@ function buildDoc() {
       ...s.nodes,
     ]),
   ];
-  return { type: "doc", content };
+  // 新建的步骤标题不经过编辑器，不会自动获得 blockId；这里统一补齐并去重，
+  // 否则服务端会以「段落标识缺失或重复」拒绝保存草稿。
+  return { type: "doc", content: sanitize(content) };
+}
+const BLOCK_TYPES = ["paragraph", "heading", "codeBlock", "figure", "mathBlock"];
+function sanitize(nodes: any[], seen = new Set<string>()): any[] {
+  return (nodes || []).map((node) => {
+    const copy = { ...node };
+    if (BLOCK_TYPES.includes(copy.type)) {
+      const attrs = { ...(copy.attrs || {}) };
+      if (!attrs.blockId || seen.has(attrs.blockId)) attrs.blockId = uid();
+      seen.add(attrs.blockId);
+      copy.attrs = attrs;
+    }
+    if (Array.isArray(copy.content)) copy.content = sanitize(copy.content, seen);
+    return copy;
+  });
 }
 function jsonOf(doc: any) {
   return JSON.stringify(doc || {});
@@ -80,6 +96,13 @@ function commit() {
 function setTitle(index: number, value: string) {
   steps.value[index].title = value;
   commit();
+}
+function setIntro(doc: any) {
+  intro.value = doc?.content || [];
+  commit();
+}
+function introDoc() {
+  return { type: "doc", content: intro.value };
 }
 function setBody(index: number, doc: any) {
   steps.value[index].nodes = doc?.content || [];
@@ -139,6 +162,23 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
       还没有分步。点「添加一步」，给这一步起个名字（例如「先定呼吸速率」），再写这一步的推导。
     </p>
 
+    <section v-if="intro.length" class="step-writer-card intro">
+      <div class="step-writer-head-row">
+        <span class="step-num">·</span>
+        <span class="step-intro-label">未分步的内容（会自动保留；想计入某一步可挪进去）</span>
+      </div>
+      <Editor
+        :model-value="introDoc()"
+        :entry-id="entryId"
+        :evidence-count="evidenceCount"
+        compact
+        @update:model-value="setIntro"
+        @selected="emit('selected', $event)"
+        @annotation="emit('annotation', $event)"
+        @uploading="emit('uploading', $event)"
+      />
+    </section>
+
     <section v-for="(step, i) in steps" :key="i" class="step-writer-card">
       <div class="step-writer-head-row">
         <span class="step-num">{{ i + 1 }}</span>
@@ -168,6 +208,7 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
         :annotations="annotations"
         :entry-id="entryId"
         :evidence-count="evidenceCount"
+        compact
         @update:model-value="setBody(i, $event)"
         @selected="emit('selected', $event)"
         @annotation="emit('annotation', $event)"

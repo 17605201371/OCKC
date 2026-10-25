@@ -4573,3 +4573,111 @@ dialog.account-settings::backdrop{background:#0007;}
 .step-readonly-row:hover { background: var(--hover); }
 .step-readonly-row { cursor: pointer; border-radius: 8px; padding-inline: 6px; margin-inline: -6px; }
 .step-readonly-row:hover { background: var(--hover); }
+
+/* ---- 步骤卡收紧：一屏能看到 3 步以上 ---- */
+.step-writer { gap: 10px; }
+.step-writer-card { padding: 10px 12px 6px; border-radius: 10px; }
+.step-writer-head { align-items: center; }
+.step-writer-head h3 { font-size: 14px; }
+.step-writer-head p { font-size: 12px; margin-top: 2px; }
+.step-writer-head-row { gap: 8px; margin-bottom: 2px; }
+.step-name-input { font-size: 14px; padding: 2px 0; }
+.step-writer-foot { margin-top: 4px; padding-top: 6px; gap: 8px; }
+.step-writer-note { font-size: 11.5px; }
+.step-task-card { padding: 12px 14px; margin-bottom: 12px; border-radius: 10px; }
+.step-task-card h3 { font-size: 12px; margin-bottom: 6px; }
+.step-task-card > strong { font-size: 14px; margin-bottom: 4px; }
+.step-task-card > p { font-size: 13px; line-height: 1.65; }
+.step-task-meta { margin-top: 6px; font-size: 11.5px; }
+.step-card { padding: 12px 14px; border-radius: 10px; }
+.step-answer { gap: 10px; }
+.step-answer-head h3 { font-size: 14px; }
+.step-card-head { margin-bottom: 4px; gap: 8px; }
+.step-card-head h4 { font-size: 14px; }
+.step-card-foot { margin-top: 6px; padding-top: 6px; gap: 6px 12px; }
+.step-comment-block { margin-top: 8px; padding: 8px 10px; }
+
+/* 步骤内编辑器：单行图标工具条，隐藏模式与操作区 */
+.editor-shell.compact .writer-commandbar { position: static; margin: 4px 0 2px; padding: 2px 0; flex-wrap: nowrap; overflow-x: auto; gap: 2px; border: 0; background: transparent; }
+.editor-shell.compact .writer-mode, .editor-shell.compact .writer-actions { display: none; }
+.editor-shell.compact .writer-format-tools { flex-wrap: nowrap; gap: 2px; }
+.editor-shell.compact .writer-format-tools .tool-label { display: none; }
+.editor-shell.compact .writer-format-tools button { min-width: 28px; padding: 4px 5px; }
+.editor-shell.compact .writer-separator { margin: 0 3px; }
+.step-writer-card .prose-editor { min-height: 42px; padding: 2px 0 4px; font-size: 14px; line-height: 1.75; }
+.step-writer-card .prose-editor p { font-size: 14px; }
+.step-writer-card .prose-editor p:last-child { margin-bottom: 0; }
+
+/* ---- 步骤卡收紧：一屏能看到 3 步以上 ---- */
+.step-writer { gap: 10px; }
+.step-writer-card { padding: 10px 12px 6px; border-radius: 10px; }
+.step-writer-head { align-items: center; }
+.step-writer-head h3 { font-size: 14px; }
+.step-writer-head p { font-size: 12px; margin-top: 2px; }
+.step-writer-head-row { gap: 8px; margin-bottom: 2px; }
+.step-name-input { font-size: 14px; padding: 2px 0; }
+.step-writer-foot { margin-top: 4px; padding-top: 6px; gap: 8px; }
+.step-writer-note { font-size: 11.5px; }
+.step-task-card { padding: 12px 14px; margin-bottom: 12px; border-radius: 10px; }
+.step-task-card h3 { font-size: 12px; margin-bottom: 6px; }
+.step-task-card > strong { font-size: 14px; margin-bottom: 4px; }
+.step-task-card > p { font-size: 13px; line-height: 1.65; }
+.step-task-meta { margin-top: 6px; font-size: 11.5px; }
+.step-card { padding: 12px 14px; border-radius: 10px; }
+.step-answer { gap: 10px; }
+.step-answer-head h3 { font-size: 14px; }
+.step-card-head { margin-bottom: 4px; gap: 8px; }
+.step-card-head h4 { font-size: 14px; }
+.step-card-foot { margin-top: 6px; padding-top: 6px; gap: 6px 12px; }
+.step-comment-block { margin-top: 8px; padding: 8px 10px; }
+
+/* 步骤内编辑器：单行图标工具条，隐藏模式与操作区 */
+.editor-shell.compact .writer-commandbar { position: static; margin: 4px 0 2px; padding: 2px 0; flex-wrap: nowrap; overflow-x: auto; gap: 2px; border: 0; background: transparent; }
+.editor-shell.compact .writer-mode, .editor-shell.compact .writer-actions { display: none; }
+.editor-shell.compact .writer-format-tools { flex-wrap: nowrap; gap: 2px; }
+.editor-shell.compact .writer-format-tools .tool-label { display: none; }
+.editor-shell.compact .writer-format-tools button { min-width: 28px; padding: 4px 5px; }
+.editor-shell.compact .writer-separator { margin: 0 3px; }
+.step-writer-card .prose-editor { min-height: 42px; padding: 2px 0 4px; font-size: 14px; line-height: 1.75; }
+.step-writer-card .prose-editor p { font-size: 14px; }
+.step-writer-card .prose-editor p:last-child { margin-bottom: 0; }
+
+/* 站点在创作区把正文最小高度拉到 550px；步骤卡里必须覆盖掉，否则每步都撑满一屏 */
+.creation-workspace .editor-shell.compact .prose-editor,
+.creation-workspace .step-card .prose-editor,
+.creation-workspace .step-writer-card .prose-editor { min-height: 48px; }
+.creation-workspace .step-card .writer-editable .prose-editor { min-height: 48px; }
+
+/* 站点在创作区把正文最小高度拉到 550px；步骤卡里必须覆盖掉，否则每步都撑满一屏 */
+.creation-workspace .editor-shell.compact .prose-editor,
+.creation-workspace .step-card .prose-editor,
+.creation-workspace .step-writer-card .prose-editor { min-height: 48px; }
+.creation-workspace .step-card .writer-editable .prose-editor { min-height: 48px; }
+
+/* 步骤卡正文去掉为「＋段落」预留的 60px 下内边距 */
+.creation-workspace .step-writer-card .prose-editor,
+.creation-workspace .step-card .prose-editor { padding: 2px 0 8px; }
+.step-writer-card .editor-shell, .step-card .editor-shell { min-height: 0; }
+
+/* 步骤卡正文去掉为「＋段落」预留的 60px 下内边距 */
+.creation-workspace .step-writer-card .prose-editor,
+.creation-workspace .step-card .prose-editor { padding: 2px 0 8px; }
+.step-writer-card .editor-shell, .step-card .editor-shell { min-height: 0; }
+
+/* 步骤卡：隐藏编辑器底部状态条，进一步压高度 */
+.editor-shell.compact .writer-status { display: none; }
+.step-writer-card { padding: 8px 12px 4px; }
+.step-writer-head-row { margin-bottom: 0; }
+.step-writer-foot { margin-top: 2px; padding-top: 5px; font-size: 11.5px; }
+.step-writer-card .prose-editor { padding-bottom: 2px; }
+
+/* 步骤卡：隐藏编辑器底部状态条，进一步压高度 */
+.editor-shell.compact .writer-status { display: none; }
+.step-writer-card { padding: 8px 12px 4px; }
+.step-writer-head-row { margin-bottom: 0; }
+.step-writer-foot { margin-top: 2px; padding-top: 5px; font-size: 11.5px; }
+.step-writer-card .prose-editor { padding-bottom: 2px; }
+.step-intro-label { font-size: 12px; color: var(--subtle); }
+.step-writer-card.intro { background: var(--surface); }
+.step-intro-label { font-size: 12px; color: var(--subtle); }
+.step-writer-card.intro { background: var(--surface); }
