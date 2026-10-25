@@ -47,6 +47,8 @@ public class ApiController {
  @PutMapping("/entries/{eid}/draft") public Object save(@PathVariable long eid,@Valid @RequestBody DraftRequest r,Principal p){return service.save(eid,r,uid(p));}
  @PostMapping("/entries/{eid}/submissions") public Object submit(@PathVariable long eid,@RequestHeader("Idempotency-Key") String key,@Valid @RequestBody SubmitRequest r,Principal p){if(!key.matches("[a-zA-Z0-9_-]{8,80}"))throw ApiError.fail(422,"幂等键格式不正确");return service.submit(eid,r.revision(),key,uid(p));}
  @GetMapping("/submissions/{sid}") public Object submission(@PathVariable long sid,Principal p){return service.getSubmission(sid,uid(p));}
+ public record EntryVerdictRequest(@NotBlank @Pattern(regexp="PASS|RETURN|REOPEN") String action,@Size(max=2000) String reason){}
+ @PostMapping("/entries/{eid}/verdict") public Object entryVerdict(@PathVariable long eid,@Valid @RequestBody EntryVerdictRequest r,Principal p){return service.entryVerdict(eid,r.action(),r.reason(),uid(p));}
  @GetMapping("/courses/{cid}/review-queue") public Object queue(@PathVariable long cid,Principal p){return service.queue(cid,uid(p));}
  @PostMapping("/submissions/{sid}/evaluations") public Object evaluate(@PathVariable long sid,@Valid @RequestBody EvaluationRequest r,Principal p){return service.evaluate(sid,r,uid(p));}
  @PostMapping("/submissions/{sid}/feedback") public Object feedback(@PathVariable long sid,@Valid @RequestBody FeedbackRequest r,Principal p){return service.addFeedback(sid,r,uid(p));}

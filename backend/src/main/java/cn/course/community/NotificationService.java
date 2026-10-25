@@ -19,7 +19,7 @@ public class NotificationService {
  }
  // Notifications contain routing metadata, not copies of grading drafts or feedback bodies.
  final String eligible=" n.recipient_id=? AND EXISTS (SELECT 1 FROM course_member m WHERE m.course_id=n.course_id AND m.user_id=n.recipient_id AND (n.audience<>'TEACHER' OR m.role='TEACHER'))";
- static final Set<String> KINDS=Set.of("MEMBERSHIP_CHANGE","ASSIGNMENT_CHANGE","SUBMISSION","EVALUATION","FEEDBACK","FEEDBACK_REPLY","EVIDENCE","EVIDENCE_DISPUTED","PUBLICATION_REQUEST","PUBLICATION_RESULT");
+ static final Set<String> KINDS=Set.of("MEMBERSHIP_CHANGE","ASSIGNMENT_CHANGE","SUBMISSION","EVALUATION","FEEDBACK","FEEDBACK_REPLY","EVIDENCE","EVIDENCE_DISPUTED","PUBLICATION_REQUEST","PUBLICATION_RESULT","ENTRY_VERDICT");
  String kind(String value){if(value==null||value.isBlank())return null;if(!KINDS.contains(value))throw fail(400,"消息类型不正确");return value;}
  String accessStamp(long uid){
   var memberships=s.db.queryForList("SELECT course_id,role FROM course_member WHERE user_id=? ORDER BY course_id",uid);

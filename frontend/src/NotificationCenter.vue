@@ -7,7 +7,7 @@ const open=ref(false), unreadOnly=ref(false), kind=ref(''), rows=ref<any[]>([]),
 const trigger=ref<HTMLButtonElement>(), modal=ref<HTMLDialogElement>(), items=ref<HTMLElement>();
 let timer:ReturnType<typeof setInterval>, session=0, request=0, summaryRequest=0, disposed=false, summaryBusy=false, head=0, baselineUnread=0, accessStamp='', bodyOverflow='';
 let retryMode:'first'|'more'|number|'all'|null=null;
-const kindName:Record<string,string>={MEMBERSHIP_CHANGE:'课程身份',ASSIGNMENT_CHANGE:'作业变更',SUBMISSION:'待评审',EVALUATION:'正式评价',FEEDBACK:'教师批注',FEEDBACK_REPLY:'反馈回应',EVIDENCE:'证据核验',EVIDENCE_DISPUTED:'争议裁定',PUBLICATION_REQUEST:'发布审核',PUBLICATION_RESULT:'发布结果'};
+const kindName:Record<string,string>={MEMBERSHIP_CHANGE:'课程身份',ASSIGNMENT_CHANGE:'作业变更',SUBMISSION:'待评审',EVALUATION:'正式评价',FEEDBACK:'教师批注',FEEDBACK_REPLY:'反馈回应',EVIDENCE:'证据核验',EVIDENCE_DISPUTED:'争议裁定',PUBLICATION_REQUEST:'发布审核',PUBLICATION_RESULT:'发布结果',ENTRY_VERDICT:'终审结果'};
 const current=(token:number)=>!disposed&&session===token;
 function query(){const q=new URLSearchParams();if(kind.value)q.set('kind',kind.value);return q;}
 function time(value:string){return new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false});}

@@ -4031,6 +4031,10 @@ summary:focus-visible {
 .deadline-badge.closed { background: var(--surface-2); color: var(--muted); }
 .deadline-banner { display: flex; align-items: center; gap: 8px; padding: 12px 15px; margin: 0 0 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 7px; font-size: 12px; color: var(--muted); }
 .deadline-banner.due_soon { color: var(--orange); background: var(--orange-soft); }
+/* 单篇帖子的终审结果：打回要显眼，定稿要安定 */
+.deadline-banner.revision { color: var(--orange); background: var(--orange-soft); border-color: var(--orange); align-items: flex-start; line-height: 1.7; }
+.deadline-banner.revision strong { font-weight: 600; }
+.deadline-banner.passed { color: var(--green); background: var(--green-soft); border-color: var(--green); }
 .assignment-card .meta-line { flex-wrap: wrap; }
 .assignment-foot button:disabled, .work-row:disabled { opacity: .55; cursor: not-allowed; }
 
@@ -4427,6 +4431,11 @@ dialog.account-settings::backdrop{background:#0007;}
 .grade-form { border: 0; padding: 0; margin: 0; min-width: 0; }
 .grade-form:disabled { opacity: 0.7; }
 .grade-block { padding: 16px 18px; border-bottom: 1px solid var(--line-soft); }
+/* 终审：批改侧栏最底部的两个决定，视觉上要压住其他操作 */
+.entry-verdict { background: var(--surface); border-top: 1px solid var(--border); }
+.verdict-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+.verdict-actions .btn { justify-content: center; height: 34px; padding: 0 8px; font-size: 13px; }
+.verdict-reason { margin-bottom: 10px; padding: 8px 10px; border-radius: 7px; background: var(--orange-soft); color: var(--orange); font-size: 12px; line-height: 1.7; }
 .grade-block-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .grade-block-head h4 { font-size: 14px; font-weight: 600; }
 .grade-block-head > span { margin-left: auto; font-size: 12px; color: var(--subtle); }

@@ -392,13 +392,17 @@ const today = new Date().toLocaleDateString("zh-CN", {
               </div>
               <span
                 class="badge"
-                :class="a.version_no ? 'green' : a.entry_id ? 'blue' : ''"
+                :class="a.entry_state === 'PASSED' ? 'green' : a.entry_state === 'REVISION' ? 'orange' : a.version_no ? 'green' : a.entry_id ? 'blue' : ''"
                 >{{
-                  a.version_no
-                    ? `已提交 v${a.version_no}`
-                    : a.entry_id
-                      ? "创作中"
-                      : "未开始"
+                  a.entry_state === "PASSED"
+                    ? "已通过定稿"
+                    : a.entry_state === "REVISION"
+                      ? "已打回 · 待修订"
+                      : a.version_no
+                        ? `已提交 v${a.version_no}`
+                        : a.entry_id
+                          ? "创作中"
+                          : "未开始"
                 }}</span
               ><ChevronRight :size="16" />
             </button>

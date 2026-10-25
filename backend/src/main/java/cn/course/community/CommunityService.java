@@ -27,12 +27,12 @@ public class CommunityService {
  JsonNode decode(Object value){try{return json.readTree((String)value);}catch(Exception e){throw new IllegalStateException(e);}}
  public Map<String,Object> assignment(long id){return s.one("SELECT * FROM assignment WHERE id=?",id);}
  public Map<String,Object> entry(long id){return s.one("SELECT e.*,a.course_id,a.due_at,a.rubric_version FROM entry e JOIN assignment a ON a.id=e.assignment_id WHERE e.id=?",id);}
- public Map<String,Object> submission(long id){return s.one("SELECT v.*,e.author_id,e.assignment_id,a.course_id,u.display_name AS author_name,a.title AS assignment_title FROM submission v JOIN entry e ON e.id=v.entry_id JOIN assignment a ON a.id=e.assignment_id JOIN app_user u ON u.id=e.author_id WHERE v.id=?",id);}
+ public Map<String,Object> submission(long id){return s.one("SELECT v.*,e.author_id,e.assignment_id,e.state AS entry_state,e.state_reason AS entry_state_reason,e.state_at AS entry_state_at,a.course_id,u.display_name AS author_name,a.title AS assignment_title FROM submission v JOIN entry e ON e.id=v.entry_id JOIN assignment a ON a.id=e.assignment_id JOIN app_user u ON u.id=e.author_id WHERE v.id=?",id);}
  void own(Map<String,Object> e,long uid){s.role(s.id(e,"course_id"),uid);if(s.id(e,"author_id")!=uid)throw fail(403,"不能修改他人的作品");}
  void visible(Map<String,Object> v,long uid){String r=s.role(s.id(v,"course_id"),uid);if(s.id(v,"author_id")==uid||r.equals("TEACHER")||r.equals("ASSISTANT"))return;
   if(s.db.queryForObject("SELECT COUNT(*) FROM publication WHERE submission_id=? AND state='PUBLISHED'",Integer.class,v.get("id"))==0)throw fail(403,"该提交尚未获准在课程社区展示");}
  public List<Map<String,Object>> courses(long uid){return s.db.queryForList("SELECT c.*,m.role FROM course c JOIN course_member m ON m.course_id=c.id WHERE m.user_id=? ORDER BY c.id",uid);}
- public List<Map<String,Object>> assignments(long cid,long uid){s.role(cid,uid);var rows=s.db.queryForList("SELECT a.*,e.id AS entry_id,e.revision AS draft_revision,(SELECT MAX(v.version_no) FROM submission v WHERE v.entry_id=e.id) AS version_no FROM assignment a LEFT JOIN entry e ON e.assignment_id=a.id AND e.author_id=? WHERE a.course_id=? AND (a.free_form=FALSE OR e.id IS NOT NULL) ORDER BY a.id DESC",uid,cid);Instant clock=Instant.now();for(var a:rows){Instant due=Instant.parse((String)a.get("due_at"));a.put("server_now",clock.toString());a.put("due_status",Boolean.TRUE.equals(a.get("manually_closed"))||!due.isAfter(clock)?"CLOSED":!due.isAfter(clock.plusSeconds(86400))?"DUE_SOON":"OPEN");}return rows;}
+ public List<Map<String,Object>> assignments(long cid,long uid){s.role(cid,uid);var rows=s.db.queryForList("SELECT a.*,e.id AS entry_id,e.revision AS draft_revision,e.state AS entry_state,(SELECT MAX(v.version_no) FROM submission v WHERE v.entry_id=e.id) AS version_no FROM assignment a LEFT JOIN entry e ON e.assignment_id=a.id AND e.author_id=? WHERE a.course_id=? AND (a.free_form=FALSE OR e.id IS NOT NULL) ORDER BY a.id DESC",uid,cid);Instant clock=Instant.now();for(var a:rows){Instant due=Instant.parse((String)a.get("due_at"));a.put("server_now",clock.toString());a.put("due_status",Boolean.TRUE.equals(a.get("manually_closed"))||!due.isAfter(clock)?"CLOSED":!due.isAfter(clock.plusSeconds(86400))?"DUE_SOON":"OPEN");}return rows;}
  public Map<String,Object> progress(long cid,long uid){
   String role=s.role(cid,uid);boolean staff=Set.of("TEACHER","ASSISTANT").contains(role);
   String filter=staff?"":" AND e.author_id="+uid;
@@ -288,6 +288,7 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
   var repeated=s.db.queryForList("SELECT id FROM submission WHERE entry_id=? AND idempotency_key=?",eid,key);if(!repeated.isEmpty())return submission(s.id(repeated.getFirst(),"id"));
   var rule=s.one("SELECT * FROM assignment WHERE id=? FOR UPDATE",e.get("assignment_id"));
   if(Boolean.TRUE.equals(rule.get("manually_closed")))throw fail(422,"教师已结束作业；已有草稿仍可保存，但不能提交新版本");
+  if("PASSED".equals(e.get("state")))throw fail(422,"老师已通过定稿；如需继续修改，请联系老师撤销定稿");
   if(((Number)e.get("revision")).intValue()!=revision)throw fail(409,"草稿版本已变化，请保存并刷新后再提交");if(!Instant.parse((String)rule.get("due_at")).isAfter(Instant.now()))throw fail(422,"作业已截止，本版尚不支持迟交");
   // 提交次数上限：0 表示不限。达到上限后仍可保存草稿，但不能冻结新版本。
   int submitLimit=rule.get("max_submissions")==null?0:((Number)rule.get("max_submissions")).intValue();
@@ -301,7 +302,30 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
   int version=s.db.queryForObject("SELECT COUNT(*) FROM submission WHERE entry_id=?",Integer.class,eid)+1;
   long sid=s.insert("INSERT INTO submission(entry_id,version_no,title,content_json,content_hash,rubric_version,idempotency_key,created_at) VALUES(?,?,?,?,?,?,?,?)",eid,version,e.get("title"),e.get("draft_json"),hash,e.get("rubric_version"),key,now());
   s.db.update("UPDATE submission SET assignment_snapshot_json=?,rubric_snapshot_json=? WHERE id=?",encode(AssignmentManagement.snapshot(rule)),encode(rubrics.forAssignment(s.id(e,"assignment_id"))),sid);
+  // 学生交出新版本，说明打回的问题已经处理，状态回到进行中，等教师重新评阅。
+  if("REVISION".equals(e.get("state")))s.db.update("UPDATE entry SET state='OPEN',state_reason=NULL,state_at=NULL,state_by=NULL WHERE id=?",eid);
   for(JsonNode v:decode(e.get("evidence_json")))s.db.update("INSERT INTO evidence(submission_id,paragraph_id,source_title,source_url,excerpt,claim_text,state) VALUES(?,?,?,?,?,?,'PENDING')",sid,v.path("paragraphId").asText(),v.path("sourceTitle").asText(),v.path("sourceUrl").asText(),v.path("excerpt").asText(),v.path("claim").asText());s.audit(uid,"SUBMISSION_CREATE","submission",sid);notices.teachers(s.id(e,"course_id"),"SUBMISSION","有新版本等待评审","submission",sid,uid);return submission(sid);}
+ // 单篇帖子的终审：通过定稿或打回修订。
+ // 作业级 manually_closed 是整班结束；这里解决的是「每一篇什么时候算完成」——
+ // 不裁定的话，学生可以一直「提交→评分→再提交」，永远没有终点。
+ @Transactional public Map<String,Object> entryVerdict(long eid,String action,String reason,long uid){
+  var e=entry(eid);s.teacher(s.id(e,"course_id"),uid);
+  if(!Set.of("PASS","RETURN","REOPEN").contains(action))throw fail(422,"未知的终审操作");
+  String note=reason==null?"":reason.trim();
+  if("RETURN".equals(action)&&note.isBlank())throw fail(422,"打回修订要写清原因，学生才知道改什么");
+  var latest=s.db.queryForList("SELECT id FROM submission WHERE entry_id=? ORDER BY version_no DESC LIMIT 1",eid);
+  long latestId=latest.isEmpty()?0:s.id(latest.getFirst(),"id");
+  if("PASS".equals(action)){
+   if(latestId==0)throw fail(422,"该帖子还没有提交版本，不能通过定稿");
+   if(s.db.queryForObject("SELECT COUNT(*) FROM evaluation WHERE submission_id=? AND active=TRUE",Integer.class,latestId)==0)throw fail(422,"请先发布正式评分，再通过定稿");
+  }
+  String state="PASS".equals(action)?"PASSED":"RETURN".equals(action)?"REVISION":"OPEN";
+  s.db.update("UPDATE entry SET state=?,state_reason=?,state_at=?,state_by=? WHERE id=?",state,note.isBlank()?null:note,now(),uid,eid);
+  s.audit(uid,"ENTRY_"+action,"entry",eid);
+  String msg="PASS".equals(action)?"老师已通过你的帖子，定稿完成":action.equals("RETURN")?"老师打回了你的帖子，需要继续修订":"老师撤销了定稿，可以继续修改";
+  if(latestId>0)notices.send(s.id(e,"author_id"),s.id(e,"course_id"),"ENTRY_VERDICT","MEMBER",msg,"submission",latestId,"",uid);
+  return entry(eid);
+ }
  public Map<String,Object> getSubmission(long sid,long uid){var v=submission(sid);visible(v,uid);v.put("rubricSnapshot",rubrics.forSubmission(v));v.put("rubricSnapshotSource",v.get("rubric_snapshot_json")==null?"BUILTIN_LEGACY":"SUBMISSION_SNAPSHOT");v.remove("rubric_snapshot_json");v.put("changes",changes(v));v.put("content",decode(v.remove("content_json")));Object task=v.remove("assignment_snapshot_json");v.put("assignmentSnapshot",task==null?null:decode(task));v.put("evaluation",getEvaluation(sid));v.put("feedback",feedback(sid));v.put("priorFeedback",priorFeedback(v));v.put("evidence",s.db.queryForList("SELECT * FROM evidence WHERE submission_id=?",sid));var publications=s.db.queryForList("SELECT * FROM publication WHERE submission_id=?",sid);if(s.id(v,"author_id")!=uid&&!s.role(s.id(v,"course_id"),uid).equals("TEACHER"))for(var pub:publications){pub.remove("last_reason");pub.remove("requested_evaluation_revision");}v.put("publication",publications);return v;}
  public Object getEvaluation(long sid){var rows=s.db.queryForList("SELECT g.*,u.display_name AS teacher_name FROM evaluation g JOIN app_user u ON u.id=g.teacher_id WHERE g.submission_id=? AND g.active=TRUE",sid);if(rows.isEmpty())return null;var g=rows.getFirst();g.put("details",decode(g.remove("details_json")));g.put("dimensions",decode(g.remove("dimensions_json")));Object steps=g.remove("step_scores_json");g.put("stepScores",steps==null?List.of():decode(String.valueOf(steps)));return g;}
  public List<Map<String,Object>> feedback(long sid){var rows=s.db.queryForList("SELECT f.*,u.display_name AS teacher_name FROM feedback f JOIN app_user u ON u.id=f.teacher_id WHERE f.submission_id=? ORDER BY f.id",sid);

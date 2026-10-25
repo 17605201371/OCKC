@@ -358,6 +358,9 @@ const submittedCount = computed(() => (entry.value?.versions || []).length);
 const submitExhausted = computed(
   () => submitLimit.value > 0 && submittedCount.value >= submitLimit.value,
 );
+// 教师终审后帖子进入终态：PASSED 不能再交，REVISION 是打回待改。
+const entryPassed = computed(() => latest.value?.entry_state === "PASSED");
+const entryRevision = computed(() => latest.value?.entry_state === "REVISION");
 const pendingQueue = computed(() => queue.value.filter((q) => q.q_final === null));
 const pendingReviewCount=computed(()=>reviewQueueSummary.value?.pending_count??pendingQueue.value.length);
 watch([()=>cid.value,()=>me.value?.id,()=>course.value?.role],()=>{reviewFilters.value=defaultReviewQuery();reviewNavScope.value=null;reviewQueueSummary.value=null;nextReviewMessage.value='';});
@@ -1433,6 +1436,23 @@ async function modalSubmit() {
         version.value = await api(`/submissions/${version.value.id}`);
       notify("核验结果已记录");
     }
+    if (modal.value === "verdict") {
+      if (f.action === "RETURN" && !String(f.body || "").trim())
+        throw new Error("打回修订要写清原因，学生才知道改什么");
+      await api(`/entries/${version.value.entry_id}/verdict`, "POST", {
+        action: f.action,
+        reason: f.body || "",
+      });
+      version.value = await api(`/submissions/${version.value.id}`);
+      await refreshCourse();
+      notify(
+        f.action === "PASS"
+          ? "已通过定稿，这篇帖子结束"
+          : f.action === "RETURN"
+            ? "已打回，学生需要继续修订"
+            : "已撤销定稿，学生可以继续提交",
+      );
+    }
     modal.value = "";
   });
 }
@@ -1903,6 +1923,8 @@ onBeforeUnmount(() => {
               <div class="card-top">
                 <span class="file-icon"><FileText :size="22" /></span
                 ><span class="badge blue">{{ a.free_form ? '自由创作' : a.kind === 'STEP' ? '步骤' : '知识帖' }}</span>
+                <span v-if="!isStaff && a.entry_state === 'PASSED'" class="badge green">已通过定稿</span>
+                <span v-else-if="!isStaff && a.entry_state === 'REVISION'" class="badge orange">已打回 · 待修订</span>
               </div>
               <h2>{{ a.title }}</h2>
               <p>{{ a.requirements }}</p>
@@ -1927,7 +1949,7 @@ onBeforeUnmount(() => {
                   @click="isStaff ? go('review') : openAssignment(a)"
                 >
                   {{
-                    isStaff ? "查看提交" : assignmentState(a,deadlineNow)==='CLOSED' ? (a.entry_id ? '查看与整理' : '已截止') : a.entry_id ? "继续编辑" : "开始作答"
+                    isStaff ? "查看提交" : a.entry_state === 'PASSED' ? '查看定稿' : assignmentState(a,deadlineNow)==='CLOSED' ? (a.entry_id ? '查看与整理' : '已截止') : a.entry_id ? "继续编辑" : "开始作答"
                   }}<ArrowUpRight :size="16" />
                 </button>
               </div>
@@ -2177,15 +2199,17 @@ onBeforeUnmount(() => {
               >已提交 {{ submittedCount }}/{{ submitLimit }}</span
               ><button
                 class="btn primary"
-                :disabled="saving || busy || conflicted || uploadingMedia || submitExhausted || (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED')"
+                :disabled="saving || busy || conflicted || uploadingMedia || submitExhausted || entryPassed || (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED')"
                 @click="submit"
               >
-                <Send :size="17" />{{ submitExhausted ? '提交次数已用完' : (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED' ? (currentAssignment?.manually_closed?'作业已结束':'作业已截止') : '提交评审') }}
+                <Send :size="17" />{{ entryPassed ? '已通过定稿' : submitExhausted ? '提交次数已用完' : (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED' ? (currentAssignment?.manually_closed?'作业已结束':'作业已截止') : '提交评审') }}
               </button>
             </div>
           </div>
           <p v-if="ruleRefreshError" class="notice-error" role="alert">{{ ruleRefreshError }}</p>
           <div v-if="currentAssignment && assignmentState(currentAssignment,deadlineNow)!=='OPEN'" class="deadline-banner" :class="assignmentState(currentAssignment,deadlineNow).toLowerCase()"><Clock :size="16" /><span>{{ assignmentState(currentAssignment,deadlineNow)==='CLOSED' ? (currentAssignment.manually_closed?'教师已结束本作业。已有草稿仍可整理和保存，但不能提交新版本。':'本作业已截止。已有草稿仍可整理和保存，但不能提交新版本。') : '本作业将在 24 小时内截止，请及时保存并提交评审。' }}</span></div>
+          <div v-if="entryRevision" class="deadline-banner revision"><AlertCircle :size="16" /><span><strong>老师打回了这一稿：</strong>{{ latest?.entry_state_reason || '请按批注继续修订，改完重新提交' }}</span></div>
+          <div v-else-if="entryPassed" class="deadline-banner passed"><CheckCircle2 :size="16" /><span>这篇帖子已通过定稿，不能再提交新版本；如需继续修改，请联系老师撤销定稿。</span></div>
           <div v-if="backup" class="backup-banner">
             <AlertCircle :size="18" />发现未同步的本地备份。<button
               class="text-btn"
@@ -3056,6 +3080,42 @@ onBeforeUnmount(() => {
                     </div>
                   </details>
                 </details>
+
+                <!-- 终审：决定这篇帖子到底结束没有。作业级「结束作业」是整班一起停，这里是一篇一篇定。 -->
+                <section class="grade-block entry-verdict">
+                  <div class="grade-block-head">
+                    <h4>终审</h4>
+                    <span>{{
+                      version.entry_state === "PASSED"
+                        ? "已通过定稿"
+                        : version.entry_state === "REVISION"
+                          ? "已打回"
+                          : "进行中"
+                    }}</span>
+                  </div>
+                  <p v-if="version.entry_state === 'REVISION' && version.entry_state_reason" class="verdict-reason">
+                    <strong>打回原因：</strong>{{ version.entry_state_reason }}
+                  </p>
+                  <div v-if="version.entry_state !== 'PASSED'" class="verdict-actions">
+                    <button class="btn secondary" :disabled="busy" @click="showModal('verdict', { action: 'RETURN', body: '' })">
+                      打回修订
+                    </button>
+                    <button class="btn primary" :disabled="busy" @click="showModal('verdict', { action: 'PASS', body: '' })">
+                      <Check :size="16" />通过定稿
+                    </button>
+                  </div>
+                  <button
+                    v-else
+                    class="text-btn muted"
+                    :disabled="busy"
+                    @click="showModal('verdict', { action: 'REOPEN', body: '' })"
+                  >
+                    撤销定稿，允许继续修改
+                  </button>
+                  <p class="grade-tip">
+                    <CheckCircle2 :size="14" /><span>通过前要先发布正式评分；通过后学生不能再提交新版本。</span>
+                  </p>
+                </section>
               </fieldset>
             </aside>
             <aside v-else v-show="panelVisible" class="feedback-sidebar">
@@ -3393,6 +3453,24 @@ onBeforeUnmount(() => {
               :required="['REPLY', 'IGNORE'].includes(form.action)"
               rows="4"
               maxlength="2000"
+            /></label></template
+        ><template v-if="modal === 'verdict'"
+          ><p class="muted">
+            {{
+              form.action === "PASS"
+                ? "确认这篇帖子已完成？通过后学生不能再提交新版本；如需继续修改，要在这里撤销定稿。"
+                : form.action === "RETURN"
+                  ? "打回后学生需要继续修订。写清要改什么，学生端会直接看到这段原因。"
+                  : "撤销定稿后，学生可以继续提交新版本。"
+            }}
+          </p>
+          <label v-if="form.action === 'RETURN'"
+            >打回原因<textarea
+              v-model="form.body"
+              required
+              rows="4"
+              maxlength="2000"
+              placeholder="例如：结论只写了「验证了公式」，要改成「在什么条件下、可信到什么程度」"
             /></label></template
         ><template v-if="modal === 'verify'"
           ><p class="muted">{{ form.sourceTitle }}</p>
