@@ -2294,11 +2294,13 @@ onBeforeUnmount(() => {
                 </div>
                 <p v-else class="muted">提交后由教师按步骤给分，并标注问题类型。</p>
               </section>
-              <section id="sidebar-teacher" class="sidebar-section teacher-feedback-section" aria-label="教师批注">
-                <header class="sidebar-section-heading"><h3><MessageSquare :size="15" />教师批注</h3><span class="small-label">{{ latest?.feedback?.length || 0 }} 条</span></header>
-              <p v-if="latest?.evaluation?.summary" class="teacher-summary">
-                  {{ latest.evaluation.summary }}
-                </p>
+              <section v-if="latest?.evaluation?.summary" class="sidebar-section sidebar-summary" aria-label="整体评语">
+                <header class="sidebar-section-heading"><h3><MessageSquare :size="15" />整体评语</h3><span class="small-label">{{ latest?.evaluation?.teacher_name || '任课教师' }}</span></header>
+                <p class="teacher-summary">{{ latest.evaluation.summary }}</p>
+                <p class="sidebar-summary-meta">针对整份作答· 提交 v{{ latest?.version_no }}</p>
+              </section>
+              <section id="sidebar-teacher" class="sidebar-section teacher-feedback-section" :aria-label="isStepAssignment ? '段落批注' : '教师批注'">
+                <header class="sidebar-section-heading"><h3><MessageSquare :size="15" />{{ isStepAssignment ? '段落批注' : '教师批注' }}</h3><span class="small-label">{{ latest?.feedback?.length || 0 }} 条</span></header>
                 <article
                   v-for="f in latest?.feedback || []"
                   :key="f.id"
@@ -2357,7 +2359,7 @@ onBeforeUnmount(() => {
                     </button>
                   </div>
                 </article>
-                <div v-if="!latest?.feedback?.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? '还没有教师批注' : '提交后，在这里查看教师批注' }}</p><span>批注会定位到对应段落或图片。</span></div>
+                <div v-if="!latest?.feedback?.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? (isStepAssignment ? '还没有段落批注' : '还没有教师批注') : '提交后，在这里查看教师批注' }}</p><span>{{ isStepAssignment ? '老师可在批改页选中文字添加段落批注；每一步的点评见上方「步骤评分」。' : '批注会定位到对应段落或图片。' }}</span></div>
               </section>
               <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" :step-mode="isStepAssignment" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" />
               <details class="sidebar-version-history" :open="feedbackTab === 'versions'"><summary><History :size="14" />版本记录<span>{{ entry.versions.length }}</span><ChevronRight :size="14" class="history-chevron" /></summary>

@@ -4716,3 +4716,5 @@ dialog.account-settings::backdrop{background:#0007;}
 .ai-dim.step { background: var(--blue-soft); color: var(--blue-text); }
 .annotation-popover { z-index: 60; }
 .annotation-popover { z-index: 60; }
+.sidebar-summary-meta { margin-top: 6px; font-size: 11.5px; color: var(--subtle); }
+.sidebar-summary-meta { margin-top: 6px; font-size: 11.5px; color: var(--subtle); }
