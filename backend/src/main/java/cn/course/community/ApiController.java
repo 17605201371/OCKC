@@ -13,12 +13,17 @@ public class ApiController {
  long uid(Principal p){return s.uid(p.getName());}
  public record CourseRequest(@NotBlank @Size(max=120) String title,@NotNull @Size(max=1000) String description){}
  public record MemberRequest(@NotBlank @Email @Size(max=160) String email,@NotNull @Pattern(regexp="STUDENT|ASSISTANT") String role,@Min(0) Integer revision,@Size(max=1000) String reason){}
- public record AssignmentRequest(@NotBlank @Size(max=160) String title,@NotBlank @Size(max=4000) String requirements,@NotBlank String dueAt,Boolean aiFeedbackEnabled,@Min(0) Long rubricId){}
+ public record AssignmentRequest(@NotBlank @Size(max=160) String title,@NotBlank @Size(max=4000) String requirements,@NotBlank String dueAt,Boolean aiFeedbackEnabled,@Min(0) Long rubricId,@Pattern(regexp="POST|STEP") String kind,@Pattern(regexp="REQUIRED|DISPUTED|OFF") String evidencePolicy){}
  public record AiPolicyRequest(@NotNull Boolean enabled){}
  public record EvidenceInput(@NotBlank @Size(max=80) String paragraphId,@NotBlank @Size(max=300) String sourceTitle,@NotNull @Size(max=2000) String sourceUrl,@NotBlank @Size(max=4000) String excerpt,@NotBlank @Size(max=2000) String claim){}
  public record DraftRequest(@NotBlank @Size(max=160) String title,@NotNull JsonNode content,@Min(0) int revision,@NotNull @Size(max=30) List<@Valid EvidenceInput> evidence){}
  public record SubmitRequest(@Min(0) int revision){}
- public record EvaluationRequest(@NotNull List<QualityCalculator.Item> items,@NotNull @Size(max=1000) String gateReason,@NotBlank @Size(max=2000) String summary,@Min(0) int expectedRevision){}
+ public record EvaluationRequest(@NotNull List<QualityCalculator.Item> items,@NotNull @Size(max=1000) String gateReason,@NotBlank @Size(max=2000) String summary,@Min(0) int expectedRevision,@Size(max=40) List<StepScore> stepScores){
+  // 兼容不带步骤分的旧调用（知识帖作业、演示数据与既有测试）。
+  public EvaluationRequest(List<QualityCalculator.Item> items,String gateReason,String summary,int expectedRevision){this(items,gateReason,summary,expectedRevision,null);}
+ }
+ // 步骤分：一步一条，score/max 由教师填写，tags 为问题类型标签（见 CommunityService.STEP_TAGS）。
+ public record StepScore(@Min(0) int index,@Size(max=200) String title,@DecimalMin("0") java.math.BigDecimal score,@DecimalMin("0.01") java.math.BigDecimal max,@Size(max=4) List<@Size(max=20) String> tags,@Size(max=300) String comment){}
  public record FeedbackRequest(@NotBlank @Size(max=80) String paragraphId,@NotBlank String indicator,@NotBlank @Size(max=2000) String body,@Size(max=600) String quote){}
  public record ActionRequest(@NotBlank String action,@NotNull @Size(max=2000) String body){}
  public record VerifyRequest(@NotBlank String verdict,@NotBlank @Size(max=2000) String reason){}
@@ -30,7 +35,7 @@ public class ApiController {
  @PostMapping("/courses/{cid}/members") public Object member(@PathVariable long cid,@Valid @RequestBody MemberRequest r,Principal p){service.addMember(cid,r.email(),r.role(),uid(p),r.revision(),r.reason());return Map.of("ok",true);}
  @GetMapping("/courses/{cid}/progress") public Object progress(@PathVariable long cid,Principal p){return service.progress(cid,uid(p));}
  @GetMapping("/courses/{cid}/assignments") public Object assignments(@PathVariable long cid,Principal p){return service.assignments(cid,uid(p));}
- @PostMapping("/courses/{cid}/assignments") public Object createAssignment(@PathVariable long cid,@Valid @RequestBody AssignmentRequest r,Principal p){return service.createAssignment(cid,r.title(),r.requirements(),r.dueAt(),Boolean.TRUE.equals(r.aiFeedbackEnabled()),r.rubricId(),uid(p));}
+ @PostMapping("/courses/{cid}/assignments") public Object createAssignment(@PathVariable long cid,@Valid @RequestBody AssignmentRequest r,Principal p){return service.createAssignment(cid,r.title(),r.requirements(),r.dueAt(),Boolean.TRUE.equals(r.aiFeedbackEnabled()),r.rubricId(),r.kind(),r.evidencePolicy(),uid(p));}
  @PutMapping("/assignments/{aid}/ai-policy") public Object aiPolicy(@PathVariable long aid,@Valid @RequestBody AiPolicyRequest r,Principal p){return service.setAiPolicy(aid,r.enabled(),uid(p));}
  @GetMapping("/entries/{eid}/ai-feedback") public Object aiFeedback(@PathVariable long eid,@RequestParam(defaultValue="false") boolean generate,Principal p){return service.aiFeedback(eid,uid(p),generate);}
  public record AiSuggestionStateRequest(@NotBlank @Pattern(regexp="OPEN|ADOPTED|DISMISSED") String state){}

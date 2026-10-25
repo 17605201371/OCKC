@@ -18,7 +18,7 @@ export function useReviewDraft(snapshot: () => any, apply: (data: any) => void, 
     try {
       const data=await api(`/submissions/${id}/review-draft`);if(sid!==id)return;
       state.baseRevision=data.evaluationRevision;
-      const d=data.draft;if(d){state.revision=d.revision;state.savedAt=d.updated_at;if(d.stale)state.stale=d;else apply({items:d.items,summary:d.summary,gateReason:d.gate_reason});}
+      const d=data.draft;if(d){state.revision=d.revision;state.savedAt=d.updated_at;if(d.stale)state.stale=d;else apply({items:d.items,summary:d.summary,gateReason:d.gate_reason,stepScores:d.stepScores});}
       await nextTick();baseline=serialize();
       try{const local=JSON.parse(localStorage.getItem(key())||'null');if(local?.snapshot && JSON.stringify(local.snapshot)!==baseline)state.backup=local;else if(local)clearBackup();}catch{}
       state.loaded=true;

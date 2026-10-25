@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 public class WorkflowController {
  final Store s;final NotificationService notices;final ReviewDraftService drafts;
  WorkflowController(Store s,NotificationService notices,ReviewDraftService drafts){this.s=s;this.notices=notices;this.drafts=drafts;}
- public record ReviewDraftRequest(@NotNull @Size(min=11,max=11) List<@NotNull Item> items,@NotNull @Size(max=2000) String summary,@NotNull @Size(max=1000) String gateReason,@Min(0) int revision,@Min(0) int baseEvaluationRevision){}
+ public record ReviewDraftRequest(@NotNull @Size(min=11,max=11) List<@NotNull Item> items,@NotNull @Size(max=2000) String summary,@NotNull @Size(max=1000) String gateReason,@Min(0) int revision,@Min(0) int baseEvaluationRevision,@Size(max=40) List<ApiController.StepScore> stepScores){}
  public record DiscardRequest(@Min(0) int revision){}
  @GetMapping("/notifications") public Object inbox(@RequestParam(required=false) Long before,@RequestParam(defaultValue="false") boolean unread,@RequestParam(required=false) String kind,Principal p){return notices.inbox(s.uid(p.getName()),before,unread,kind);}
  @GetMapping("/notifications/summary") public Object noticeSummary(@RequestParam(required=false) String kind,Principal p){return notices.summary(s.uid(p.getName()),kind);}

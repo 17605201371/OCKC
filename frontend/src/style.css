@@ -4452,3 +4452,44 @@ dialog.account-settings::backdrop{background:#0007;}
 .grade-feedback { padding: 12px 18px 16px; border-top: 1px solid var(--line-soft); }
 .grade-feedback > summary { font-size: 13px; color: var(--muted); cursor: pointer; }
 .grade-feedback .feedback-card { margin-top: 12px; }
+
+/* ---- 作业类型：知识帖 / 步骤（V18） ---- */
+.kind-picker { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.kind-card { display: grid; gap: 4px; text-align: left; padding: 12px 13px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+.kind-card strong { display: flex; align-items: center; gap: 6px; font-size: 13.5px; }
+.kind-card span { font-size: 12px; color: var(--muted); line-height: 1.5; }
+.kind-card.on { border-color: var(--blue); background: var(--blue-soft); box-shadow: inset 0 0 0 1px var(--blue); }
+.kind-card.on strong { color: var(--blue-text); }
+
+/* 步骤型作业的编辑提示条 */
+.step-mode-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-left: 3px solid var(--blue); border-radius: 9px; background: var(--surface); }
+.step-mode-bar > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.step-mode-bar strong { font-size: 13px; color: var(--text); }
+.step-mode-bar svg { color: var(--blue); align-self: center; }
+
+/* 步骤分：批改面板 */
+.step-sum { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text); }
+.step-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) 46px 30px; gap: 8px; align-items: start; padding: 9px 0; border-top: 1px solid var(--line-soft); }
+.step-row:first-of-type { border-top: 0; }
+.step-index { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 11.5px; }
+.step-main { display: grid; gap: 6px; min-width: 0; }
+.step-main strong { font-size: 12.5px; font-weight: 600; }
+.step-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.step-tag { border: 1px solid var(--border); border-radius: 99px; background: var(--bg); color: var(--muted); padding: 2px 8px; font: inherit; font-size: 11px; line-height: 1.6; cursor: pointer; }
+.step-tag.on { border-color: var(--orange); background: var(--orange-soft); color: var(--orange); }
+.step-tags.static .step-tag { cursor: default; }
+.step-comment { width: 100%; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); padding: 5px 7px; font: inherit; font-size: 12px; }
+.step-score { width: 46px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text); padding: 4px 6px; font: inherit; font-size: 12.5px; text-align: center; }
+.step-max { padding-top: 6px; font-size: 11.5px; color: var(--subtle); }
+
+/* 步骤分：已发布的只读展示 */
+.step-readonly { margin: 12px 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface); }
+.step-readonly-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.step-readonly-head h4 { font-size: 13px; }
+.step-readonly-head span { margin-left: auto; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.step-readonly-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line-soft); }
+.step-readonly-row:first-of-type { border-top: 0; }
+.step-readonly-main { display: grid; gap: 4px; min-width: 0; }
+.step-readonly-main strong { font-size: 12.5px; }
+.step-readonly-main p { font-size: 12px; color: var(--muted); }
+.step-readonly-row em { font-style: normal; font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }

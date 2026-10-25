@@ -13,6 +13,17 @@ public class CommunityService {
  final Store s;final ObjectMapper json;final NotificationService notices;final MemberManagement members;final RubricService rubrics;
  CommunityService(Store s,ObjectMapper json,NotificationService notices,MemberManagement members,RubricService rubrics){this.s=s;this.json=json;this.notices=notices;this.members=members;this.rubrics=rubrics;}
  String encode(Object value){try{return json.writeValueAsString(value);}catch(Exception e){throw fail(400,"内容无法序列化");}}
+ // 步骤型作业的问题类型标签，前后端共用同一份枚举；新增标签要同时改前端 STEP_TAGS。
+ static final Set<String> STEP_TAGS=Set.of("忽略题设条件","计算或单位错误","概念混淆","论证跳跃","表述不清");
+ static void validateStepScores(List<ApiController.StepScore> steps){
+  Set<Integer> seen=new HashSet<>();
+  for(var x:steps){
+   if(x.index()<0||x.index()>39||!seen.add(x.index()))throw fail(422,"步骤序号重复或超出范围");
+   if(x.score()==null||x.max()==null)throw fail(422,"每个步骤都要填写得分与满分");
+   if(x.max().signum()<=0||x.score().signum()<0||x.score().compareTo(x.max())>0)throw fail(422,"步骤得分须在 0 到该步满分之间");
+   if(x.tags()!=null)for(String t:x.tags())if(!STEP_TAGS.contains(t))throw fail(422,"问题类型标签不在允许范围内："+t);
+  }
+ }
  JsonNode decode(Object value){try{return json.readTree((String)value);}catch(Exception e){throw new IllegalStateException(e);}}
  public Map<String,Object> assignment(long id){return s.one("SELECT * FROM assignment WHERE id=?",id);}
  public Map<String,Object> entry(long id){return s.one("SELECT e.*,a.course_id,a.due_at,a.rubric_version FROM entry e JOIN assignment a ON a.id=e.assignment_id WHERE e.id=?",id);}
@@ -44,8 +55,15 @@ public class CommunityService {
  @Transactional public Map<String,Object> createCourse(String title,String description,long uid){long id=s.insert("INSERT INTO course(title,description) VALUES(?,?)",title,description);s.db.update("INSERT INTO course_member(course_id,user_id,role) VALUES(?,?,'TEACHER')",id,uid);s.audit(uid,"COURSE_CREATE","course",id);return s.one("SELECT * FROM course WHERE id=?",id);}
  @Transactional public void addMember(long cid,String email,String role,long uid){members.add(cid,email,role,uid,null,"演示初始化或教师添加已有账号");}
  @Transactional public void addMember(long cid,String email,String role,long uid,Integer revision,String reason){members.add(cid,email,role,uid,revision,reason);}
- @Transactional public Map<String,Object> createAssignment(long cid,String title,String requirements,String due,boolean aiEnabled,long uid){return createAssignment(cid,title,requirements,due,aiEnabled,null,uid);}
- @Transactional public Map<String,Object> createAssignment(long cid,String title,String requirements,String due,boolean aiEnabled,Long rubricId,long uid){s.teacher(cid,uid);Instant deadline;try{deadline=Instant.parse(due);}catch(Exception e){throw fail(422,"截止时间格式错误");}if(deadline.isBefore(Instant.now()))throw fail(422,"截止时间须晚于当前时间");var rubric=rubrics.selection(cid,rubricId);long rid=((Number)rubric.get("id")).longValue();long id=s.insert("INSERT INTO assignment(course_id,title,requirements,due_at,rubric_version,rubric_id,created_at,ai_feedback_enabled) VALUES(?,?,?,?,?,?,?,?)",cid,title,requirements,deadline.toString(),rubric.get("code"),rid==0?null:rid,now(),aiEnabled);s.audit(uid,"ASSIGNMENT_CREATE","assignment",id);return assignment(id);}
+ @Transactional public Map<String,Object> createAssignment(long cid,String title,String requirements,String due,boolean aiEnabled,long uid){return createAssignment(cid,title,requirements,due,aiEnabled,null,null,null,uid);}
+ @Transactional public Map<String,Object> createAssignment(long cid,String title,String requirements,String due,boolean aiEnabled,Long rubricId,long uid){return createAssignment(cid,title,requirements,due,aiEnabled,rubricId,null,null,uid);}
+ @Transactional public Map<String,Object> createAssignment(long cid,String title,String requirements,String due,boolean aiEnabled,Long rubricId,String kind,String evidencePolicy,long uid){s.teacher(cid,uid);Instant deadline;try{deadline=Instant.parse(due);}catch(Exception e){throw fail(422,"截止时间格式错误");}if(deadline.isBefore(Instant.now()))throw fail(422,"截止时间须晚于当前时间");var rubric=rubrics.selection(cid,rubricId);long rid=((Number)rubric.get("id")).longValue();
+  // 未传类型/核验策略时给默认值，保持既有客户端可用：知识帖 + 仅争议阻断发分。
+  String k=kind==null||kind.isBlank()?"POST":kind.trim().toUpperCase();
+  if(!Set.of("POST","STEP").contains(k))throw fail(422,"作业类型只能是知识帖或步骤");
+  String policy=evidencePolicy==null||evidencePolicy.isBlank()?"DISPUTED":evidencePolicy.trim().toUpperCase();
+  if(!Set.of("REQUIRED","DISPUTED","OFF").contains(policy))throw fail(422,"证据核验策略不正确");
+  long id=s.insert("INSERT INTO assignment(course_id,title,requirements,due_at,rubric_version,rubric_id,created_at,ai_feedback_enabled,kind,evidence_policy) VALUES(?,?,?,?,?,?,?,?,?,?)",cid,title,requirements,deadline.toString(),rubric.get("code"),rid==0?null:rid,now(),aiEnabled,k,policy);s.audit(uid,"ASSIGNMENT_CREATE","assignment",id);return assignment(id);}
  @Transactional public Map<String,Object> setAiPolicy(long aid,boolean enabled,long uid){
   var a=assignment(aid);s.teacher(s.id(a,"course_id"),uid);
   s.one("SELECT id FROM assignment WHERE id=? FOR UPDATE",aid);
@@ -231,7 +249,7 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
   s.db.update("UPDATE submission SET assignment_snapshot_json=?,rubric_snapshot_json=? WHERE id=?",encode(AssignmentManagement.snapshot(rule)),encode(rubrics.forAssignment(s.id(e,"assignment_id"))),sid);
   for(JsonNode v:decode(e.get("evidence_json")))s.db.update("INSERT INTO evidence(submission_id,paragraph_id,source_title,source_url,excerpt,claim_text,state) VALUES(?,?,?,?,?,?,'PENDING')",sid,v.path("paragraphId").asText(),v.path("sourceTitle").asText(),v.path("sourceUrl").asText(),v.path("excerpt").asText(),v.path("claim").asText());s.audit(uid,"SUBMISSION_CREATE","submission",sid);notices.teachers(s.id(e,"course_id"),"SUBMISSION","有新版本等待评审","submission",sid,uid);return submission(sid);}
  public Map<String,Object> getSubmission(long sid,long uid){var v=submission(sid);visible(v,uid);v.put("rubricSnapshot",rubrics.forSubmission(v));v.put("rubricSnapshotSource",v.get("rubric_snapshot_json")==null?"BUILTIN_LEGACY":"SUBMISSION_SNAPSHOT");v.remove("rubric_snapshot_json");v.put("changes",changes(v));v.put("content",decode(v.remove("content_json")));Object task=v.remove("assignment_snapshot_json");v.put("assignmentSnapshot",task==null?null:decode(task));v.put("evaluation",getEvaluation(sid));v.put("feedback",feedback(sid));v.put("evidence",s.db.queryForList("SELECT * FROM evidence WHERE submission_id=?",sid));var publications=s.db.queryForList("SELECT * FROM publication WHERE submission_id=?",sid);if(s.id(v,"author_id")!=uid&&!s.role(s.id(v,"course_id"),uid).equals("TEACHER"))for(var pub:publications){pub.remove("last_reason");pub.remove("requested_evaluation_revision");}v.put("publication",publications);return v;}
- public Object getEvaluation(long sid){var rows=s.db.queryForList("SELECT g.*,u.display_name AS teacher_name FROM evaluation g JOIN app_user u ON u.id=g.teacher_id WHERE g.submission_id=? AND g.active=TRUE",sid);if(rows.isEmpty())return null;var g=rows.getFirst();g.put("details",decode(g.remove("details_json")));g.put("dimensions",decode(g.remove("dimensions_json")));return g;}
+ public Object getEvaluation(long sid){var rows=s.db.queryForList("SELECT g.*,u.display_name AS teacher_name FROM evaluation g JOIN app_user u ON u.id=g.teacher_id WHERE g.submission_id=? AND g.active=TRUE",sid);if(rows.isEmpty())return null;var g=rows.getFirst();g.put("details",decode(g.remove("details_json")));g.put("dimensions",decode(g.remove("dimensions_json")));Object steps=g.remove("step_scores_json");g.put("stepScores",steps==null?List.of():decode(String.valueOf(steps)));return g;}
  public List<Map<String,Object>> feedback(long sid){var rows=s.db.queryForList("SELECT f.*,u.display_name AS teacher_name FROM feedback f JOIN app_user u ON u.id=f.teacher_id WHERE f.submission_id=? ORDER BY f.id",sid);
   if(rows.isEmpty())return rows;
   String ids=rows.stream().map(f->String.valueOf(s.id(f,"id"))).collect(java.util.stream.Collectors.joining(","));
@@ -243,13 +261,22 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
  public List<Map<String,Object>> queue(long cid,long uid){String role=s.role(cid,uid);if(!List.of("TEACHER","ASSISTANT").contains(role))throw fail(403,"批改队列仅教师或助教可见");return s.db.queryForList("SELECT v.id,v.title,v.version_no,v.created_at,e.author_id,u.display_name AS author_name,a.title AS assignment_title,g.q_final,d.updated_at AS review_draft_updated_at FROM submission v JOIN entry e ON e.id=v.entry_id JOIN app_user u ON u.id=e.author_id JOIN assignment a ON a.id=e.assignment_id LEFT JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE LEFT JOIN review_draft d ON d.submission_id=v.id AND d.teacher_id=? AND ?=TRUE WHERE a.course_id=? ORDER BY v.created_at DESC",uid,role.equals("TEACHER"),cid);}
  @Transactional public Map<String,Object> evaluate(long sid,ApiController.EvaluationRequest req,long uid){var v=submission(sid);s.teacher(s.id(v,"course_id"),uid);s.one("SELECT id FROM submission WHERE id=? FOR UPDATE",sid);var rubric=rubrics.forSubmission(v);int current=s.db.queryForObject("SELECT COUNT(*) FROM evaluation WHERE submission_id=?",Integer.class,sid);if(req.expectedRevision()!=current)throw fail(409,"评价已被其他窗口更新，请重新加载后再评");
   // 同一版本批阅次数上限：0 表示不限。首次评分与复评都计入。
-  var evalRule=s.one("SELECT max_evaluations FROM assignment WHERE id=?",s.id(v,"assignment_id"));
+  var evalRule=s.one("SELECT max_evaluations,evidence_policy,kind FROM assignment WHERE id=?",s.id(v,"assignment_id"));
   int evalLimit=evalRule.get("max_evaluations")==null?0:((Number)evalRule.get("max_evaluations")).intValue();
   if(evalLimit>0&&current>=evalLimit)throw fail(422,"该版本已批阅 "+current+" 次，达到本作业上限（"+evalLimit+" 次），不能再复评");
   var result=QualityCalculator.calculate(req.items(),req.gateReason(),rubric.path("dimensions"));
-  if(s.db.queryForObject("SELECT COUNT(*) FROM evidence WHERE submission_id=? AND state IN ('PENDING','DISPUTED')",Integer.class,sid)>0)throw fail(422,"有待核验或有争议的证据，请先完成核验再发布正式评分");
+  // 证据核验按作业策略放行：REQUIRED 逐条核验后才发分；DISPUTED（默认）只挡有争议的；OFF 不挡。
+  // 旧行为是「任一条待核验即不能发分」，等于要求教师核完全班每条证据，实际不可持续。
+  String policy=String.valueOf(evalRule.get("evidence_policy"));
+  int disputed=s.db.queryForObject("SELECT COUNT(*) FROM evidence WHERE submission_id=? AND state='DISPUTED'",Integer.class,sid);
+  if(!"OFF".equals(policy)&&disputed>0)throw fail(422,"有 "+disputed+" 条证据存在争议，请先裁定再发布正式评分");
+  if("REQUIRED".equals(policy)){int pending=s.db.queryForObject("SELECT COUNT(*) FROM evidence WHERE submission_id=? AND state='PENDING'",Integer.class,sid);if(pending>0)throw fail(422,"本作业要求逐条核验证据，仍有 "+pending+" 条待核验");}
+  boolean step= "STEP".equals(evalRule.get("kind"));
+  List<ApiController.StepScore> steps=req.stepScores()==null?List.of():req.stepScores();
+  if(step)validateStepScores(steps);else if(!steps.isEmpty())throw fail(422,"知识帖作业不接受步骤分");
+  String stepJson=steps.isEmpty()?null:encode(steps);
   s.db.update("UPDATE evaluation SET active=FALSE WHERE submission_id=? AND active=TRUE",sid);
-  long gid=s.insert("INSERT INTO evaluation(submission_id,teacher_id,revision_no,details_json,dimensions_json,q_raw,q_final,gate_reason,summary,active,created_at) VALUES(?,?,?,?,?,?,?,?,?,TRUE,?)",sid,uid,current+1,encode(req.items()),encode(result.dimensions()),result.raw(),result.total(),req.gateReason(),req.summary(),now());
+  long gid=s.insert("INSERT INTO evaluation(submission_id,teacher_id,revision_no,details_json,dimensions_json,q_raw,q_final,gate_reason,summary,active,created_at,step_scores_json) VALUES(?,?,?,?,?,?,?,?,?,TRUE,?,?)",sid,uid,current+1,encode(req.items()),encode(result.dimensions()),result.raw(),result.total(),req.gateReason(),req.summary(),now(),stepJson);
   // A regrade revokes public visibility until the author requests review again.
   publicationAfterEvaluation(sid,uid);s.audit(uid,"EVALUATION_PUBLISH","evaluation",gid);s.db.update("DELETE FROM review_draft WHERE submission_id=? AND teacher_id=?",sid,uid);notices.send(s.id(v,"author_id"),s.id(v,"course_id"),"EVALUATION","MEMBER","教师已发布 v"+v.get("version_no")+" 的正式评价","submission",sid,"",uid);return (Map<String,Object>)getEvaluation(sid);}
  @Transactional public Map<String,Object> addFeedback(long sid,ApiController.FeedbackRequest req,long uid){var v=submission(sid);s.teacher(s.id(v,"course_id"),uid);var a=anchors(decode(v.get("content_json")));if(!a.containsKey(req.paragraphId()))throw fail(422,"段落不存在");

@@ -30,6 +30,7 @@ async function evidenceSubmission(d:any){if(await openVersion(d.id,d.review)){aw
 
 import {
   BookOpen,
+  ListOrdered,
   LayoutDashboard,
   ClipboardList,
   Library,
@@ -216,10 +217,73 @@ const canCreateCourse = computed(() => me.value?.is_teacher === true);
 const isStaff = computed(() =>
   ["TEACHER", "ASSISTANT"].includes(course.value?.role),
 );
-function reviewSnapshot() { return { items: grading.value.map(i => ({code:i.code,score:i.score === '' || i.score == null ? null : Number(i.score),status:i.status,reason:i.reason || ''})), summary:summary.value, gateReason:gateReason.value }; }
-function applyReviewData(data:any) { grading.value = allItems.map(i => ({...i,score:data.items?.find((x:any)=>x.code===i.code)?.score ?? null,status:data.items?.find((x:any)=>x.code===i.code)?.status || 'SCORED',reason:data.items?.find((x:any)=>x.code===i.code)?.reason || ''})); summary.value=data.summary || '';gateReason.value=data.gateReason || ''; }
+function reviewSnapshot() { return { items: grading.value.map(i => ({code:i.code,score:i.score === '' || i.score == null ? null : Number(i.score),status:i.status,reason:i.reason || ''})), summary:summary.value, gateReason:gateReason.value, stepScores: filledStepScores() }; }
+function applyReviewData(data:any) { grading.value = allItems.map(i => ({...i,score:data.items?.find((x:any)=>x.code===i.code)?.score ?? null,status:data.items?.find((x:any)=>x.code===i.code)?.status || 'SCORED',reason:data.items?.find((x:any)=>x.code===i.code)?.reason || ''})); summary.value=data.summary || '';gateReason.value=data.gateReason || '';initStepScores(data.stepScores); }
 const review = useReviewDraft(reviewSnapshot, applyReviewData, () => page.value === 'grading' && isTeacher.value, () => me.value?.id);
 const reviewPublishing=ref(false);
+
+// ---- 步骤型作业：二级标题即一步，逐步给分并标注问题类型 ----
+// 标签与后端 CommunityService.STEP_TAGS 保持一致，新增要两边同时改。
+const STEP_TAGS = ["忽略题设条件", "计算或单位错误", "概念混淆", "论证跳跃", "表述不清"];
+const STEP_DEFAULT_MAX = 10;
+const stepScores = ref<Array<{ index: number; title: string; score: any; max: number; tags: string[]; comment: string }>>([]);
+function stepHeadings(doc: any) {
+  const all: { text: string; level: number }[] = [];
+  function walk(n: any) {
+    if (n?.type === 'heading') all.push({ text: (n.content || []).map((x: any) => x.text || '').join('') || '未命名步骤', level: n.attrs?.level || 1 });
+    for (const c of n?.content || []) walk(c);
+  }
+  if (doc) walk(doc);
+  // 优先二级标题；若整篇都用一级或三级，退化为「所有标题」，避免教师面对空面板。
+  const h2 = all.filter((h) => h.level === 2);
+  return h2.length ? h2 : all;
+}
+const gradingAssignment = computed(() => assignments.value.find((a) => a.id === version.value?.assignment_id));
+const isStepAssignment = computed(() => (gradingAssignment.value?.kind || version.value?.assignmentSnapshot?.kind) === 'STEP');
+const gradingSteps = computed(() => (version.value?.content ? stepHeadings(version.value.content) : []));
+const editorSteps = computed(() => (entry.value?.content ? stepHeadings(entry.value.content) : []));
+const stepTotal = computed(() => stepScores.value.reduce((sum, s) => sum + (Number(s.score) || 0), 0));
+const stepMax = computed(() => stepScores.value.reduce((sum, s) => sum + (Number(s.max) || STEP_DEFAULT_MAX), 0));
+// 已发布的步骤分（学生与教师都看这一份，来自 evaluation.stepScores）。
+const publishedStepScores = computed<any[]>(() => version.value?.evaluation?.stepScores || []);
+const publishedStepTotal = computed(() => publishedStepScores.value.reduce((sum, s) => sum + (Number(s.score) || 0), 0));
+const publishedStepMax = computed(() => publishedStepScores.value.reduce((sum, s) => sum + (Number(s.max) || STEP_DEFAULT_MAX), 0));
+function initStepScores(saved?: any[]) {
+  stepScores.value = gradingSteps.value.map((s, i) => {
+    const prev = saved?.find((x: any) => Number(x.index) === i);
+    return {
+      index: i,
+      title: s.text,
+      score: prev?.score ?? '',
+      max: Number(prev?.max ?? STEP_DEFAULT_MAX),
+      tags: Array.isArray(prev?.tags) ? [...prev.tags] : [],
+      comment: prev?.comment || '',
+    };
+  });
+}
+function toggleStepTag(row: any, tag: string) {
+  if (!row) return;
+  const at = row.tags.indexOf(tag);
+  if (at >= 0) row.tags.splice(at, 1);
+  else if (row.tags.length < 4) row.tags.push(tag);
+  else notify('每步最多标注 4 个问题类型');
+}
+function filledStepScores() {
+  return stepScores.value
+    .filter((s) => s.score !== '' && s.score != null)
+    .map((s) => ({ index: s.index, title: s.title, score: Number(s.score), max: Number(s.max) || STEP_DEFAULT_MAX, tags: [...s.tags], comment: s.comment || '' }));
+}
+function addStep() {
+  if (!entry.value) return;
+  const doc = entry.value.content || { type: 'doc', content: [] };
+  const n = editorSteps.value.length + 1;
+  doc.content = doc.content || [];
+  doc.content.push({ type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: `步骤 ${n}` }] });
+  doc.content.push({ type: 'paragraph', content: [] });
+  entry.value.content = { ...doc, content: [...doc.content] };
+  changed();
+  notify(`已添加「步骤 ${n}」，把标题改成这一步要做什么即可`);
+}
 async function reloadReview() { await run(async()=>{version.value=await api(`/submissions/${version.value.id}`);applyReviewData({items:version.value.evaluation?.details,summary:version.value.evaluation?.summary,gateReason:version.value.evaluation?.gate_reason});await review.load(version.value.id);}); }
 async function restoreReview(data:any) { if(confirm('将这份草稿恢复到当前评分表单？恢复后请重新核对各项分数与总评；不会直接发布正式评价。'))await review.restore(data); }
 async function navigateNotice(n:any) {
@@ -951,6 +1015,7 @@ async function openVersion(sid: number, asReview = false, keepReviewScope=false)
       }));
       summary.value = version.value.evaluation?.summary || "";
       gateReason.value = version.value.evaluation?.gate_reason || "";
+      initStepScores(version.value.evaluation?.stepScores);
       if(isTeacher.value) await review.load(sid);
     }
     window.scrollTo(0, 0);succeeded=true;
@@ -1170,6 +1235,8 @@ function showModal(kind: string, data: Record<string, any> = {}) {
     dueAt: "",
     aiFeedbackEnabled: false,
     rubricId: "",
+    kind: "POST",
+    evidencePolicy: "DISPUTED",
     sourceTitle: "",
     sourceUrl: "",
     excerpt: "",
@@ -1222,9 +1289,11 @@ async function modalSubmit() {
         dueAt: new Date(f.dueAt).toISOString(),
         aiFeedbackEnabled: f.aiFeedbackEnabled,
         rubricId:Number(f.rubricId),
+        kind: f.kind,
+        evidencePolicy: f.evidencePolicy,
       });
       await refreshCourse();
-      notify(`作业已创建`);
+      notify(f.kind === "STEP" ? `步骤型作业已创建：学生用二级标题划分步骤` : `知识帖作业已创建`);
     }
     if (modal.value === "course") {
       // 新建课程会切换当前课程，等同离开当前页面：先把编辑器里未保存的内容落盘。
@@ -1298,6 +1367,10 @@ async function publishGrade() {
     if (!previewScore.value)
       throw new Error("请填写完整的四维评分，待核验项不得发布");
     if (!summary.value.trim()) throw new Error("请填写总评与下一步建议");
+    if (isStepAssignment.value && gradingSteps.value.length) {
+      const missing = stepScores.value.filter((s) => s.score === "" || s.score == null).length;
+      if (missing) throw new Error(`还有 ${missing} 步没有给分；步骤分填满后再发布，或在总评里说明`);
+    }
     if (
       !confirm(
         "确认发布正式评价？学生将立即看到结果；复评会保留历史并撤回该版社区发布。",
@@ -1317,6 +1390,7 @@ async function publishGrade() {
       summary: summary.value,
       gateReason: gateReason.value,
       expectedRevision: review.state.baseRevision,
+      stepScores: isStepAssignment.value ? filledStepScores() : [],
     });
     review.published();
     version.value = await api(`/submissions/${version.value.id}`);
@@ -1749,7 +1823,7 @@ onBeforeUnmount(() => {
             >
               <div class="card-top">
                 <span class="file-icon"><FileText :size="22" /></span
-                ><span class="badge blue">{{ a.free_form ? '自由创作' : '知识帖' }}</span>
+                ><span class="badge blue">{{ a.free_form ? '自由创作' : a.kind === 'STEP' ? '步骤' : '知识帖' }}</span>
               </div>
               <h2>{{ a.title }}</h2>
               <p>{{ a.requirements }}</p>
@@ -2066,7 +2140,7 @@ onBeforeUnmount(() => {
             </aside>
             <div class="document-column">
               <div class="document-paper">
-                <span class="eyebrow document-label"><span class="draft-dot"></span>知识帖草稿 <span class="grow"></span><span>仅你与任课教师可见</span></span
+                <span class="eyebrow document-label"><span class="draft-dot"></span>{{ isStepAssignment ? '步骤作答草稿' : '知识帖草稿' }} <span class="grow"></span><span>仅你与任课教师可见</span></span
                 ><input
                   v-model="entry.title"
                   maxlength="160"
@@ -2081,6 +2155,17 @@ onBeforeUnmount(() => {
                   }}</span
                   ><span>{{ me.display_name }}</span
                   ><span>未提交的修改只保存在草稿中</span>
+                </div>
+                <div v-if="isStepAssignment" class="step-mode-bar">
+                  <div>
+                    <ListOrdered :size="16" /><strong>步骤型作业</strong>
+                    <span
+                      >每个二级标题算一步，当前 {{ editorSteps.length }} 步；提交后教师逐步给分并标注问题类型。</span
+                    >
+                  </div>
+                  <button type="button" class="btn compact" @click="addStep">
+                    <Plus :size="15" />添加一步
+                  </button>
                 </div>
                 <Editor
                   :highlight-id="selectedAnchor"
@@ -2255,7 +2340,7 @@ onBeforeUnmount(() => {
                   page === "grading" ? "返回批改队列" : "返回知识社区"
                 }}
               </button>
-              <h1>{{ page === "grading" ? "评审知识帖" : "阅读知识条目" }}</h1>
+              <h1>{{ page === "grading" ? (isStepAssignment ? "评审步骤作答" : "评审知识帖") : isStepAssignment ? "阅读步骤作答" : "阅读知识条目" }}</h1>
               <p>
                 {{ version.author_name }} · v{{ version.version_no }} ·
                 {{ fmt(version.created_at) }} 提交
@@ -2521,6 +2606,61 @@ onBeforeUnmount(() => {
                   review.state.conflict
                 "
               >
+                <section v-if="isStepAssignment" class="grade-block step-grade-block">
+                  <div class="grade-block-head">
+                    <h4>步骤分</h4>
+                    <span class="step-sum"
+                      >{{ number(stepTotal) }} / {{ number(stepMax) }}</span
+                    >
+                  </div>
+                  <p v-if="!gradingSteps.length" class="muted">
+                    这份提交没有标题，无法切分步骤。可让作者用二级标题标记每一步，或仅用四维评分。
+                  </p>
+                  <div
+                    v-for="(s, i) in gradingSteps"
+                    :key="i"
+                    class="step-row"
+                  >
+                    <span class="step-index">{{ i + 1 }}</span>
+                    <div class="step-main">
+                      <strong>{{ s.text }}</strong>
+                      <div class="step-tags" role="group" :aria-label="s.text + '问题类型'">
+                        <button
+                          v-for="t in STEP_TAGS"
+                          :key="t"
+                          type="button"
+                          class="step-tag"
+                          :class="{ on: stepScores[i]?.tags.includes(t) }"
+                          :aria-pressed="!!stepScores[i]?.tags.includes(t)"
+                          @click="toggleStepTag(stepScores[i], t)"
+                        >
+                          {{ t }}
+                        </button>
+                      </div>
+                      <input
+                        v-if="stepScores[i]"
+                        v-model="stepScores[i].comment"
+                        class="step-comment"
+                        maxlength="300"
+                        :aria-label="s.text + '点评'"
+                        placeholder="这一步的简短点评（可选）"
+                      />
+                    </div>
+                    <input
+                      v-if="stepScores[i]"
+                      v-model="stepScores[i].score"
+                      class="step-score"
+                      type="number"
+                      min="0"
+                      :max="stepScores[i].max"
+                      step="0.5"
+                      :aria-label="s.text + '得分'"
+                      placeholder="—"
+                    />
+                    <span class="step-max">/ {{ stepScores[i]?.max ?? 10 }}</span>
+                  </div>
+                </section>
+
                 <section class="grade-block">
                   <div class="grade-block-head">
                     <h4>内容质量</h4>
@@ -2705,7 +2845,7 @@ onBeforeUnmount(() => {
                 <span class="badge">v{{ version.version_no }}</span>
                 <button class="panel-collapse" title="收起反馈面板" aria-label="收起反馈面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
               </div>
-              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
+              <template v-if="version.evaluation"><QualitySummary :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><div v-if="publishedStepScores.length" class="step-readonly"><div class="step-readonly-head"><h4>步骤分</h4><span>{{ number(publishedStepTotal) }} / {{ number(publishedStepMax) }}</span></div><div v-for="s in publishedStepScores" :key="s.index" class="step-readonly-row"><span class="step-index">{{ Number(s.index) + 1 }}</span><div class="step-readonly-main"><strong>{{ s.title || '步骤 ' + (Number(s.index) + 1) }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div><p v-if="s.comment">{{ s.comment }}</p></div><em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em></div></div><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
               <div v-else class="empty">
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>
@@ -2846,7 +2986,36 @@ onBeforeUnmount(() => {
       </header>
       <form v-if="modal !== 'records'" @submit.prevent="modalSubmit">
         <template v-if="modal === 'assignment' || modal === 'course'"
-          ><label
+          ><div
+            v-if="modal === 'assignment'"
+            class="kind-picker"
+            role="radiogroup"
+            aria-label="作业类型"
+          >
+            <button
+              type="button"
+              class="kind-card"
+              :class="{ on: form.kind === 'POST' }"
+              role="radio"
+              :aria-checked="form.kind === 'POST'"
+              @click="form.kind = 'POST'"
+            >
+              <FileText :size="18" /><strong>知识帖</strong
+              ><span>按段落自由写作，教师按四维量规批改</span>
+            </button>
+            <button
+              type="button"
+              class="kind-card"
+              :class="{ on: form.kind === 'STEP' }"
+              role="radio"
+              :aria-checked="form.kind === 'STEP'"
+              @click="form.kind = 'STEP'"
+            >
+              <ListOrdered :size="18" /><strong>步骤</strong
+              ><span>用二级标题划分步骤，教师逐步给分并标注问题类型</span>
+            </button>
+          </div>
+          <label
             >{{ modal === "course" ? "课程名称" : "作业名称"
             }}<input
               v-model="form.title"
@@ -2867,6 +3036,22 @@ onBeforeUnmount(() => {
                 type="datetime-local"
                 required
             /></label>
+            <label
+              >证据核验策略<select v-model="form.evidencePolicy">
+                <option value="DISPUTED">仅争议阻断发分（推荐）</option>
+                <option value="REQUIRED">逐条核验后才能发分</option>
+                <option value="OFF">不要求核验</option>
+              </select></label
+            >
+            <p class="form-note">
+              {{
+                form.evidencePolicy === "REQUIRED"
+                  ? "每条证据都要有人核验通过或驳回，学生才能发布正式评分。证据多时负担最重。"
+                  : form.evidencePolicy === "DISPUTED"
+                    ? "待核验证据不阻止发分，只有同伴结论冲突产生的争议必须先裁定。"
+                    : "核验记录仍会保留，但不参与发分判断。"
+              }}
+            </p>
             <label>作业量规版本<select v-model="form.rubricId" required :disabled="assignmentRubricLoading || !!assignmentRubricError" aria-label="作业量规版本"><option value="" disabled>请选择已启用版本</option><option v-for="r in assignmentRubrics" :key="r.id" :value="String(r.id)">{{r.title}} · {{r.code}}</option></select></label><p v-if="assignmentRubricLoading" role="status">正在读取可用量规…</p><p v-if="assignmentRubricError" role="alert">{{assignmentRubricError}} <button type="button" class="text-btn" @click="loadAssignmentRubrics">重试读取量规</button></p>
             <div class="publish-ai-setting"><div><strong><Sparkles :size="15" />AI 修改建议</strong><p>{{ form.aiFeedbackEnabled ? '学生编辑页显示 AI 反馈入口' : '学生编辑页不显示 AI 反馈区块' }}</p></div><button type="button" class="policy-switch" role="switch" :aria-checked="!!form.aiFeedbackEnabled" aria-label="AI 修改建议" @click="form.aiFeedbackEnabled = !form.aiFeedbackEnabled"><span></span></button></div>
             <p class="form-note ai-setting-note">可在发布后按作业随时调整。当前模型服务尚未配置；开启入口不会生成建议，也不会发送学生正文。</p>
