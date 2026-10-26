@@ -830,18 +830,14 @@ async function logout() {
   });
 }
 // 自由创作：直接新建知识帖，不挂在作业下；提交后仍走教师审核与正式评价。
+// 标题不再用弹窗先问一遍——编辑器顶部就是标题输入框，先建再改，少一步打断。
+const UNTITLED = "未命名知识帖";
 async function newFreePost() {
-  const title = prompt("给这篇知识帖起个标题（之后可在编辑器里改）");
-  if (title === null) return;
-  if (!title.trim()) {
-    notify("标题不能为空");
-    return;
-  }
   await run(async () => {
     if (!(await flushBeforeLeave())) return;
     const epoch = accessEpoch, uid = me.value?.id, courseId = cid.value;
     const e = await api(`/courses/${courseId}/free-entries`, "POST", {
-      title: title.trim(),
+      title: UNTITLED,
     });
     if (epoch !== accessEpoch || uid !== me.value?.id || courseId !== cid.value)
       return;
@@ -851,7 +847,13 @@ async function newFreePost() {
     page.value = "editor";
     menu.value = false;
     await refreshCourse();
-    notify("已新建知识帖；提交后由任课教师审核");
+    // 默认标题全选，直接打字即可替换，不用先手动清空。
+    await nextTick();
+    const box = document.querySelector<HTMLInputElement>(".document-title");
+    if (box && box.value === UNTITLED) {
+      box.focus();
+      box.select();
+    }
   });
 }
 async function openAssignment(a: any) {
