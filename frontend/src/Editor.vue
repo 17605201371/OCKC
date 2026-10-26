@@ -524,8 +524,17 @@ const AnnotationMarks = Extension.create({
             const marks: Decoration[] = [];
             state.doc.descendants((node, pos) => {
               if (!node.isTextblock || !node.attrs.blockId) return;
-              const hits = items.filter((a) => a.blockId === node.attrs.blockId && a.quote);
+              const hits = items.filter((a) => a.blockId === node.attrs.blockId);
               if (!hits.length) return;
+              // 只锚到段落、没选中具体文字的批注：整段加一层淡底，
+              // 否则这种批注在正文里完全看不见，只有右侧列表能查到。
+              if (hits.some((a) => !a.quote)) {
+                marks.push(
+                  Decoration.node(pos, pos + node.nodeSize, { class: "annotation-block" }),
+                );
+              }
+              const quoted = hits.filter((a) => a.quote);
+              if (!quoted.length) return;
               const segs: { text: string; from: number }[] = [];
               node.descendants((child, cpos) => {
                 if (child.isText && child.text) segs.push({ text: child.text, from: pos + 1 + cpos });
@@ -537,7 +546,7 @@ const AnnotationMarks = Extension.create({
                 for (let i = 0; i < s.text.length; i++) map.push(s.from + i);
                 full += s.text;
               }
-              for (const h of hits) {
+              for (const h of quoted) {
                 const idx = full.indexOf(h.quote);
                 if (idx < 0) continue;
                 const endIdx = idx + h.quote.length - 1;

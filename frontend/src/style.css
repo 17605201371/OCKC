@@ -4266,6 +4266,8 @@ dialog.account-settings::backdrop{background:#0007;}
 .annotation-mark.dim-c { color: #d97706; }
 .annotation-mark.dim-l { color: #2563eb; }
 .annotation-mark:hover { background: color-mix(in srgb, currentColor 22%, transparent); }
+/* 只锚段落、没选中具体文字的批注：整段淡底，避免「右侧有批注、正文没痕迹」 */
+.annotation-block { background: color-mix(in srgb, #d97706 7%, transparent); box-shadow: inset 2px 0 0 color-mix(in srgb, #d97706 45%, transparent); }
 
 .annotation-popover { position: fixed; z-index: 60; width: 320px; padding: 14px;
   background: var(--surface, #fff); border: 1px solid var(--line, #e3e8ef); border-radius: 12px;

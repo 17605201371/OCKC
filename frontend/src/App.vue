@@ -1155,28 +1155,31 @@ async function resolvePrior(f: any, reopen = false) {
   }
 }
 // 本版批注 + 上一版遗留未解决的批注一起高亮：学生改过的段落若还留着旧批注，批改时看得见。
+// 正文里的高亮统一走这里：本版批注 + 上一版遗留未解决的批注。
+// 学生打开自己的稿子时，老师标过的地方应当直接带底色，而不是等他去右侧点一遍。
 const versionAnnotations = computed(() =>
   [
-    ...(version.value?.feedback || []),
+    ...(version.value?.feedback || []).filter((f: any) => !f.resolved),
     ...priorOpen.value.filter((f: any) => !f.stale),
-  ]
-    .map((f: any) => ({
-      id: f.id,
-      blockId: f.paragraph_id,
-      quote: f.quote_text || "",
-      dimension: String(f.indicator_code || "C").charAt(0),
-    }))
-    .filter((a: any) => a.quote),
+  ].map((f: any) => ({
+    id: f.id,
+    blockId: f.paragraph_id,
+    quote: f.quote_text || "",
+    dimension: String(f.indicator_code || "C").charAt(0),
+  })),
 );
+// 学生编辑页：本版批注 + 上一版遗留未解决的批注都要标在正文上。
+// 只取本版的话，学生改完一版就看不到上一版的问题标在哪里了，右侧列表和正文会脱节。
 const draftAnnotations = computed(() =>
-  (latest.value?.feedback || [])
-    .map((f: any) => ({
-      id: f.id,
-      blockId: f.paragraph_id,
-      quote: f.quote_text || "",
-      dimension: String(f.indicator_code || "C").charAt(0),
-    }))
-    .filter((a: any) => a.quote),
+  [
+    ...(latest.value?.feedback || []).filter((f: any) => !f.resolved),
+    ...(latest.value?.priorFeedback || []).filter((f: any) => !f.resolved && !f.stale),
+  ].map((f: any) => ({
+    id: f.id,
+    blockId: f.paragraph_id,
+    quote: f.quote_text || "",
+    dimension: String(f.indicator_code || "C").charAt(0),
+  })),
 );
 async function jumpToFeedback(id: number) {
   highlightFeedbackId.value = id;
