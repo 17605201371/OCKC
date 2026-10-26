@@ -1173,8 +1173,10 @@ async function resolvePrior(f: any, reopen = false) {
 // 社区读者不在其列：批注是对某一版说的过程意见，不是成品的一部分，后端已按角色裁过数据，
 // 这里再挡一层，避免空数组之外的任何情况把高亮漏出来。
 const feedbackVisible = computed(() => version.value?.feedbackVisible !== false);
+// 知识社区是公开阅读面：教师在这里也只是读者，批注留在批改中心看，避免同一篇在两处长得不一样。
+const readerAsVisitor = computed(() => page.value === "reader" && isTeacher.value);
 const versionAnnotations = computed(() =>
-  feedbackVisible.value
+  feedbackVisible.value && !readerAsVisitor.value
     ? [
         ...(version.value?.feedback || []).filter((f: any) => !f.resolved),
         ...priorOpen.value.filter((f: any) => !f.stale),
@@ -3222,6 +3224,7 @@ onBeforeUnmount(() => {
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>
               </div>
+              <template v-if="!readerAsVisitor">
               <h3 class="sub-panel-title">教师反馈<span v-if="!feedbackVisible" class="badge">未公开</span></h3>
               <p v-if="!feedbackVisible" class="feedback-empty">教师批注未公开。</p>
               <template v-else>
@@ -3259,6 +3262,7 @@ onBeforeUnmount(() => {
                   </button>
                   <p v-else class="muted">这段正文已改动，原批注仅作提醒。</p>
                 </article>
+              </template>
               </template>
               </template>
               <div class="ai-boundary">
