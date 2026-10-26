@@ -1160,7 +1160,7 @@ async function resolvePrior(f: any, reopen = false) {
   try {
     await api(`/feedback/${f.id}/actions`, "POST", { action: reopen ? "REOPEN" : "RESOLVE", body: "" });
     version.value = await api(`/submissions/${version.value.id}`);
-    notify(reopen ? "已重新打开，继续跟进" : "已标记为已解决，学生端同步显示");
+    notify(reopen ? "已重新打开" : "已标记为已解决");
   } catch (e: any) {
     error.value = e.message || "操作失败，请重试";
   } finally {
@@ -1472,7 +1472,15 @@ async function modalSubmit() {
       if (page.value === "editor")
         latest.value = await api(`/submissions/${latest.value.id}`);
       else version.value = await api(`/submissions/${version.value.id}`);
-      notify("已记录你的修改声明；老师确认后才算解决");
+      // 同一条接口承担五种动作，提示要跟着动作走，不能拿学生的文案回给老师。
+      const done: Record<string, string> = {
+        ADOPT: "已记录你的修改声明",
+        REPLY: "回应已记录",
+        IGNORE: "已记录不采纳的原因",
+        RESOLVE: "已标记为已解决",
+        REOPEN: "已重新打开",
+      };
+      notify(done[f.action] || "已记录");
     }
     if (modal.value === "verify") {
       await api(`/evidence/${f.id}/verifications`, "POST", {
@@ -3525,10 +3533,10 @@ onBeforeUnmount(() => {
               (
                 {
                   REPLY: "回应反馈，说明你的理解或修订计划。",
-                  ADOPT: "声明你已按这条批注改过。老师确认后才算「已解决」，在此之前仍显示待跟进。",
+                  ADOPT: "声明你已按这条批注改过。",
                   IGNORE: "请解释本轮不采纳的具体原因。",
-                  RESOLVE: "教师确认该问题已解决，原批注和回应仍会保留。",
-                  REOPEN: "重新打开问题，继续跟进修订。",
+                  RESOLVE: "确认这条批注已解决。",
+                  REOPEN: "重新打开，继续跟进。",
                 } as any
               )[form.action]
             }}
