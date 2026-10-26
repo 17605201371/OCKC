@@ -780,7 +780,9 @@ function cycleTheme() {
 }
 watch(page, () => {
   sidebarCollapsed.value = ["editor", "grading", "reader"].includes(page.value);
-  panelVisible.value = true;
+  // 知识社区是只读的成品面，右栏多数时候没有要看的东西，进去先收起来，需要时再点开。
+  // 编辑页与批改页的右栏是干活的入口，保持展开。
+  panelVisible.value = page.value !== "reader";
   outlineVisible.value = ["editor", "reader", "grading"].includes(page.value);
 });
 function dimensionScore(key: string) {
@@ -3224,10 +3226,9 @@ onBeforeUnmount(() => {
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>
               </div>
-              <template v-if="!readerAsVisitor">
-              <h3 class="sub-panel-title">教师反馈<span v-if="!feedbackVisible" class="badge">未公开</span></h3>
-              <p v-if="!feedbackVisible" class="feedback-empty">教师批注未公开。</p>
-              <template v-else>
+              <p v-if="!feedbackVisible" class="feedback-empty">该知识贴未展示反馈信息</p>
+              <template v-else-if="!readerAsVisitor">
+              <h3 class="sub-panel-title">教师反馈</h3>
               <p v-if="!version.feedback.length" class="feedback-empty">本版暂无段落批注。</p>
               <article
                 v-for="f in version.feedback"
@@ -3262,7 +3263,6 @@ onBeforeUnmount(() => {
                   </button>
                   <p v-else class="muted">这段正文已改动，原批注仅作提醒。</p>
                 </article>
-              </template>
               </template>
               </template>
               <div class="ai-boundary">
