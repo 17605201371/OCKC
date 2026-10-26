@@ -319,7 +319,6 @@ const today = new Date().toLocaleDateString("zh-CN", {
               查看全部<ChevronRight :size="14" />
             </button>
           </header>
-          <p v-if="staff" class="muted" style="padding:0 20px 12px">待评优先，仅显示部分记录；完整筛选和历史版本请进入批改中心。</p>
           <template v-if="staff"
             ><button
               v-for="q in queue.slice(0, 4)"
