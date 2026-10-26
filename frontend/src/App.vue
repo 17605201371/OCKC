@@ -1403,7 +1403,7 @@ async function toggleAssignmentAi(a: any) {
   await run(async () => {
     const updated = await api(`/assignments/${a.id}/ai-policy`, 'PUT', { enabled: !a.ai_feedback_enabled });
     assignments.value = assignments.value.map(row => row.id === a.id ? { ...row, ...updated } : row);
-    notify(updated.ai_feedback_enabled ? '已开放 AI 反馈入口；模型服务尚未配置' : '已关闭 AI 反馈，学生编辑页不再显示该区块');
+    notify(updated.ai_feedback_enabled ? '已开放 AI 反馈' : '已关闭 AI 反馈');
   });
 }
 function sidebarJump(id: string) { const target = document.getElementById(id), panel = target?.closest<HTMLElement>('.feedback-sidebar'); if (target && panel) panel.scrollTo({ top: panel.scrollTop + target.getBoundingClientRect().top - panel.getBoundingClientRect().top - (panel.querySelector<HTMLElement>('.feedback-sticky-header')?.offsetHeight || 0) - 16, behavior: 'smooth' }); }
@@ -2000,7 +2000,7 @@ onBeforeUnmount(() => {
                 >
               </div>
               <div class="assignment-ai-policy">
-                <div><span><Sparkles :size="14" />AI 修改建议</span><small>{{ a.ai_feedback_enabled ? '已开放入口 · 服务待配置' : '未开放 · 学生端不显示' }}</small></div>
+                <div><span><Sparkles :size="14" />AI 修改建议</span><small>{{ a.ai_feedback_enabled ? '已开放' : '未开放' }}</small></div>
                 <button v-if="isTeacher" class="policy-switch" role="switch" :aria-checked="!!a.ai_feedback_enabled" :aria-label="`AI 修改建议：${a.title}`" :disabled="busy" @click="toggleAssignmentAi(a)"><span></span></button>
                 <span v-else class="small-label">{{ a.ai_feedback_enabled ? '已开启' : '未开启' }}</span>
               </div>
@@ -3453,7 +3453,7 @@ onBeforeUnmount(() => {
             </p>
             <label>作业量规版本<select v-model="form.rubricId" required :disabled="assignmentRubricLoading || !!assignmentRubricError" aria-label="作业量规版本"><option value="" disabled>请选择已启用版本</option><option v-for="r in assignmentRubrics" :key="r.id" :value="String(r.id)">{{r.title}} · {{r.code}}</option></select></label><p v-if="assignmentRubricLoading" role="status">正在读取可用量规…</p><p v-if="assignmentRubricError" role="alert">{{assignmentRubricError}} <button type="button" class="text-btn" @click="loadAssignmentRubrics">重试读取量规</button></p>
             <div class="publish-ai-setting"><div><strong><Sparkles :size="15" />AI 修改建议</strong><p>{{ form.aiFeedbackEnabled ? '学生编辑页显示 AI 反馈入口' : '学生编辑页不显示 AI 反馈区块' }}</p></div><button type="button" class="policy-switch" role="switch" :aria-checked="!!form.aiFeedbackEnabled" aria-label="AI 修改建议" @click="form.aiFeedbackEnabled = !form.aiFeedbackEnabled"><span></span></button></div>
-            <p class="form-note ai-setting-note">可在发布后按作业随时调整。当前模型服务尚未配置；开启入口不会生成建议，也不会发送学生正文。</p>
+            <p class="form-note ai-setting-note">可在发布后按作业随时调整。</p>
             <p class="form-note">
               创建后锁定所选量规版本；更改课程默认不影响本作业。本版截止后不接受新提交。
             </p></template
