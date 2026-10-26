@@ -209,20 +209,10 @@ const today = new Date().toLocaleDateString("zh-CN", {
         <h2>
           {{ staff ? featured.title : homeEntry?.title || featured.title }}
         </h2>
-        <div class="hero-meta">
-          <span v-if="staff"
+        <div v-if="staff" class="hero-meta">
+          <span
             >{{ featured.author_name }} · v{{ featured.version_no }}</span
-          ><span v-else
-            >{{
-              homeSubmission
-                ? `最近提交 v${homeSubmission.version_no}`
-                : homeEntry
-                  ? "草稿已创建"
-                  : "尚未开始"
-            }}<span v-if="homeEntry">
-              · 草稿 r{{ homeEntry.revision }}</span
-            ></span
-          ><span>四维评价 · 版本可追溯</span>
+          >
         </div>
         <div class="next-action">
           <span>下一步</span>
