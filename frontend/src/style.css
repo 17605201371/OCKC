@@ -1776,6 +1776,9 @@ summary:focus-visible {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   border-radius: 5px;
   min-height: 36px;
   padding: 6px 8px;
@@ -1796,9 +1799,28 @@ summary:focus-visible {
 }
 .document-outline nav button > span:last-child {
   display: -webkit-box;
+  flex: 1 1 auto;
+  min-width: 0;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+/* 段落项：比章节小一号、淡一档，扫读时先看到章节，再看到段落。 */
+.document-outline nav button.outline-para {
+  min-height: 0;
+  padding-top: 3px;
+  padding-bottom: 3px;
+  font-size: 12px;
+  color: var(--subtle);
+}
+.document-outline nav button.outline-para > span:last-child {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-line-clamp: unset;
 }
 .outline-foot {
   display: flex;
@@ -3815,7 +3837,6 @@ summary:focus-visible {
 .outline-source:hover { color: var(--blue); }
 .outline-add { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--blue); margin: 12px 0 0; }
 .outline-empty { padding: 2px 7px; font-size: 12px !important; line-height: 1.8; color: var(--subtle); }
-.outline-note { margin: 8px 0 0; padding: 0 7px; font-size: 11.5px !important; line-height: 1.8; color: var(--subtle); }
 .outline-assignment > strong { display: block; font-size: 12px; font-weight: 550; margin: 8px 0; line-height: 1.7; }
 .outline-assignment > p { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
 .outline-assignment summary { margin-top: 12px; cursor: pointer; font-size: 12px; color: var(--blue); }

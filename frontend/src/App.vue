@@ -1324,7 +1324,34 @@ function outlineNumbered(doc: any) {
   });
 }
 const entryOutline = computed(() => outlineNumbered(entry.value?.content));
-const versionOutline = computed(() => outlineNumbered(version.value?.content));
+// 阅读与批改页的大纲再细一层：标题下列出它覆盖的段落，长文才有可点的粒度。
+// 只走顶层块，表格单元格与图注不进大纲。
+function outlineDetailed(doc: any) {
+  const heads = outlineNumbered(doc);
+  const byId = new Map(heads.map((h) => [h.id, h]));
+  const out: any[] = [];
+  let depth = 0;
+  for (const n of doc?.content || []) {
+    if (n.type === "heading" && n.attrs?.blockId) {
+      const h = byId.get(n.attrs.blockId);
+      if (!h) continue;
+      out.push({ ...h, kind: "heading" });
+      depth = h.depth;
+    } else if (n.type === "paragraph" && n.attrs?.blockId) {
+      const text = (n.content || []).map((x: any) => x.text || "").join("").trim();
+      if (text.length < 12) continue;
+      out.push({
+        id: n.attrs.blockId,
+        text: text.length > 20 ? text.slice(0, 20) + "…" : text,
+        number: "",
+        depth: Math.min(depth + 1, 2),
+        kind: "para",
+      });
+    }
+  }
+  return out;
+}
+const versionOutline = computed(() => outlineDetailed(version.value?.content));
 
 function showModal(kind: string, data: Record<string, any> = {}) {
   modal.value = kind;
@@ -2255,7 +2282,6 @@ onBeforeUnmount(() => {
                 <button v-for="a in entryOutline" :key="a.id" :class="{ selected: activeOutlineId === a.id, 'sub-heading': a.level > 1 }" :style="{ paddingLeft: 12 + a.depth * 16 + 'px' }" @click="focusAnchor(a.id)"><span>{{ a.number }}</span><span>{{ a.text }}</span></button>
               </nav>
               <p v-if="!entryOutline.length" class="outline-empty">用 H1 / H2 / H3 组织文章，章节将按层级出现在这里。</p>
-              <p v-else-if="entryOutline.length === 1" class="outline-empty">正文只有一个标题，其余是连续段落。把每一节改成 H2，大纲才会展开。</p>
               <section class="outline-evidence"><div class="outline-section-label"><BookOpen :size="16" /><h3>挂载证据</h3><span>{{ entry.evidence.length }}</span></div>
                 <button v-for="(e, i) in entry.evidence" :key="i" class="outline-source" @click="focusAnchor(e.paragraphId)"><span>E{{ i + 1 }}</span><span>{{ e.sourceTitle }}</span></button>
                 <p v-if="!entry.evidence.length" class="outline-empty">让每一个关键论断，都有可靠的来源。</p>
@@ -2590,20 +2616,23 @@ onBeforeUnmount(() => {
             <button v-if="!panelVisible" class="panel-reopen" title="展开反馈面板" aria-label="展开反馈面板" @click="panelVisible = true"><MessageSquare :size="16" /><span>反馈</span></button>
             <aside v-if="outlineVisible && !isStepAssignment" class="document-outline">
               <h3><ListTree :size="16" />文档大纲</h3>
-              <p>点击章节，定位正文</p>
+              <p>点击定位正文</p>
               <nav aria-label="正文段落">
                 <button
                   v-for="a in versionOutline"
                   :key="a.id"
-                  :class="{ selected: selectedAnchor === a.id, 'sub-heading': a.level > 1 }"
+                  :class="{
+                    selected: selectedAnchor === a.id,
+                    'sub-heading': a.level > 1,
+                    'outline-para': a.kind === 'para',
+                  }"
                   :style="{ paddingLeft: 12 + a.depth * 16 + 'px' }"
                   @click="focusAnchor(a.id)"
                 >
-                  <span>{{ a.number }}</span
+                  <span v-if="a.number">{{ a.number }}</span
                   ><span>{{ a.text }}</span>
                 </button>
               </nav>
-              <p v-if="versionOutline.length === 1" class="outline-note">这一版只有一个标题，其余是连续段落，所以大纲只有一条。分节是作者写作时的选择，批改与阅读都不改写正文。</p>
               <div class="outline-foot">
                 <ShieldCheck :size="16" /><span
                   >段落标识保持稳定，反馈不会随顺序变化而错位。</span
@@ -3094,7 +3123,7 @@ onBeforeUnmount(() => {
 
                 <details v-if="priorOpen.length || priorResolved.length" class="grade-feedback prior-feedback" open>
                   <summary>历史批注 {{ priorOpen.length }} 条待跟进<span v-if="priorResolved.length"> · {{ priorResolved.length }} 条已解决</span></summary>
-                  <p class="grade-tip"><MessageSquare :size="14" /><span>来自更早的版本。学生点「我已修改」只是声明，要你在这里确认；确认后不再提醒。</span></p>
+                  <p class="grade-tip"><MessageSquare :size="14" /><span>来自更早的版本。</span></p>
                   <div
                     v-for="f in priorOpen"
                     :key="'prior-' + f.id"
@@ -3170,9 +3199,7 @@ onBeforeUnmount(() => {
                   >
                     撤销定稿，允许继续修改
                   </button>
-                  <p class="grade-tip">
-                    <CheckCircle2 :size="14" /><span>通过前要先发布正式评分；通过后学生不能再提交新版本。</span>
-                  </p>
+                  <p class="grade-tip"><CheckCircle2 :size="14" /><span>通过后学生不能再提交新版本。</span></p>
                 </section>
               </fieldset>
             </aside>
@@ -3188,13 +3215,9 @@ onBeforeUnmount(() => {
                 <h3>等待教师评审</h3>
               </div>
               <h3 class="sub-panel-title">教师反馈<span v-if="!feedbackVisible" class="badge">未公开</span></h3>
-              <p v-if="!feedbackVisible" class="feedback-empty">
-                教师批注只对作者和任课教师可见。作者申请发布时若勾选「公开批注作为范例」，这里才会显示；批注本身记在修订历史里。
-              </p>
+              <p v-if="!feedbackVisible" class="feedback-empty">教师批注未公开。</p>
               <template v-else>
-              <p v-if="!version.feedback.length" class="feedback-empty">
-                本版暂无段落批注；教师若留下批注，会在这里按段落列出，可直接定位正文。
-              </p>
+              <p v-if="!version.feedback.length" class="feedback-empty">本版暂无段落批注。</p>
               <article
                 v-for="f in version.feedback"
                 :key="f.id"
