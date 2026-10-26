@@ -40,7 +40,8 @@ public class ReviewWorkbench {
   result.put("authors",s.db.queryForList("SELECT DISTINCT u.id,u.display_name,CASE WHEN cm.user_id IS NULL THEN FALSE ELSE TRUE END AS current_member FROM entry e JOIN submission v ON v.entry_id=e.id JOIN assignment a ON a.id=e.assignment_id JOIN app_user u ON u.id=e.author_id LEFT JOIN course_member cm ON cm.course_id=a.course_id AND cm.user_id=e.author_id WHERE a.course_id=? ORDER BY u.display_name,u.id",cid));return result;
  }
  @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
- public Map<String,Object> dashboard(long cid,long uid){var scope=scope(cid,uid,"",0,0,"ALL","ALL","ALL","ALL","oldest");return Map.of("summary",summary(scope),"items",rows(scope,"1=1","CASE WHEN q_final IS NULL THEN 0 ELSE 1 END,created_at,id",6,0));}
+ public Map<String,Object> dashboard(long cid,long uid){// 教学进展与批改中心同一口径：只统计每篇作品的最新版本，否则旧版本会被重复计入待评审与已评价。
+  var scope=scope(cid,uid,"",0,0,"ALL","ALL","ALL","LATEST","oldest");return Map.of("summary",summary(scope),"items",rows(scope,"1=1","CASE WHEN q_final IS NULL THEN 0 ELSE 1 END,created_at,id",6,0));}
  @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
  public Map<String,Object> next(long cid,long uid,String q,long aid,long author,String drafts,String evidence,String versions,String sort,long exclude){
   if(exclude<0)throw fail(400,"提交编号不正确");var scope=scope(cid,uid,q,aid,author,"PENDING",drafts,evidence,versions,sort);

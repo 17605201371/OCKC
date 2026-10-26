@@ -2255,6 +2255,7 @@ onBeforeUnmount(() => {
                 <button v-for="a in entryOutline" :key="a.id" :class="{ selected: activeOutlineId === a.id, 'sub-heading': a.level > 1 }" :style="{ paddingLeft: 12 + a.depth * 16 + 'px' }" @click="focusAnchor(a.id)"><span>{{ a.number }}</span><span>{{ a.text }}</span></button>
               </nav>
               <p v-if="!entryOutline.length" class="outline-empty">用 H1 / H2 / H3 组织文章，章节将按层级出现在这里。</p>
+              <p v-else-if="entryOutline.length === 1" class="outline-empty">正文只有一个标题，其余是连续段落。把每一节改成 H2，大纲才会展开。</p>
               <section class="outline-evidence"><div class="outline-section-label"><BookOpen :size="16" /><h3>挂载证据</h3><span>{{ entry.evidence.length }}</span></div>
                 <button v-for="(e, i) in entry.evidence" :key="i" class="outline-source" @click="focusAnchor(e.paragraphId)"><span>E{{ i + 1 }}</span><span>{{ e.sourceTitle }}</span></button>
                 <p v-if="!entry.evidence.length" class="outline-empty">让每一个关键论断，都有可靠的来源。</p>
@@ -2602,6 +2603,7 @@ onBeforeUnmount(() => {
                   ><span>{{ a.text }}</span>
                 </button>
               </nav>
+              <p v-if="versionOutline.length === 1" class="outline-note">这一版只有一个标题，其余是连续段落，所以大纲只有一条。分节是作者写作时的选择，批改与阅读都不改写正文。</p>
               <div class="outline-foot">
                 <ShieldCheck :size="16" /><span
                   >段落标识保持稳定，反馈不会随顺序变化而错位。</span

@@ -3815,6 +3815,7 @@ summary:focus-visible {
 .outline-source:hover { color: var(--blue); }
 .outline-add { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--blue); margin: 12px 0 0; }
 .outline-empty { padding: 2px 7px; font-size: 12px !important; line-height: 1.8; color: var(--subtle); }
+.outline-note { margin: 8px 0 0; padding: 0 7px; font-size: 11.5px !important; line-height: 1.8; color: var(--subtle); }
 .outline-assignment > strong { display: block; font-size: 12px; font-weight: 550; margin: 8px 0; line-height: 1.7; }
 .outline-assignment > p { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
 .outline-assignment summary { margin-top: 12px; cursor: pointer; font-size: 12px; color: var(--blue); }
