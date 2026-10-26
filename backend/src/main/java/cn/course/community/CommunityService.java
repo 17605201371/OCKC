@@ -334,7 +334,43 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
   if(latestId>0)notices.send(s.id(e,"author_id"),s.id(e,"course_id"),"ENTRY_VERDICT","MEMBER",msg,"submission",latestId,"",uid);
   return entry(eid);
  }
- public Map<String,Object> getSubmission(long sid,long uid){var v=submission(sid);visible(v,uid);v.put("rubricSnapshot",rubrics.forSubmission(v));v.put("rubricSnapshotSource",v.get("rubric_snapshot_json")==null?"BUILTIN_LEGACY":"SUBMISSION_SNAPSHOT");v.remove("rubric_snapshot_json");v.put("changes",changes(v));v.put("content",decode(v.remove("content_json")));Object task=v.remove("assignment_snapshot_json");v.put("assignmentSnapshot",task==null?null:decode(task));v.put("evaluation",getEvaluation(sid));v.put("feedback",feedback(sid));v.put("priorFeedback",priorFeedback(v));v.put("evidence",s.db.queryForList("SELECT * FROM evidence WHERE submission_id=?",sid));var publications=s.db.queryForList("SELECT * FROM publication WHERE submission_id=?",sid);if(s.id(v,"author_id")!=uid&&!s.role(s.id(v,"course_id"),uid).equals("TEACHER"))for(var pub:publications){pub.remove("last_reason");pub.remove("requested_evaluation_revision");}v.put("publication",publications);return v;}
+ public Map<String,Object> getSubmission(long sid,long uid){var v=submission(sid);visible(v,uid);v.put("rubricSnapshot",rubrics.forSubmission(v));v.put("rubricSnapshotSource",v.get("rubric_snapshot_json")==null?"BUILTIN_LEGACY":"SUBMISSION_SNAPSHOT");v.remove("rubric_snapshot_json");v.put("changes",changes(v));v.put("content",decode(v.remove("content_json")));Object task=v.remove("assignment_snapshot_json");v.put("assignmentSnapshot",task==null?null:decode(task));v.put("evaluation",getEvaluation(sid));
+  // 批注是对「某一版」说的过程性意见，不是成品的一部分：读者（同学、公开访客）默认拿不到，
+  // 除非作者发布时勾了「公开批注作为范例」。裁在服务端，前端隐藏不算数。
+  boolean feedbackVisible=canReadFeedback(v,uid);
+  boolean privileged=isAuthorOrStaff(v,uid);
+  var fbList=feedbackVisible?feedback(sid):List.<Map<String,Object>>of();
+  // 公开的只是「老师说了什么」，学生对批注的回应仍属于师生之间的往来，不跟着外露。
+  if(feedbackVisible&&!privileged)for(var f:fbList)f.remove("actions");
+  v.put("feedback",fbList);v.put("priorFeedback",feedbackVisible?priorFeedback(v):List.of());v.put("feedbackVisible",feedbackVisible);
+  v.put("evidence",s.db.queryForList("SELECT * FROM evidence WHERE submission_id=?",sid));var publications=s.db.queryForList("SELECT * FROM publication WHERE submission_id=?",sid);if(s.id(v,"author_id")!=uid&&!s.role(s.id(v,"course_id"),uid).equals("TEACHER"))for(var pub:publications){pub.remove("last_reason");pub.remove("requested_evaluation_revision");}v.put("publication",publications);return v;}
+ // 作者与教师始终看得到批注；其他人只有当这一版已发布、且作者勾了「公开批注作为范例」时才看得到。
+ boolean canReadFeedback(Map<String,Object> v,long uid){
+  if(isAuthorOrStaff(v,uid))return true;
+  return s.db.queryForObject("SELECT COUNT(*) FROM publication WHERE submission_id=? AND state='PUBLISHED' AND share_feedback=TRUE",Integer.class,s.id(v,"id"))>0;
+ }
+ boolean isAuthorOrStaff(Map<String,Object> v,long uid){
+  if(s.id(v,"author_id")==uid)return true;
+  String role=s.role(s.id(v,"course_id"),uid);
+  return role.equals("TEACHER")||role.equals("ASSISTANT");
+ }
+ // 修订历史：读者只看发布过的版本，草稿版本属于作者和教师。
+ public List<Map<String,Object>> entryVersions(long eid,long uid){
+  var e=entry(eid);long cid=s.id(e,"course_id");String role=s.role(cid,uid);
+  boolean staff=role.equals("TEACHER")||role.equals("ASSISTANT"),author=s.id(e,"author_id")==uid;
+  var rows=s.db.queryForList("SELECT v.id,v.version_no,v.title,v.created_at,g.q_final,g.summary,p.state AS publication_state,p.share_feedback FROM submission v LEFT JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE LEFT JOIN publication p ON p.submission_id=v.id WHERE v.entry_id=? ORDER BY v.version_no DESC",eid);
+  List<Map<String,Object>> out=new ArrayList<>();
+  for(var r:rows){
+   boolean published="PUBLISHED".equals(r.get("publication_state"));
+   if(!staff&&!author&&!published)continue;
+   boolean fb=staff||author||(published&&Boolean.TRUE.equals(r.get("share_feedback")));
+   var list=fb?feedback(s.id(r,"id")):List.<Map<String,Object>>of();
+   if(fb&&!staff&&!author)for(var f:list)f.remove("actions");
+   r.put("published",published);r.put("feedbackVisible",fb);r.put("feedback",list);r.put("feedbackCount",list.size());r.remove("share_feedback");
+   out.add(r);
+  }
+  return out;
+ }
  public Object getEvaluation(long sid){var rows=s.db.queryForList("SELECT g.*,u.display_name AS teacher_name FROM evaluation g JOIN app_user u ON u.id=g.teacher_id WHERE g.submission_id=? AND g.active=TRUE",sid);if(rows.isEmpty())return null;var g=rows.getFirst();g.put("details",decode(g.remove("details_json")));g.put("dimensions",decode(g.remove("dimensions_json")));Object steps=g.remove("step_scores_json");g.put("stepScores",steps==null?List.of():decode(String.valueOf(steps)));return g;}
  public List<Map<String,Object>> feedback(long sid){var rows=s.db.queryForList("SELECT f.*,u.display_name AS teacher_name FROM feedback f JOIN app_user u ON u.id=f.teacher_id WHERE f.submission_id=? ORDER BY f.id",sid);
   if(rows.isEmpty())return rows;
@@ -411,9 +447,10 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
   String state=teacher?verdict:prior.stream().anyMatch(x->!verdict.equals(x.get("verdict")))?"DISPUTED":verdict;
   s.db.update("INSERT INTO verification(evidence_id,verifier_id,verdict,reason,created_at,verifier_role) VALUES(?,?,?,?,?,?)",id,uid,verdict,reason.trim(),now(),role);s.db.update("UPDATE evidence SET state=? WHERE id=?",state,id);s.audit(uid,"EVIDENCE_"+verdict,"evidence",id);notices.send(s.id(v,"author_id"),s.id(v,"course_id"),"EVIDENCE","MEMBER","证据核验结果已更新","evidence",id,"",uid);if(state.equals("DISPUTED"))notices.teachers(s.id(v,"course_id"),"EVIDENCE_DISPUTED","证据存在争议，等待教师裁定","evidence",id,uid);}
  public List<Map<String,Object>> verifications(long eid,long uid){var ev=s.one("SELECT * FROM evidence WHERE id=?",eid);var v=submission(s.id(ev,"submission_id"));s.role(s.id(v,"course_id"),uid);return s.db.queryForList("SELECT x.*,u.display_name AS verifier_name FROM verification x JOIN app_user u ON u.id=x.verifier_id WHERE x.evidence_id=? ORDER BY x.id",eid);}
- @Transactional public void requestPublication(long sid,long uid){requestPublication(sid,uid,null,"","COURSE");}
- @Transactional public void requestPublication(long sid,long uid,Integer expected,String reason){requestPublication(sid,uid,expected,reason,"COURSE");}
- @Transactional public void requestPublication(long sid,long uid,Integer expected,String reason,String visibility){
+ @Transactional public void requestPublication(long sid,long uid){requestPublication(sid,uid,null,"","COURSE",null);}
+ @Transactional public void requestPublication(long sid,long uid,Integer expected,String reason){requestPublication(sid,uid,expected,reason,"COURSE",null);}
+ @Transactional public void requestPublication(long sid,long uid,Integer expected,String reason,String visibility){requestPublication(sid,uid,expected,reason,visibility,null);}
+ @Transactional public void requestPublication(long sid,long uid,Integer expected,String reason,String visibility,Boolean shareFeedback){
   // 可见范围由作者显式选择；缺省沿用该版已有设置，避免旧客户端把公开版本悄悄收回课程内。
   String scope=visibility==null||visibility.isBlank()?null:visibility.trim();
   if(scope!=null&&!Set.of("COURSE","PUBLIC").contains(scope))throw fail(422,"未知的可见范围");
@@ -423,7 +460,8 @@ public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM as
   if(rows.isEmpty()){if(expected!=null&&expected!=0)throw fail(409,"发布状态已变化，请刷新后核对");long id=s.insert("INSERT INTO publication(submission_id,author_id,state,requested_at) VALUES(?,?,'NEW',?)",sid,uid,now());pub=s.one("SELECT * FROM publication WHERE id=?",id);}
   else pub=rows.getFirst();
   checkPublicationRevision(pub,expected);if(!Set.of("NEW","WITHDRAWN","RETURNED").contains(pub.get("state")))throw fail(409,"该版已申请或已发布");
-  s.db.update("UPDATE publication SET requested_at=?,reviewed_at=NULL,reviewer_id=NULL,requested_evaluation_revision=?,visibility=COALESCE(?,visibility) WHERE id=?",now(),grade.get("revision_no"),scope,pub.get("id"));
+  // 公开批注是作者对「把自己的批改过程给别人看」的授权，缺省不授权；没传就保持原设置。
+  s.db.update("UPDATE publication SET requested_at=?,reviewed_at=NULL,reviewer_id=NULL,requested_evaluation_revision=?,visibility=COALESCE(?,visibility),share_feedback=COALESCE(?,share_feedback) WHERE id=?",now(),grade.get("revision_no"),scope,shareFeedback,pub.get("id"));
   publicationEvent(pub,uid,s.role(s.id(v,"course_id"),uid),"REQUEST","PENDING",reason.isBlank()?"作者申请展示此提交版本":reason,(Number)grade.get("revision_no"));
   s.audit(uid,"PUBLICATION_REQUEST","submission",sid);notices.teachers(s.id(v,"course_id"),"PUBLICATION_REQUEST","有新的课程内发布申请","publication",sid,uid);
  }

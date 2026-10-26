@@ -1034,6 +1034,7 @@ async function openVersion(sid: number, asReview = false, keepReviewScope=false)
     const loadedVersion=await api(`/submissions/${sid}`);
     if(activeCourse!==cid.value||activeUser!==me.value?.id||epoch!==accessEpoch)return;
     version.value=loadedVersion;if(!keepReviewScope)reviewNavScope.value=null;nextReviewMessage.value='';
+    void loadVersionHistory(loadedVersion.entry_id);
     selectedAnchor.value = "";
     page.value = asReview ? "grading" : "reader";
     feedbackTab.value = "feedback";
@@ -1118,6 +1119,18 @@ const DIM_LABELS: Record<string, string> = {
 function dimLabel(code: string) { return DIM_LABELS[code] || code || "批注"; }
 
 const highlightFeedbackId = ref(0);
+// 修订历史：批注跟着版本走，而不是跟着「这篇帖子」走。
+// 读者只看得到发布过的版本，草稿版本由后端裁掉；作者与教师看全部。
+const versionHistory = ref<any[]>([]);
+const historyBusy = ref(false);
+async function loadVersionHistory(eid: number) {
+  versionHistory.value = [];
+  if (!eid) return;
+  historyBusy.value = true;
+  try { versionHistory.value = await api(`/entries/${eid}/versions`); }
+  catch { versionHistory.value = []; }
+  finally { historyBusy.value = false; }
+}
 // 更早版本的批注分两组：未解决的要跟进，已解决的只留档（误点还能重开）。
 const priorOpen = computed<any[]>(() => (version.value?.priorFeedback || []).filter((f: any) => !f.resolved));
 const priorResolved = computed<any[]>(() => (version.value?.priorFeedback || []).filter((f: any) => f.resolved));
@@ -1157,16 +1170,21 @@ async function resolvePrior(f: any, reopen = false) {
 // 本版批注 + 上一版遗留未解决的批注一起高亮：学生改过的段落若还留着旧批注，批改时看得见。
 // 正文里的高亮统一走这里：本版批注 + 上一版遗留未解决的批注。
 // 学生打开自己的稿子时，老师标过的地方应当直接带底色，而不是等他去右侧点一遍。
+// 社区读者不在其列：批注是对某一版说的过程意见，不是成品的一部分，后端已按角色裁过数据，
+// 这里再挡一层，避免空数组之外的任何情况把高亮漏出来。
+const feedbackVisible = computed(() => version.value?.feedbackVisible !== false);
 const versionAnnotations = computed(() =>
-  [
-    ...(version.value?.feedback || []).filter((f: any) => !f.resolved),
-    ...priorOpen.value.filter((f: any) => !f.stale),
-  ].map((f: any) => ({
-    id: f.id,
-    blockId: f.paragraph_id,
-    quote: f.quote_text || "",
-    dimension: String(f.indicator_code || "C").charAt(0),
-  })),
+  feedbackVisible.value
+    ? [
+        ...(version.value?.feedback || []).filter((f: any) => !f.resolved),
+        ...priorOpen.value.filter((f: any) => !f.stale),
+      ].map((f: any) => ({
+        id: f.id,
+        blockId: f.paragraph_id,
+        quote: f.quote_text || "",
+        dimension: String(f.indicator_code || "C").charAt(0),
+      }))
+    : [],
 );
 // 学生编辑页：本版批注 + 上一版遗留未解决的批注都要标在正文上。
 // 只取本版的话，学生改完一版就看不到上一版的问题标在哪里了，右侧列表和正文会脱节。
@@ -2628,6 +2646,41 @@ onBeforeUnmount(() => {
                   @annotate="annotateFigure"
                 />
               </div>
+              <section v-if="page === 'reader' && versionHistory.length" class="card source-panel revision-history">
+                <details :open="versionHistory.length > 1">
+                  <summary class="section-title">
+                    <h3>修订历史</h3>
+                    <span class="muted">{{ versionHistory.length }} 个版本 · 批注记在它针对的那一版下面</span>
+                  </summary>
+                  <article
+                    v-for="h in versionHistory"
+                    :key="h.id"
+                    class="history-row"
+                    :class="{ current: h.id === version.id }"
+                  >
+                    <button
+                      class="history-open"
+                      :disabled="h.id === version.id || historyBusy"
+                      :aria-current="h.id === version.id ? 'true' : undefined"
+                      @click="openVersion(h.id)"
+                    >
+                      <strong>v{{ h.version_no }}</strong>
+                      <span class="muted">{{ fmt(h.created_at) }}</span>
+                      <span v-if="h.published" class="badge green">已发布</span>
+                      <span v-else class="badge">未发布</span>
+                      <span v-if="h.q_final != null" class="history-score">{{ number(h.q_final) }} 分</span>
+                      <span v-if="h.id === version.id" class="muted">正在阅读</span>
+                    </button>
+                    <div v-if="h.feedbackVisible && h.feedback.length" class="history-feedback">
+                      <p v-for="f in h.feedback" :key="f.id" class="history-note">
+                        <span class="indicator-tag">{{ f.indicator_code }}</span>{{ f.body }}
+                      </p>
+                    </div>
+                    <p v-else-if="h.feedbackVisible" class="muted history-note">这一版没有批注。</p>
+                    <p v-else class="muted history-note">教师批注未公开。</p>
+                  </article>
+                </details>
+              </section>
               <section class="card source-panel">
                 <details class="revision-diff">
                   <summary>
@@ -3132,7 +3185,11 @@ onBeforeUnmount(() => {
                 <Clock :size="26" />
                 <h3>等待教师评审</h3>
               </div>
-              <h3 class="sub-panel-title">教师反馈</h3>
+              <h3 class="sub-panel-title">教师反馈<span v-if="!feedbackVisible" class="badge">未公开</span></h3>
+              <p v-if="!feedbackVisible" class="feedback-empty">
+                教师批注只对作者和任课教师可见。作者申请发布时若勾选「公开批注作为范例」，这里才会显示；批注本身记在修订历史里。
+              </p>
+              <template v-else>
               <p v-if="!version.feedback.length" class="feedback-empty">
                 本版暂无段落批注；教师若留下批注，会在这里按段落列出，可直接定位正文。
               </p>
@@ -3169,6 +3226,7 @@ onBeforeUnmount(() => {
                   </button>
                   <p v-else class="muted">这段正文已改动，原批注仅作提醒。</p>
                 </article>
+              </template>
               </template>
               <div class="ai-boundary">
                 <History :size="18" /><span

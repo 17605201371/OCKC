@@ -60,9 +60,10 @@ public class ApiController {
  @GetMapping("/courses/{cid}/publications") public Object pubs(@PathVariable long cid,@RequestParam(defaultValue="false") boolean pending,@RequestParam(defaultValue="COURSE") String scope,Principal p){return service.publications(cid,uid(p),pending,scope);}
  @PostMapping("/publications/{id}/actions") public Object pubAction(@PathVariable long id,@Valid @RequestBody ActionRequest r,Principal p){service.publicationAction(id,r.action(),uid(p));return Map.of("ok",true);}
  public record PublicationDecision(@NotBlank @Pattern(regexp="APPROVE|RETURN|WITHDRAW") String action,@NotBlank @Size(max=2000) String reason,@NotNull @Min(0) Integer revision){}
- public record PublicationRequest(@NotNull @Min(0) Integer revision,@NotNull @Size(max=2000) String reason,@Pattern(regexp="COURSE|PUBLIC") String visibility){}
+ public record PublicationRequest(@NotNull @Min(0) Integer revision,@NotNull @Size(max=2000) String reason,@Pattern(regexp="COURSE|PUBLIC") String visibility,Boolean shareFeedback){}
  @GetMapping("/courses/{cid}/publication-records") public Object publicationRecords(@PathVariable long cid,Principal p){return service.publicationRecords(cid,uid(p));}
  @GetMapping("/publications/{id}/review") public Object publicationReview(@PathVariable long id,Principal p){return service.publicationReview(id,uid(p));}
  @PostMapping("/publications/{id}/decisions") public Object publicationDecision(@PathVariable long id,@Valid @RequestBody PublicationDecision r,Principal p){service.publicationAction(id,r.action(),uid(p),r.revision(),r.reason());return Map.of("ok",true);}
- @PostMapping("/submissions/{sid}/publication-request") public Object publicationRequest(@PathVariable long sid,@Valid @RequestBody PublicationRequest r,Principal p){service.requestPublication(sid,uid(p),r.revision(),r.reason(),r.visibility());return Map.of("ok",true);}
+ @PostMapping("/submissions/{sid}/publication-request") public Object publicationRequest(@PathVariable long sid,@Valid @RequestBody PublicationRequest r,Principal p){service.requestPublication(sid,uid(p),r.revision(),r.reason(),r.visibility(),r.shareFeedback());return Map.of("ok",true);}
+ @GetMapping("/entries/{eid}/versions") public Object entryVersions(@PathVariable long eid,Principal p){return service.entryVersions(eid,uid(p));}
 }
