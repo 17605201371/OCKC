@@ -214,27 +214,6 @@ const today = new Date().toLocaleDateString("zh-CN", {
             >{{ featured.author_name }} · v{{ featured.version_no }}</span
           >
         </div>
-        <div class="next-action">
-          <span>下一步</span>
-          <h3>
-            {{
-              staff
-                ? "先理解这一次变化，再给出关键反馈"
-                : feedback.length
-                  ? "根据教师批注，完善这一版解释"
-                  : homeSubmission && !homeSubmission.evaluation
-                    ? "等待教师反馈，或查看你的提交记录"
-                    : "围绕任务要求，写下有依据的解释"
-            }}
-          </h3>
-          <p>
-            {{
-              staff
-                ? "评审基于冻结版本，发布后学生即可查看。"
-                : feedback[0]?.body || featured.requirements
-            }}
-          </p>
-        </div>
         <div class="hero-actions">
           <button class="btn primary" :disabled="!staff && !featured.entry_id && assignmentState(featured,now)==='CLOSED'" @click="openFeatured">
             <component :is="staff ? PenLine : PenLine" :size="16" />{{

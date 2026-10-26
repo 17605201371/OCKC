@@ -738,6 +738,10 @@ summary:focus-visible {
 }
 .workspace-hero-main {
   min-width: 0;
+  /* 右栏（任务进度 + 质量分）比左侧高，左侧内容少时居中，避免卡片下半截空一块。 */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 .hero-context {
   display: flex;
@@ -762,35 +766,12 @@ summary:focus-visible {
   font-size: 14px;
   color: var(--muted);
 }
-.next-action {
-  border-left: 2px solid var(--blue);
-  padding: 0 0 0 16px;
-  margin: 22px 0;
-}
-.next-action > span {
-  font-size: 14px;
-  color: var(--blue-text);
-  font-weight: 500;
-}
-.next-action h3 {
-  font-size: 16px;
-  line-height: 1.6;
-  margin: 5px 0;
-}
-.next-action p {
-  font-size: 14px;
-  color: var(--muted);
-  max-width: 720px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
 .hero-actions {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  margin-top: 22px;
 }
 .hero-summary {
   border-left: 1px solid var(--border);
