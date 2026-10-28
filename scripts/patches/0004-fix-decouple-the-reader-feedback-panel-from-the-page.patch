@@ -1,0 +1,122 @@
+From d235c71590f141040316a3714027e0e65d97b157 Mon Sep 17 00:00:00 2001
+From: zhengshsh <zss@zhengshshdeMacBook-Air.local>
+Date: Sat, 24 Oct 2026 18:28:25 +0900
+Subject: [PATCH 4/4] fix: decouple the reader feedback panel from the page
+ scroll
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- fit the sidebar to the viewport height from its own top offset, so the bottom
+  of 质量与版本 / 教师反馈 is never clipped before the panel sticks
+- add overscroll-behavior: contain so wheeling inside the panel no longer drags
+  the left document along
+- show an explicit empty state under 教师反馈 when a version has no paragraph
+  annotations, instead of an apparently blank section
+---
+ frontend/src/App.vue   | 34 ++++++++++++++++++++++++++++++++++
+ frontend/src/style.css |  7 ++++---
+ 2 files changed, 38 insertions(+), 3 deletions(-)
+
+diff --git a/frontend/src/App.vue b/frontend/src/App.vue
+index ab68183..1d08b93 100644
+--- a/frontend/src/App.vue
++++ b/frontend/src/App.vue
+@@ -1354,7 +1354,36 @@ function keydown(e: KeyboardEvent) {
+     void saveDraft();
+   }
+ }
++// 右侧反馈面板：高度按「当前视口 − 面板顶部」收缩，未吸顶时也不会被视口裁掉；
++// 面板自身滚动并阻止滚动链，滚轮划过反馈区不会再带动左侧正文。
++let sidebarFitFrame = 0, sidebarFitValue = 0, sidebarFitEl: HTMLElement | null = null;
++function fitFeedbackSidebar() {
++  const el = document.querySelector<HTMLElement>(".feedback-sidebar");
++  if (!el) return;
++  const stickyTop = 68;
++  const top = el.getBoundingClientRect().top;
++  const anchor = Math.max(stickyTop, Math.min(top, window.innerHeight - 280));
++  const avail = Math.max(280, Math.round(window.innerHeight - anchor - 20));
++  if (avail !== sidebarFitValue || el !== sidebarFitEl) {
++    sidebarFitValue = avail;
++    sidebarFitEl = el;
++    el.style.maxHeight = avail + "px";
++  }
++}
++function scheduleSidebarFit() {
++  if (sidebarFitFrame) return;
++  sidebarFitFrame = requestAnimationFrame(() => {
++    sidebarFitFrame = 0;
++    fitFeedbackSidebar();
++  });
++}
++watch(
++  () => [page.value, panelVisible.value, version.value?.id, entry.value?.id],
++  () => nextTick(scheduleSidebarFit),
++);
+ onMounted(async () => {
++  window.addEventListener("scroll", scheduleSidebarFit, { passive: true });
++  window.addEventListener("resize", scheduleSidebarFit);
+   window.addEventListener("ockc-session-expired",sessionExpired);
+   deadlineTimer=setInterval(()=>{clockNow.value=Date.now();void refreshAssignmentRules()},30000);
+   window.addEventListener("focus",refreshAssignmentRules);
+@@ -1370,6 +1399,8 @@ onMounted(async () => {
+   }
+ });
+ onBeforeUnmount(() => {
++  window.removeEventListener("scroll", scheduleSidebarFit);
++  window.removeEventListener("resize", scheduleSidebarFit);
+   window.removeEventListener("ockc-session-expired",sessionExpired);
+   clearTimeout(saveTimer);clearInterval(deadlineTimer);
+   window.removeEventListener("beforeunload", beforeUnload);
+@@ -2629,6 +2660,9 @@ onBeforeUnmount(() => {
+                 <h3>等待教师评审</h3>
+               </div>
+               <h3 class="sub-panel-title">教师反馈</h3>
++              <p v-if="!version.feedback.length" class="feedback-empty">
++                本版暂无段落批注；教师若留下批注，会在这里按段落列出，可直接定位正文。
++              </p>
+               <article
+                 v-for="f in version.feedback"
+                 :key="f.id"
+diff --git a/frontend/src/style.css b/frontend/src/style.css
+index b79e9b7..d4ae980 100644
+--- a/frontend/src/style.css
++++ b/frontend/src/style.css
+@@ -1808,6 +1808,7 @@ summary:focus-visible {
+   top: 80px;
+   max-height: calc(100vh - 104px);
+   overflow-y: auto;
++  overscroll-behavior: contain;
+   scrollbar-width: thin;
+   scrollbar-color: #c9c6c0 transparent;
+ }
+@@ -1936,6 +1937,7 @@ summary:focus-visible {
+   border-radius: 8px;
+   background: var(--paper);
+ }
++.feedback-empty { margin: 6px 16px 14px; padding: 12px 14px; font-size: 12.5px; line-height: 1.7; color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: 8px; }
+ .feedback-card .card-top {
+   margin-bottom: 10px;
+ }
+@@ -3726,7 +3728,7 @@ summary:focus-visible {
+ .outline-assignment summary { margin-top: 12px; cursor: pointer; font-size: 12px; color: var(--blue); }
+ .outline-assignment details p { font-size: 12px; line-height: 1.8; padding-top: 8px; color: var(--muted); }
+ .creation-workspace .outline-foot { font-size: 11px; padding-top: 16px; margin: 24px 7px 0; line-height: 1.8; border-color: var(--border); }
+-.creation-workspace .feedback-sidebar { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 14px; max-height: calc(100vh - 78px); top: 66px; position: sticky; overflow-y: auto; scrollbar-width: thin; }
++.creation-workspace .feedback-sidebar { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 14px; max-height: calc(100vh - 78px); top: 66px; position: sticky; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+ .creation-workspace .panel-title { border: 0; padding: 0 0 13px; gap: 6px; }
+ .creation-workspace .panel-title h2 { font-size: 13px; }
+ .creation-workspace .panel-title .badge { font-size: 10px; padding: 2px 6px; }
+@@ -4324,8 +4326,7 @@ dialog.account-settings::backdrop{background:#0007;}
+ .comm-scope { border:0; background:transparent; color:var(--muted); font-size:13px; padding:6px 14px; border-radius:7px; cursor:pointer; transition:background .15s,color .15s; }
+ .comm-scope:hover { color:var(--text); }
+ .comm-scope.on { background:var(--paper); color:var(--text); font-weight:600; box-shadow:0 1px 2px rgb(15 23 42 / 8%); }
+-/* 发布申请：可见范围选择 */
+-.visibility-choice { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:14px 0; }
++/* 发布申请：可见范围选择 */.visibility-choice { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:14px 0; }
+ .visibility-choice legend { font-size:12px; color:var(--muted); padding:0 6px; }
+ .visibility-choice label { display:flex; gap:8px; align-items:center; margin:8px 0; font-size:13px; font-weight:400; }
+ .visibility-choice label input { width:auto; margin:0; }
+-- 
+2.50.1 (Apple Git-155)
+
