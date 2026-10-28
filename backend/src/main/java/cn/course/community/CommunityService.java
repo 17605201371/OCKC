@@ -204,18 +204,25 @@ public class CommunityService {
   Map<String,Object> payload=new LinkedHashMap<>();
   payload.put("model",aiModel);
   payload.put("temperature",0.3);
-  // 步骤作业一次要给多步、每条正文更长，给足额度，否则 JSON 会被截断。
-  payload.put("max_tokens",stepMode?4096:3000);
-  // 该系列模型默认会先输出较长推理，挤占正文配额；降到 low 档才能稳定拿到 JSON。
+  // 该系列模型关不掉推理，实测 2300 字正文就要先写掉 4000 多字推理；
+  // 额度给到 16000 才够「推理 + JSON」跑完，否则 finish_reason=length 且 content 为空。
+  payload.put("max_tokens",16000);
+  // low 是最低档（该模型只支持 low/medium/high），再低也压不掉推理段。
   payload.put("reasoning_effort","low");
   payload.put("messages",List.of(Map.of("role","system","content",system),Map.of("role","user","content",user)));
   Map<?,?> resp=client.post().uri("/chat/completions").header("Authorization","Bearer "+aiKey)
    .contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(payload).retrieve().body(Map.class);
   if(resp==null)throw new IllegalStateException("空响应");
   var choices=(List<?>)resp.get("choices");
-  var message=(Map<?,?>)((Map<?,?>)choices.getFirst()).get("message");
+  var first=(Map<?,?>)choices.getFirst();
+  var message=(Map<?,?>)first.get("message");
   Object content=message.get("content");
-  if(content==null||content.toString().isBlank())throw new IllegalStateException("模型无输出");
+  // 正文为空时把 finish_reason 与用量带出来：length 表示额度又被推理吃光，stop 才是模型真的没给东西。
+  if(content==null||content.toString().isBlank()){
+   Object usage=resp.get("usage");
+   Object used=usage instanceof Map<?,?> u?u.get("completion_tokens"):null;
+   throw new IllegalStateException("模型无输出（finish="+first.get("finish_reason")+"，completion_tokens="+used+"）");
+  }
   return content.toString();
  }
  @Transactional // 自由创作：为作者新建一条不挂作业要求与截止时间的知识帖（内部用 free_form 作业占位，沿用既有联表逻辑）。
