@@ -11,6 +11,7 @@ const props = defineProps<{
   evidence?: any[];
   highlightId?: string;
   annotations?: Array<{ id: number; blockId: string; quote: string; dimension: string }>;
+  aiMarks?: Array<{ blockId: string; quote: string; state: string }>;
   entryId?: number;
   evidenceCount?: number;
   scores?: any[];
@@ -228,6 +229,7 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
         :annotations="annotations"
         :entry-id="entryId"
         :evidence-count="evidenceCount"
+        :ai-marks="aiMarks"
         compact
         @update:model-value="setBody(i, $event)"
         @selected="emit('selected', $event)"

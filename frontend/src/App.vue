@@ -107,6 +107,8 @@ const clockNow = ref(Date.now()), serverOffset = ref(0);
 let deadlineTimer: ReturnType<typeof setInterval>;
 const deadlineNow = computed(() => clockNow.value + serverOffset.value);
 const aiSidebarVisible = ref(false);
+// AI 建议的页边标记（哪一段有几条），由侧栏算好后传给正文。
+const aiMarks = ref<Array<{ blockId: string; quote: string; state: string }>>([]);
 import { api, login, ApiFailure, resetApiSession } from "./api";
 const me = ref<any>(null),
   courses = ref<any[]>([]),
@@ -2347,6 +2349,7 @@ onBeforeUnmount(() => {
                   :evidence-count="entry.evidence.length"
                   :scores="latest?.evaluation?.stepScores"
                   :feedback="latest?.feedback"
+                  :ai-marks="aiMarks"
                   @update:content="setEntryContent"
                   @evidence="openStepEvidence"
                   @selected="selectedParagraph = $event"
@@ -2359,6 +2362,7 @@ onBeforeUnmount(() => {
                   :annotations="draftAnnotations"
                   :document-title="entry.title"
                   :entry-id="entry.id" :evidence-count="entry.evidence.length" @uploading="uploadingMedia = $event"
+                  :ai-marks="aiMarks"
                   @evidence="showModal('evidence')"
                   v-model="entry.content"
                   @update:model-value="changed"
@@ -2520,7 +2524,7 @@ onBeforeUnmount(() => {
                 </article>
                 <div v-if="!latest?.feedback?.length && !draftPrior.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? (isStepAssignment ? '还没有段落批注' : '还没有教师批注') : '提交后，在这里查看教师批注' }}</p><span>{{ isStepAssignment ? '老师可在批改页选中文字添加段落批注；每一步的点评见上方「步骤评分」。' : '批注会定位到对应段落或图片。' }}</span></div>
               </section>
-              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" :step-mode="isStepAssignment" :doc="entry.content" @content="applyAiContent" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" />
+              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" :step-mode="isStepAssignment" :doc="entry.content" @content="applyAiContent" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" @marks="aiMarks = $event" />
               <details class="sidebar-version-history" :open="feedbackTab === 'versions'"><summary><History :size="14" />版本记录<span>{{ entry.versions.length }}</span><ChevronRight :size="14" class="history-chevron" /></summary>
               <div class="version-list">
                 <button

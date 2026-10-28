@@ -59,6 +59,8 @@ const props = defineProps<{
   compact?: boolean;
   highlightId?: string;
   annotations?: Array<{ id: number; blockId: string; quote: string; dimension: string }>;
+  // AI 建议只画在页边，不碰文字层：教师批注已占用正文下划线，两者不能抢同一处。
+  aiMarks?: Array<{ blockId: string; quote: string; state: string }>;
   documentTitle?: string;
   entryId?: number;
   evidenceCount?: number;
@@ -507,6 +509,26 @@ const Ids = Extension.create({
 const highlightKey = new PluginKey("feedbackHighlight");
 const annotationKey = new PluginKey("annotationMarks");
 const annotationItems = computed(() => props.annotations || []);
+// 批注与 AI 建议都要按「引文在段落里的字符位置」定位，映射逻辑只有这一份。
+// 段落里的文字节点之间可能夹着公式、图片等非文本节点，用 map 把纯文本下标还原成文档位置。
+function quoteRange(node: any, pos: number, quote: string): [number, number] | null {
+  const segs: { text: string; from: number }[] = [];
+  node.descendants((child: any, cpos: number) => {
+    if (child.isText && child.text) segs.push({ text: child.text, from: pos + 1 + cpos });
+  });
+  if (!segs.length) return null;
+  let full = "";
+  const map: number[] = [];
+  for (const s of segs) {
+    for (let i = 0; i < s.text.length; i++) map.push(s.from + i);
+    full += s.text;
+  }
+  const idx = full.indexOf(quote);
+  if (idx < 0) return null;
+  const endIdx = idx + quote.length - 1;
+  if (endIdx >= map.length) return null;
+  return [map[idx], map[endIdx] + 1];
+}
 const AnnotationMarks = Extension.create({
   name: "annotationMarks",
   addProseMirrorPlugins() {
@@ -535,24 +557,11 @@ const AnnotationMarks = Extension.create({
               }
               const quoted = hits.filter((a) => a.quote);
               if (!quoted.length) return;
-              const segs: { text: string; from: number }[] = [];
-              node.descendants((child, cpos) => {
-                if (child.isText && child.text) segs.push({ text: child.text, from: pos + 1 + cpos });
-              });
-              if (!segs.length) return;
-              let full = "";
-              const map: number[] = [];
-              for (const s of segs) {
-                for (let i = 0; i < s.text.length; i++) map.push(s.from + i);
-                full += s.text;
-              }
               for (const h of quoted) {
-                const idx = full.indexOf(h.quote);
-                if (idx < 0) continue;
-                const endIdx = idx + h.quote.length - 1;
-                if (endIdx >= map.length) continue;
+                const range = quoteRange(node, pos, h.quote);
+                if (!range) continue;
                 marks.push(
-                  Decoration.inline(map[idx], map[endIdx] + 1, {
+                  Decoration.inline(range[0], range[1], {
                     class: `annotation-mark dim-${(h.dimension || "C").toLowerCase()}`,
                     "data-annotation-id": String(h.id),
                     title: "点击查看教师批注",
@@ -567,6 +576,73 @@ const AnnotationMarks = Extension.create({
     ];
   },
 });
+// AI 建议的页边标记：教师批注占正文（句子级下划线 + 淡底），AI 只在段落左侧画一条
+// 竖线和一个条数圆点，两层互不重叠。同一段有多条建议时只留一个标记，圆点里写条数；
+// 全部采纳后转灰并打勾。鼠标移到竖线上时才临时点亮它引用的那句话。
+const aiMarkKey = new PluginKey("aiMarginMarks");
+const aiMarkItems = computed(() => props.aiMarks || []);
+const AiMarginMarks = Extension.create({
+  name: "aiMarginMarks",
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: aiMarkKey,
+        state: {
+          init: () => ({ stamp: 0, hover: "" }),
+          apply: (tr, old) => {
+            const meta = tr.getMeta(aiMarkKey);
+            return meta ? { ...old, ...meta } : old;
+          },
+        },
+        props: {
+          decorations: (state) => {
+            const items = aiMarkItems.value;
+            if (!items.length) return null;
+            const { hover } = aiMarkKey.getState(state) as { hover: string };
+            const marks: Decoration[] = [];
+            state.doc.descendants((node, pos) => {
+              if (!node.isTextblock || !node.attrs.blockId) return;
+              const blockId = String(node.attrs.blockId);
+              const hits = items.filter((a) => a.blockId === blockId);
+              if (!hits.length) return;
+              const open = hits.filter((a) => a.state !== "ADOPTED").length;
+              marks.push(
+                Decoration.node(pos, pos + node.nodeSize, {
+                  class: `ai-margin${open ? "" : " settled"}${hover === blockId ? " is-ai-hover" : ""}`,
+                  "data-ai-count": open ? String(open) : "✓",
+                  "data-ai-block": blockId,
+                }),
+              );
+              for (const h of hits) {
+                if (!h.quote) continue;
+                const range = quoteRange(node, pos, h.quote);
+                if (!range) continue;
+                marks.push(Decoration.inline(range[0], range[1], { class: "ai-margin-quote" }));
+              }
+            });
+            return DecorationSet.create(state.doc, marks);
+          },
+        },
+      }),
+    ];
+  },
+});
+// 只认左侧页边那一条：正文里的鼠标移动不触发，否则打字时引文会被反复点亮。
+function aiHover(event: MouseEvent) {
+  const view = editor.value?.view;
+  if (!view) return;
+  const el = (event.target as HTMLElement | null)?.closest?.(".ai-margin") as HTMLElement | null;
+  const inGutter = !!el && event.clientX <= el.getBoundingClientRect().left;
+  const next = inGutter ? el!.getAttribute("data-ai-block") || "" : "";
+  if (next === (aiMarkKey.getState(view.state) as { hover: string }).hover) return;
+  view.dispatch(view.state.tr.setMeta(aiMarkKey, { hover: next }));
+}
+function aiHoverEnd() {
+  const view = editor.value?.view;
+  if (!view) return;
+  if (!(aiMarkKey.getState(view.state) as { hover: string }).hover) return;
+  view.dispatch(view.state.tr.setMeta(aiMarkKey, { hover: "" }));
+}
 function onEditorClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null;
   const mark = target?.closest?.(".annotation-mark") as HTMLElement | null;
@@ -644,6 +720,7 @@ const editor = useEditor({
     Ids,
     Highlight,
     AnnotationMarks,
+    AiMarginMarks,
   ],
   editorProps: {
     attributes: {
@@ -754,6 +831,16 @@ watch(
   },
   { deep: true, immediate: true },
 );
+watch(
+  () => props.aiMarks,
+  () => {
+    if (editor.value)
+      editor.value.view.dispatch(
+        editor.value.state.tr.setMeta(aiMarkKey, { stamp: Date.now() }),
+      );
+  },
+  { deep: true, immediate: true },
+);
 function onViewportChange() {
   if (slash.value || bubble.value) syncUi();
 }
@@ -770,7 +857,7 @@ onBeforeUnmount(() => {
 });
 </script>
 <template>
-  <div class="editor-shell" :class="{ 'writer-editable': !readonly, compact: compact && !readonly }" @click="onEditorClick">
+  <div class="editor-shell" :class="{ 'writer-editable': !readonly, compact: compact && !readonly }" @click="onEditorClick" @mousemove="aiHover" @mouseleave="aiHoverEnd">
     <div
       v-if="!readonly && editor"
       class="writer-commandbar"

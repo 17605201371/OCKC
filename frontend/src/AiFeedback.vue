@@ -4,7 +4,7 @@ import { Sparkles, RefreshCw, ShieldCheck, AlertCircle, Wand2, Check } from 'luc
 import { api } from './api';
 import { applySuggestion, restoreParagraph } from './aiReplace';
 const props = defineProps<{ entryId: number; assignmentEnabled?: boolean; stepMode?: boolean; doc?: any }>();
-const emit = defineEmits<{ visibility: [enabled: boolean]; locate: [paragraphId: string]; content: [doc: any] }>();
+const emit = defineEmits<{ visibility: [enabled: boolean]; locate: [paragraphId: string]; content: [doc: any]; marks: [list: Array<{ blockId: string; quote: string; state: string }>] }>();
 const enabled = ref(false), loading = ref(false), failed = ref(false);
 const status = ref(''), message = ref(''), model = ref('');
 const suggestions = ref<Array<{ id?: number; paragraph_id?: string | null; quote_text?: string | null; replacement_text?: string | null; dimension: string; title: string; body: string; state?: string; step_index?: number | null }>>([]);
@@ -82,6 +82,13 @@ async function dismiss(s: any) {
   catch { s.state = previous; }
 }
 const visible = computed(() => suggestions.value.filter((s: any) => s.state !== 'DISMISSED'));
+// 正文页边只认「哪一段有几条」：把列表压成 Editor 能用的最小结构，状态变了就重发。
+const marks = computed(() =>
+  visible.value
+    .filter((s: any) => s.paragraph_id)
+    .map((s: any) => ({ blockId: String(s.paragraph_id), quote: s.quote_text || '', state: s.state || 'OPEN' })),
+);
+watch(marks, list => emit('marks', list), { deep: true, immediate: true });
 async function load(generate = false) {
   const current = ++sequence; loading.value = true; failed.value = false;
   try {
