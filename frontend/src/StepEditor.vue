@@ -17,7 +17,7 @@ const props = defineProps<{
   scores?: any[];
   feedback?: any[];
 }>();
-const emit = defineEmits(["update:content", "evidence", "selected", "annotation", "uploading"]);
+const emit = defineEmits(["update:content", "evidence", "selected", "annotation", "uploading", "aimark"]);
 
 type Step = { heading: any; title: string; nodes: any[] };
 const intro = ref<any[]>([]);
@@ -193,10 +193,12 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
         :model-value="introDoc()"
         :entry-id="entryId"
         :evidence-count="evidenceCount"
+        :ai-marks="aiMarks"
         compact
         @update:model-value="setIntro"
         @selected="emit('selected', $event)"
         @annotation="emit('annotation', $event)"
+        @aimark="emit('aimark', $event)"
         @uploading="emit('uploading', $event)"
       />
     </section>
@@ -234,6 +236,7 @@ const totalChars = computed(() => steps.value.reduce((n, s) => n + blockIds(s.no
         @update:model-value="setBody(i, $event)"
         @selected="emit('selected', $event)"
         @annotation="emit('annotation', $event)"
+        @aimark="emit('aimark', $event)"
         @uploading="emit('uploading', $event)"
       />
 

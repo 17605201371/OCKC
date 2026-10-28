@@ -109,6 +109,8 @@ const deadlineNow = computed(() => clockNow.value + serverOffset.value);
 const aiSidebarVisible = ref(false);
 // AI 建议的页边标记（哪一段有几条），由侧栏算好后传给正文。
 const aiMarks = ref<Array<{ blockId: string; quote: string; state: string }>>([]);
+// 点正文页边标记时，让侧栏滚到对应那条建议。
+const aiPanel = ref<any>(null);
 import { api, login, ApiFailure, resetApiSession } from "./api";
 const me = ref<any>(null),
   courses = ref<any[]>([]),
@@ -2354,6 +2356,7 @@ onBeforeUnmount(() => {
                   @evidence="openStepEvidence"
                   @selected="selectedParagraph = $event"
                   @annotation="jumpToFeedback"
+                  @aimark="aiPanel?.reveal($event)"
                   @uploading="uploadingMedia = $event"
                 />
                 <Editor
@@ -2368,6 +2371,7 @@ onBeforeUnmount(() => {
                   @update:model-value="changed"
                   @selected="selectedParagraph = $event"
                   @annotation="jumpToFeedback"
+                  @aimark="aiPanel?.reveal($event)"
                 />
               </div>
               <section class="card source-panel">
@@ -2524,7 +2528,7 @@ onBeforeUnmount(() => {
                 </article>
                 <div v-if="!latest?.feedback?.length && !draftPrior.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? (isStepAssignment ? '还没有段落批注' : '还没有教师批注') : '提交后，在这里查看教师批注' }}</p><span>{{ isStepAssignment ? '老师可在批改页选中文字添加段落批注；每一步的点评见上方「步骤评分」。' : '批注会定位到对应段落或图片。' }}</span></div>
               </section>
-              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" :step-mode="isStepAssignment" :doc="entry.content" @content="applyAiContent" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" @marks="aiMarks = $event" />
+              <AiFeedback ref="aiPanel" :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" :step-mode="isStepAssignment" :doc="entry.content" @content="applyAiContent" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" @marks="aiMarks = $event" />
               <details class="sidebar-version-history" :open="feedbackTab === 'versions'"><summary><History :size="14" />版本记录<span>{{ entry.versions.length }}</span><ChevronRight :size="14" class="history-chevron" /></summary>
               <div class="version-list">
                 <button

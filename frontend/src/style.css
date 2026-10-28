@@ -4351,28 +4351,34 @@ dialog.account-settings::backdrop{background:#0007;}
 .annotation-block { background: color-mix(in srgb, #d97706 7%, transparent); box-shadow: inset 2px 0 0 color-mix(in srgb, #d97706 45%, transparent); }
 
 /* ---- AI 建议的页边标记：不碰文字层，避免和教师批注撞色 ----
-   教师占句子（正文下划线 + 淡底），AI 占段落（左侧竖线 + 条数圆点）。
-   一段多条建议只画一个标记；全部采纳后转灰打勾；移到竖线上才点亮引文。 */
-.ai-margin { position: relative; --ai-line: color-mix(in srgb, #2563eb 32%, transparent); }
+   教师占句子（正文下划线 + 淡底，四维用紫/青/橙/蓝），AI 占段落（左侧竖线 + 条数圆点）。
+   取玫红，和四维批注色、和主题靛蓝都不撞。 */
+:root { --ai-ink: #db2777; }
+:root[data-theme="dark"] { --ai-ink: #f472b6; }
+.ai-margin { position: relative; }
 /* 竖线本身只有 2px，鼠标几乎点不中：整条 14px 的隐形带子都算命中区，线画在带子里面。 */
 .ai-margin::before {
   content: ""; position: absolute; right: calc(100% + 3px); top: 0; bottom: 0; width: 14px;
+  cursor: pointer;
   background-image: linear-gradient(var(--ai-line), var(--ai-line));
   background-size: 2px calc(100% - 1.1em); background-position: 3px 50%; background-repeat: no-repeat;
 }
 .ai-margin::after {
   content: attr(data-ai-count); position: absolute; right: calc(100% + 5px); top: 0.12em;
   min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
-  background: color-mix(in srgb, #2563eb 13%, var(--paper)); color: #2563eb;
+  background: color-mix(in srgb, var(--ai-ink) 13%, var(--paper)); color: var(--ai-ink);
   font-size: 10px; font-weight: 700; line-height: 15px; text-align: center;
   font-variant-numeric: tabular-nums; transition: background-color .15s, color .15s;
 }
-.ai-margin.is-ai-hover { --ai-line: color-mix(in srgb, #2563eb 72%, transparent); }
-.ai-margin.is-ai-hover::after { background: #2563eb; color: #fff; }
+.ai-margin { --ai-line: color-mix(in srgb, var(--ai-ink) 34%, transparent); }
+.ai-margin.is-ai-hover { --ai-line: color-mix(in srgb, var(--ai-ink) 75%, transparent); }
+.ai-margin.is-ai-hover::after { background: var(--ai-ink); color: #fff; }
 .ai-margin.settled { --ai-line: color-mix(in srgb, var(--muted) 26%, transparent); }
 .ai-margin.settled::after { background: color-mix(in srgb, var(--muted) 12%, var(--paper)); color: var(--muted); }
 .ai-margin-quote { border-radius: 3px; transition: background-color .15s; }
-.ai-margin.is-ai-hover .ai-margin-quote { background: color-mix(in srgb, #2563eb 10%, transparent); }
+.ai-margin.is-ai-hover .ai-margin-quote { background: color-mix(in srgb, var(--ai-ink) 9%, transparent); }
+/* 点页边标记跳到右侧那条建议，落点闪一下 */
+.ai-suggestion.is-flash { box-shadow: 0 0 0 2px color-mix(in srgb, var(--ai-ink) 45%, transparent); }
 /* 步骤卡只有 14px 内边距，放不下圆点：只留一条短竖线。 */
 .editor-shell.compact .ai-margin::before { right: calc(100% + 2px); width: 8px; background-position: 2px 50%; }
 .editor-shell.compact .ai-margin::after { display: none; }

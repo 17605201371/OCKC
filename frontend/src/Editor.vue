@@ -66,7 +66,7 @@ const props = defineProps<{
   evidenceCount?: number;
   canAnnotate?: boolean;
 }>();
-const emit = defineEmits(["update:modelValue", "selected", "evidence", "uploading", "annotation", "annotate"]);
+const emit = defineEmits(["update:modelValue", "selected", "evidence", "uploading", "annotation", "annotate", "aimark"]);
 const mediaDialog = ref<HTMLDialogElement>(), mathDialog = ref<HTMLDialogElement>();
 const imageFile = ref<HTMLInputElement>();
 const media = ref({ src: '', alt: '', caption: '', source: '' });
@@ -645,6 +645,12 @@ function aiHoverEnd() {
 }
 function onEditorClick(event: MouseEvent) {
   const target = event.target as HTMLElement | null;
+  // 页边标记：竖线画在段落左侧留白里，点它跳到右侧那条建议。
+  const margin = target?.closest?.(".ai-margin") as HTMLElement | null;
+  if (margin && event.clientX <= margin.getBoundingClientRect().left) {
+    emit("aimark", margin.getAttribute("data-ai-block") || "");
+    return;
+  }
   const mark = target?.closest?.(".annotation-mark") as HTMLElement | null;
   const id = mark?.getAttribute("data-annotation-id");
   if (id) emit("annotation", Number(id));

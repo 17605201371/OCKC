@@ -73,6 +73,21 @@ function adoptLabel(s: any) {
   return s.replacement_text ? '采纳并替换' : '采纳';
 }
 function locate(s: any) { if (s.paragraph_id) emit('locate', s.paragraph_id); }
+// 正文页边标记点一下 → 右侧滚到那条建议并闪一下，学生不用自己找。
+const listEl = ref<HTMLElement | null>(null);
+let flashTimer: ReturnType<typeof setTimeout> | undefined;
+function reveal(blockId: string) {
+  if (!blockId) return;
+  const index = visible.value.findIndex((s: any) => s.paragraph_id === blockId);
+  if (index < 0) return;
+  const card = listEl.value?.querySelectorAll('.ai-suggestion')[index] as HTMLElement | undefined;
+  if (!card) return;
+  card.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  card.classList.add('is-flash');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => card.classList.remove('is-flash'), 1600);
+}
+defineExpose({ reveal });
 // 忽略只是隐藏这条建议，不删除记录；教师端仍能看到学生处理过。
 async function dismiss(s: any) {
   if (!s.id) return;
@@ -115,7 +130,7 @@ onBeforeUnmount(() => { sequence++; });
   <section v-if="enabled" id="sidebar-ai" class="sidebar-section ai-feedback-section" aria-label="AI 反馈">
     <header class="sidebar-section-heading"><h3><Sparkles :size="15" />AI 反馈</h3><span class="small-label">{{ status === 'READY' ? (stepMode ? '逐步骤建议' : (model || '已生成')) : '教师已开启' }}</span></header>
 
-    <div v-if="status === 'READY' && visible.length" class="ai-suggestion-list">
+    <div v-if="status === 'READY' && visible.length" ref="listEl" class="ai-suggestion-list">
       <article v-for="(s, i) in visible" :key="s.id || i" class="ai-suggestion" :class="{ adopted: s.state === 'ADOPTED' }">
         <div class="ai-suggestion-top">
           <span v-if="s.step_index !== null && s.step_index !== undefined" class="ai-dim step">第 {{ Number(s.step_index) + 1 }} 步</span>
