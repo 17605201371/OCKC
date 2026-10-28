@@ -898,6 +898,12 @@ async function loadEditorState() {
   )
     backup.value = null;
 }
+// AI 建议的「采纳」直接改正文：子组件算好新文档再回传，这里只负责落到 entry 上并触发自动保存。
+function applyAiContent(doc: any) {
+  if (!entry.value || !doc) return;
+  entry.value.content = doc;
+  changed();
+}
 function changed() {
   if (!entry.value) return;
   dirty.value = true;
@@ -2514,7 +2520,7 @@ onBeforeUnmount(() => {
                 </article>
                 <div v-if="!latest?.feedback?.length && !draftPrior.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? (isStepAssignment ? '还没有段落批注' : '还没有教师批注') : '提交后，在这里查看教师批注' }}</p><span>{{ isStepAssignment ? '老师可在批改页选中文字添加段落批注；每一步的点评见上方「步骤评分」。' : '批注会定位到对应段落或图片。' }}</span></div>
               </section>
-              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" :step-mode="isStepAssignment" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" />
+              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" :step-mode="isStepAssignment" :doc="entry.content" @content="applyAiContent" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" />
               <details class="sidebar-version-history" :open="feedbackTab === 'versions'"><summary><History :size="14" />版本记录<span>{{ entry.versions.length }}</span><ChevronRight :size="14" class="history-chevron" /></summary>
               <div class="version-list">
                 <button

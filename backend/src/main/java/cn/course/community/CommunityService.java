@@ -84,9 +84,12 @@ public class CommunityService {
   if(!enabled)return Map.of("enabled",false,"status","DISABLED","suggestions",List.of(),"formalScore",false);
   if(aiKey==null||aiKey.isBlank())return Map.of("enabled",true,"status","NOT_CONFIGURED","suggestions",List.of(),"formalScore",false);
   int rev=((Number)e.get("revision")).intValue();
-  var saved=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state,step_index FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY step_index NULLS FIRST,id",eid,rev);
-  if(!saved.isEmpty())return Map.of("enabled",true,"status","READY","suggestions",saved,"formalScore",false,"saved",true,"model",aiModel);
-  if(!generate)return Map.of("enabled",true,"status","NOT_GENERATED","suggestions",List.of(),"formalScore",false,"model",aiModel);
+  var saved=s.db.queryForList("SELECT id,paragraph_id,quote_text,replacement_text,dimension,title,body,state,step_index FROM ai_suggestion WHERE entry_id=? ORDER BY step_index NULLS FIRST,id",eid);
+  // generate=true 是用户主动要一轮新的，不能被上一次的结果挡住，否则「重新生成」按钮永远无效。
+  if(!generate){
+   if(!saved.isEmpty())return Map.of("enabled",true,"status","READY","suggestions",saved,"formalScore",false,"saved",true,"model",aiModel);
+   return Map.of("enabled",true,"status","NOT_GENERATED","suggestions",List.of(),"formalScore",false,"model",aiModel);
+  }
   var paragraphs=anchors(decode(e.get("draft_json")));
   if(paragraphs.isEmpty()||text(decode(e.get("draft_json"))).isBlank())return Map.of("enabled",true,"status","EMPTY","suggestions",List.of(),"formalScore",false);
   // 只把段落标识与正文交给模型，图片与证据原文不出网。
@@ -119,7 +122,8 @@ public class CommunityService {
     node=decode(stripFence(content));
    }
    if(!node.path("suggestions").isArray()||node.path("suggestions").isEmpty())throw new IllegalStateException("模型未返回可用建议");
-   s.db.update("DELETE FROM ai_suggestion WHERE entry_id=? AND revision=?",eid,rev);
+   // 一轮生成覆盖上一轮：采纳会改正文、revision 随之变化，按 revision 清会让旧建议残留成两批。
+   s.db.update("DELETE FROM ai_suggestion WHERE entry_id=?",eid);
    int count=0;
    for(var item:node.path("suggestions")){
     if(count++>=4)break;
@@ -128,14 +132,17 @@ public class CommunityService {
     if(!paragraphs.containsKey(pid))pid="";
     String quote=item.path("quote").asText("").trim();
     if(quote.length()>600||(!pid.isEmpty()&&!paragraphs.get(pid).contains(quote)))quote="";
+    // 「采纳」要直接落到正文：没有可定位的原文就没有可替换的位置，这种建议只保留文字说明。
+    String replacement=item.path("replacement").asText("").trim();
+    if(quote.isEmpty()||replacement.isEmpty()||replacement.length()>600||replacement.equals(quote))replacement="";
     Integer stepIndex=null;
     if(stepMode&&stepCount>0){int si=item.path("stepIndex").asInt(-1);if(si>=0&&si<stepCount)stepIndex=si;}
-    s.db.update("INSERT INTO ai_suggestion(entry_id,revision,paragraph_id,quote_text,dimension,title,body,state,created_at,step_index) VALUES(?,?,?,?,?,?,?,'OPEN',?,?)",
-     eid,rev,pid.isEmpty()?null:pid,quote.isEmpty()?null:quote,
+    s.db.update("INSERT INTO ai_suggestion(entry_id,revision,paragraph_id,quote_text,replacement_text,dimension,title,body,state,created_at,step_index) VALUES(?,?,?,?,?,?,?,?,'OPEN',?,?)",
+     eid,rev,pid.isEmpty()?null:pid,quote.isEmpty()?null:quote,replacement.isEmpty()?null:replacement,
      item.path("dimension").asText("C"),trimTo(stripStepPrefix(item.path("title").asText("")),200),trimTo(item.path("body").asText(""),1000),now(),stepIndex);
    }
    s.audit(uid,"AI_FEEDBACK_GENERATE","entry",eid);
-   var list=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state,step_index FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY step_index NULLS FIRST,id",eid,rev);
+   var list=s.db.queryForList("SELECT id,paragraph_id,quote_text,replacement_text,dimension,title,body,state,step_index FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY step_index NULLS FIRST,id",eid,rev);
    return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"saved",true,"model",aiModel);
   }catch(Exception ex){
    org.slf4j.LoggerFactory.getLogger(CommunityService.class).warn("AI feedback failed for entry {}: {}",eid,ex.toString());
@@ -191,13 +198,17 @@ public class CommunityService {
     +"禁止给出完整解答、标准答案或重写全文，也不要把学生没写的推理替他补完。"
     +"四个维度：S 科学性、A 准确性、C 完整性、L 逻辑性。"
     +"我会给你按步分组的正文，每步行如「第2步 标题」，下面每行形如 [p_xxx] 段落内容。"
-    +"严格只输出 JSON，不要解释或代码块标记。格式：{\"suggestions\":[{\"stepIndex\":0,\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中 10-40 字原文\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出这一步的问题并给最小改法\"}]}。"
-    +"stepIndex 从 0 开始，必须对应我给出的步序；paragraphId 必须来自该步；每步最多 2 条，总数不超过 5 条；每条 body 不超过 60 字，务必保证 JSON 完整闭合。")
+    +"严格只输出 JSON，不要解释或代码块标记。格式：{\"suggestions\":[{\"stepIndex\":0,\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中逐字出现的 10-40 字原文\",\"replacement\":\"替换 quote 覆盖范围的文字\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出这一步的问题\"}]}。"
+    +"stepIndex 从 0 开始，必须对应我给出的步序；paragraphId 必须来自该步；每步最多 2 条，总数不超过 5 条；每条 body 不超过 60 字，务必保证 JSON 完整闭合。"
+    +"quote 必须逐字出现在该段落里，不能改写或省略中间的字；replacement 只改 quote 覆盖的那部分，保留学生原有语气与结论，不要重写整段、不要补出学生没写的推理。"
+    +"公式一律写成 $...$ 形式（例如 $\\sin 2\\theta$），不要写裸的 LaTeX。")
    :("你是课程写作助教，帮助学生改进知识帖。只能依据四维量规给出可执行的修改建议，不得编造来源。"
     +"四个维度：S 科学性（概念与机制是否正确）、A 准确性（表述与数据是否有据）、C 完整性（关键环节是否交代）、L 逻辑性（论证链条是否连贯）。"
-    +"我会给你带段落标识的正文，每行形如 [p_xxx] 段落内容。"
-    +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中 10-40 字的原文片段\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出问题并给出改法\"}]}。"
-    +"paragraphId 必须来自我给出的列表；quote 必须逐字出现在该段落里。最多 4 条，按重要程度排序。");
+    +"我会给你带段落标识的正文，每行形如 [p_xxx] 段落内容。公式以 LaTeX 源码形式出现在正文里（如 \\sin 2\\theta）。"
+    +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中逐字出现的 10-40 字原文片段\",\"replacement\":\"替换 quote 覆盖范围的文字\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，说明为什么这样改\"}]}。"
+    +"paragraphId 必须来自我给出的列表；quote 必须逐字出现在该段落里，不能改写、不能省略中间的字；"
+    +"replacement 只改 quote 覆盖的那部分，保留学生原有语气与结论，不要重写整段，不要添加原文没有的数据；"
+    +"公式一律写成 $...$ 形式（例如 $\\sin 2\\theta$），不要写裸的 LaTeX。最多 4 条，按重要程度排序。");
   String user=stepMode
    ?"标题："+(title==null?"":title)+"\n分步正文（共 "+stepCount+" 步）：\n"+body+"\n\n请针对每一步指出具体问题，最多 6 条，每条都要能定位到某一步。"
    :"标题："+(title==null?"":title)+"\n正文（带段落标识）：\n"+body+"\n\n请给出 3 到 4 条修改建议。";

@@ -4396,6 +4396,10 @@ dialog.account-settings::backdrop{background:#0007;}
 .ai-suggestion p { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
 .ai-suggestion.adopted { border-color: color-mix(in srgb, var(--green, #16a34a) 40%, var(--border)); background: var(--green-soft, #ecfdf3); }
 .ai-quote { margin: 6px 0 0; padding: 6px 8px; border-left: 3px solid var(--border); background: var(--paper); border-radius: 4px; font-size: 11.5px; color: var(--subtle); line-height: 1.6; }
+/* 替换文本：与引文并排，用左侧色条和文字标签区分「原文 → 改为」。 */
+.ai-replace { margin: 5px 0 0; padding: 6px 8px; border-left: 3px solid var(--blue); background: var(--blue-soft); border-radius: 4px; font-size: 11.5px; line-height: 1.6; }
+.ai-replace > span { display: block; font-size: 10.5px; color: var(--blue-text); margin-bottom: 2px; }
+.ai-apply-error { margin: 8px 0 0; font-size: 11.5px; color: var(--red); line-height: 1.6; }
 .ai-suggestion-actions { display: flex; gap: 10px; margin-top: 8px; }
 .ai-suggestion-actions .text-btn { font-size: 11.5px; }
 .ai-suggestion-actions .text-btn.adopted { color: var(--green, #16a34a); font-weight: 600; }

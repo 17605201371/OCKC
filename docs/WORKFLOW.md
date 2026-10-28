@@ -91,7 +91,12 @@ Flyway V4 新增 notification、review_draft 及索引，不改写既有提交�
 - `DELETE /api/submissions/{sid}/review-draft`：JSON revision，保护并发删除。
 - 作业列表新增 server_now / due_status；批改队列新增本人 review_draft_updated_at，不返回评分草稿正文。
 
-AI 仍为教师按作业控制的入口与状态展示。本次未接入模型服务，不生成 AI 建议或 AI 正式评分。
+AI 反馈已接入模型服务（`step-3.7-flash`，OpenAI 兼容 `/chat/completions`），入口仍由教师按作业开关，生成结果只作修订建议，不进入正式评分。
+
+- 该模型关不掉推理，`max_tokens` 给到 16000 才能跑完「推理 + JSON」；额度不足时 `finish_reason=length`、正文为空，接口返回 FAILED。
+- 建议按 entry 存、不按 revision 过滤：采纳会改正文、revision 随之变化，按 revision 查会让其余建议消失。
+- 「采纳并替换」用 `quote` 在段落纯文本里定位、用 `replacement` 覆盖该范围；`replacement` 里的 `$...$` 与「被替换范围内出现过的公式」都还原成 inlineMath 节点；quote 边界切在公式中间时放弃自动替换，提示手动改。
+- 撤销快照只在当前页面有效，刷新后按钮退回「已替换」；替换与撤销都会触发草稿自动保存。
 
 ## 作业类型与证据核验策略
 
