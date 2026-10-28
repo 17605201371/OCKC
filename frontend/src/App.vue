@@ -234,7 +234,7 @@ function reviewSnapshot() {
   };
 }
 function applyReviewData(data:any) { grading.value = allItems.map(i => ({...i,score:data.items?.find((x:any)=>x.code===i.code)?.score ?? null,status:data.items?.find((x:any)=>x.code===i.code)?.status || 'SCORED',reason:data.items?.find((x:any)=>x.code===i.code)?.reason || ''})); summary.value=data.summary || '';gateReason.value=data.gateReason || '';initStepScores(data.stepScores); }
-const review = useReviewDraft(reviewSnapshot, applyReviewData, () => page.value === 'grading' && isTeacher.value, () => me.value?.id);
+// review 的声明在下方 submitLimit 之后，原因见那里的注释。
 const reviewPublishing=ref(false);
 
 // ---- 步骤型作业：二级标题即一步，逐步给分并标注问题类型 ----
@@ -358,6 +358,11 @@ const currentAssignment = computed(() =>
 );
 // 提交次数上限（0 = 不限）：用于在编辑器里提示剩余版本，并在用尽后禁用提交。
 const submitLimit = computed(() => Number(currentAssignment.value?.max_submissions ?? 0));
+// review 必须放在这里：useReviewDraft 内部 watch(serialize) 会在 setup 阶段立刻求值一次
+// reviewSnapshot，而它读 isStepAssignment → currentAssignment / gradingAssignment。
+// 只要这三个 computed 还没初始化就调用，就会撞 TDZ；异常被 Vue 吞掉、watch 注册失败，
+// 表现是「改分后不显示未保存、也不自动保存」，评分草稿会静默丢失。
+const review = useReviewDraft(reviewSnapshot, applyReviewData, () => page.value === 'grading' && isTeacher.value, () => me.value?.id);
 const submittedCount = computed(() => (entry.value?.versions || []).length);
 const submitExhausted = computed(
   () => submitLimit.value > 0 && submittedCount.value >= submitLimit.value,
