@@ -2,7 +2,7 @@
 // 知识社区：从 App.vue 拆出。数据（本课程已发布条目、待审核条目）仍由 App 统一加载后传入；
 // 本组件只负责筛选、排序、范围切换和展示。切到「我的课程」「全站公开」时自己按范围读取，不改写 App 的数据。
 import { ref, computed, watch, onBeforeUnmount } from "vue";
-import { PenLine, Plus, Search, MessageSquare, Library } from "lucide-vue-next";
+import { History, PenLine, Plus, Search, MessageSquare, Library } from "lucide-vue-next";
 import { api } from "./api";
 
 const props = defineProps<{
@@ -17,6 +17,7 @@ const props = defineProps<{
   myWorkCount: number;
 }>();
 const emit = defineEmits<{
+  "publication-records": [];
   "open-version": [submissionId: number];
   "pub-action": [publicationId: number, action: string];
   "new-free-post": [];
@@ -166,6 +167,9 @@ const openVersion = (sid: number) => emit("open-version", sid);
         @click="emit('new-free-post')"
       >
         写知识贴 <PenLine :size="15" />
+      </button>
+      <button class="btn secondary" @click="emit('publication-records')">
+        <History :size="15" />{{ isTeacher ? '发布审核与记录' : '我的发布记录' }}
       </button>
       <button class="btn secondary" @click="emit('go', 'assignments')">
         去作业 <Plus :size="15" />

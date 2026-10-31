@@ -1581,6 +1581,7 @@ onBeforeUnmount(() => {
           :my-work-count="myWork.length"
           @open-version="openVersion($event)"
           @pub-action="pubAction"
+          @publication-records="publicationManager?.list()"
           @new-free-post="newFreePost"
           @go="go"
           @notify="notify"
