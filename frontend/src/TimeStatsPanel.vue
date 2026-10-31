@@ -46,7 +46,7 @@ const rules = computed(() => data.value?.rules || { short_ratio: 0.25, short_abs
   <section class="time-stats card" aria-labelledby="time-stats-title">
     <header class="time-stats-head">
       <button class="time-stats-toggle" :aria-expanded="open" @click="open = !open">
-        <span class="stat-icon-inline tone-sky"><Clock :size="16" /></span>
+        <span class="stat-icon-inline"><Clock :size="16" /></span>
         <h2 id="time-stats-title">用时统计</h2>
         <ChevronDown :size="16" :class="{ flipped: !open }" />
       </button>

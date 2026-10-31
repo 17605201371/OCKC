@@ -1,100 +1,73 @@
 /*
- * 视觉打磨层（2026-10-28）。
- * 在 style.css 之后加载，只调整颜色层次、阴影、圆角和字重，不改布局与尺寸（44px 点击区保持不变）。
+ * 视觉层（2026-10-31 第三版：简约）。在 style.css 之后加载。
+ * 原则：浅色中性底、白色卡片、细边框、极淡阴影；只有一种强调色（靛蓝），
+ * 只用在当前位置、主按钮和链接上。不用渐变、发光和彩色大色块。
+ * 只改颜色、边框、圆角、阴影和字重，不改布局与尺寸（44px 点击区保持不变）。
  * 要整体回退，删掉 main.ts 里对本文件的 import 即可。
  */
 
 :root {
-  --workspace: #f4f5fa;
-  --elev-1: 0 1px 2px rgb(22 28 64 / 4%), 0 2px 8px rgb(22 28 64 / 4%);
-  --elev-2: 0 1px 3px rgb(22 28 64 / 5%), 0 12px 32px rgb(22 28 64 / 8%);
-  --brand-grad: linear-gradient(135deg, #7465ff 0%, #5546ef 55%, #4836dd 100%);
-  --brand-glow: 0 1px 2px rgb(85 70 239 / 24%), 0 6px 16px rgb(85 70 239 / 22%);
-  --focus-ring: 0 0 0 3px rgb(85 70 239 / 16%);
-  --card-radius: 14px;
+  --workspace: #f7f8fa;
+  --line-soft: #eceef2;
+  --border: #e3e6ec;
+  --elev-1: 0 1px 2px rgb(16 24 40 / 4%);
+  --elev-2: 0 2px 10px rgb(16 24 40 / 6%);
+  --focus-ring: 0 0 0 3px rgb(79 70 229 / 14%);
+  --card-radius: 12px;
 }
 :root[data-theme="dark"] {
-  --workspace: #161616;
-  --elev-1: 0 1px 2px rgb(0 0 0 / 35%);
-  --elev-2: 0 1px 3px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 40%);
-  --brand-grad: linear-gradient(135deg, #c3cbfe 0%, #a5b4fc 100%);
-  --brand-glow: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 16px rgb(165 180 252 / 14%);
-  --focus-ring: 0 0 0 3px rgb(165 180 252 / 24%);
+  --workspace: #191919;
+  --elev-1: none;
+  --elev-2: 0 2px 10px rgb(0 0 0 / 30%);
+  --focus-ring: 0 0 0 3px rgb(165 180 252 / 22%);
 }
 
-/* ---- 外壳：浅灰蓝工作区 + 白色卡片，靠层次而不是边框区分区域 ---- */
+/* ---- 外壳 ---- */
 .main { background: var(--workspace); }
 .topbar,
 .creation-workspace .topbar {
-  background: color-mix(in srgb, var(--paper) 80%, transparent);
-  -webkit-backdrop-filter: saturate(1.6) blur(12px);
-  backdrop-filter: saturate(1.6) blur(12px);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
   border-bottom-color: var(--line-soft);
 }
 
-.sidebar {
-  background: var(--paper);
-  border-right-color: var(--line-soft);
-}
-.sidebar nav > button {
-  border-radius: 10px;
-  transition: background 0.15s, color 0.15s;
-}
+.sidebar { background: var(--paper); border-right-color: var(--line-soft); }
+.sidebar nav > button { border-radius: 8px; transition: background 0.15s, color 0.15s; }
 .sidebar nav > button.selected {
-  background: var(--blue-soft);
+  background: var(--surface);
   border-color: transparent;
-  color: var(--blue-text);
+  color: var(--text);
   font-weight: 600;
 }
 .sidebar nav > button.selected > svg { color: var(--blue); }
 .course-nav > button.current { background: var(--surface); }
-.workspace-caption {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  color: var(--subtle);
-}
+.workspace-caption { font-size: 12px; color: var(--subtle); }
 .local-note { font-size: 12px; color: var(--subtle); }
 .account { border-top-color: var(--line-soft); }
-.avatar {
-  background: var(--blue-soft);
-  color: var(--blue-text);
-  font-weight: 600;
-}
+.avatar { background: var(--surface-2); color: var(--muted); font-weight: 600; }
+:root .brand-icon,
+:root[data-theme="dark"] .brand-icon { background: var(--blue); color: #fff; box-shadow: none; border-radius: 9px; }
+:root[data-theme="dark"] .brand-icon { color: #17172a; }
 
-.command-trigger {
-  background: var(--surface);
-  border-color: transparent;
-  border-radius: 10px;
-  transition: border-color 0.15s, background 0.15s;
-}
-.command-trigger:hover { background: var(--paper); border-color: var(--border); }
+.command-trigger { background: var(--surface); border-color: transparent; border-radius: 8px; }
+.command-trigger:hover { border-color: var(--border); }
 .role-label {
-  background: var(--blue-soft);
-  border-color: transparent;
-  border-radius: 999px;
-  color: var(--blue-text);
+  background: transparent;
+  border-color: var(--border);
+  border-radius: 6px;
+  color: var(--muted);
   font-size: 13px;
-  font-weight: 600;
-  padding: 2px 10px;
+  padding: 2px 8px;
 }
 .privacy { font-size: 13px; }
 
 /* ---- 页面标题 ---- */
 .page-heading .eyebrow,
-.page-heading .page-kicker {
-  color: var(--blue-text);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-}
-.page-heading h1 {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
+.page-heading .page-kicker { color: var(--subtle); font-size: 13px; font-weight: 500; }
+.page-heading h1 { font-size: 28px; font-weight: 650; letter-spacing: -0.01em; }
 
-/* ---- 卡片 ---- */
+/* ---- 卡片：白底、细边、几乎看不出的阴影 ---- */
 .card,
 .list-card,
 .dashboard-card,
@@ -113,100 +86,61 @@
   border-radius: var(--card-radius);
   box-shadow: var(--elev-1);
 }
-.evidence-stats > button {
-  transition: box-shadow 0.18s, border-color 0.18s, transform 0.18s;
-}
-.evidence-stats > button:hover {
-  border-color: color-mix(in srgb, var(--blue) 22%, var(--line-soft));
-  box-shadow: var(--elev-2);
-  transform: translateY(-1px);
-}
-.review-stats > article strong,
-.member-stats > article strong,
-.evidence-stats > button strong {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-}
 
-/* 直接放在工作区底色上的控件：原来用 --surface 底色，和新底色几乎一样，改成纸面色 */
-.tabs button span {
-  background: var(--paper);
-  border: 1px solid var(--line-soft);
-  border-radius: 999px;
-  padding: 0 7px;
-  font-size: 12px;
+/* 统计卡：图标和数字都用中性色，靠数字大小区分层级 */
+.stat-card { position: relative; }
+.stat-card > strong,
+.review-stats .stat-card strong,
+.evidence-stats .stat-card strong,
+.member-stats .stat-card strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.stat-icon {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--subtle);
+  font-style: normal;
 }
-.tabs .active span {
-  background: var(--blue-soft);
-  border-color: transparent;
-  color: var(--blue-text);
-}
-.comm-scopes {
-  background: var(--paper);
-  border-color: var(--line-soft);
-  box-shadow: var(--elev-1);
-}
-.comm-scope.on {
-  background: var(--blue-soft);
-  color: var(--blue-text);
-  box-shadow: none;
-}
-.evidence-search { background: var(--paper); border-radius: 10px; }
-.review-workbench .small-label {
-  background: var(--paper);
-  border-color: var(--line-soft);
-  border-radius: 10px;
-}
+.progress-stats article > span svg { color: var(--subtle); }
+.evidence-stats > button { transition: border-color 0.15s; }
+.evidence-stats > button:hover { border-color: var(--border); }
+.evidence-stats > button.active,
+.evidence-stats > button.stat-card.active { border-color: var(--blue); background: var(--paper); box-shadow: inset 0 0 0 1px var(--blue); }
 
-/* 首页主卡：唯一带品牌色渐变的区域，让视线先落在「当前待办」上 */
-.workspace-hero {
-  background:
-    radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--blue-soft) 90%, transparent) 0%, transparent 52%),
-    radial-gradient(80% 120% at 100% 100%, color-mix(in srgb, var(--blue-soft) 45%, transparent) 0%, transparent 60%),
-    var(--paper);
-  border-color: color-mix(in srgb, var(--blue) 12%, var(--line-soft));
-  box-shadow: var(--elev-2);
-}
+/* 放在工作区底色上的小控件改成纸面色，免得和底色混在一起 */
+.tabs button span { background: var(--surface); border-radius: 999px; padding: 0 7px; font-size: 12px; }
+.tabs .active span { color: var(--blue-text); }
+.comm-scopes { background: var(--paper); border-color: var(--line-soft); }
+.comm-scope.on { background: var(--surface); color: var(--text); box-shadow: none; }
+.evidence-search { background: var(--paper); border-radius: 8px; }
+.review-workbench .small-label { background: var(--paper); border-color: var(--line-soft); border-radius: 8px; }
 
-/* 文件与作品图标：从灰底换成品牌浅色底 */
+/* 文件与作品图标 */
 .file-icon,
 .square-icon,
-.work-thumb {
-  background: var(--blue-soft);
-  border-color: transparent;
-  color: var(--blue);
-}
-.todo-icon { color: var(--blue); }
+.work-thumb { background: var(--surface); border-color: transparent; color: var(--subtle); }
+
+/* 列表悬停：只加一层很浅的底色 */
+.review-row,
+.work-row,
+.comm-row { transition: background 0.12s; }
+.review-row:hover,
+.work-row:hover,
+.comm-row:hover { background: var(--surface); }
 
 /* ---- 按钮 ---- */
-.btn {
-  border-radius: 10px;
-  font-weight: 550;
-  box-shadow: 0 1px 2px rgb(22 28 64 / 5%);
-  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s, filter 0.15s;
-}
-.btn:hover {
-  background: var(--paper);
-  border-color: color-mix(in srgb, var(--blue) 28%, var(--border));
-  box-shadow: 0 2px 8px rgb(22 28 64 / 8%);
-}
-.btn:active:not(:disabled) { transform: translateY(1px); }
-.btn.primary,
-.btn.primary:hover {
-  background: var(--brand-grad);
-  border-color: transparent;
-  box-shadow: var(--brand-glow);
-}
-.btn.primary:hover { filter: brightness(1.06) saturate(1.05); }
-.btn:disabled,
-.btn:disabled:hover { box-shadow: none; transform: none; filter: none; }
+.btn { border-radius: 8px; font-weight: 550; transition: background 0.15s, border-color 0.15s; }
+.btn:hover { background: var(--surface); border-color: var(--border); }
+.btn.primary { background: var(--blue); border-color: var(--blue); box-shadow: none; }
+.btn.primary:hover { background: var(--blue-hover); border-color: var(--blue-hover); }
 /* 面板开关按钮的「已打开」状态：原来是写死的浅灰边框，深色模式下会变成刺眼的白框 */
 .btn.pressed,
-.btn.pressed:hover {
-  background: var(--blue-soft);
-  border-color: color-mix(in srgb, var(--blue) 30%, var(--border));
-  color: var(--blue-text);
-}
+.btn.pressed:hover { background: var(--surface); border-color: var(--border); color: var(--text); }
 
 input,
 select,
@@ -216,291 +150,33 @@ select:focus,
 textarea:focus { box-shadow: var(--focus-ring); }
 
 /* ---- 登录页 ---- */
-.login-story {
-  position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(60% 50% at 12% 18%, rgb(116 101 255 / 16%) 0%, transparent 70%),
-    radial-gradient(50% 45% at 88% 86%, rgb(20 184 166 / 10%) 0%, transparent 70%),
-    radial-gradient(40% 40% at 78% 28%, rgb(236 72 153 / 7%) 0%, transparent 70%),
-    var(--side);
-  border-right-color: var(--line-soft);
-}
-.login-copy h1 {
-  font-weight: 750;
-  letter-spacing: -0.03em;
-  background: linear-gradient(115deg, var(--text) 35%, var(--blue) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-.login-copy .eyebrow { color: var(--blue-text); font-weight: 600; letter-spacing: 0.04em; }
-.login-principles > span {
-  padding: 6px 12px;
-  border: 1px solid var(--line-soft);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--paper) 75%, transparent);
-  box-shadow: var(--elev-1);
-}
+.login-story { background: var(--side); border-right-color: var(--line-soft); }
+.login-copy .eyebrow { color: var(--subtle); }
 .login-form { background: var(--workspace); }
 .login-form form {
-  max-width: 420px;
-  padding: 40px 40px 32px;
+  max-width: 400px;
+  padding: 36px 36px 28px;
   background: var(--paper);
   border: 1px solid var(--line-soft);
-  border-radius: 20px;
+  border-radius: 16px;
   box-shadow: var(--elev-2);
 }
-.login-form form > .eyebrow { color: var(--blue-text); font-weight: 600; }
-.login-form .form-note { border-top-color: var(--line-soft); font-size: 13px; }
+.login-form form > .eyebrow { color: var(--subtle); }
 
-@media (prefers-reduced-motion: reduce) {
-  .btn,
-  .evidence-stats > button { transition: none; }
-  .btn:active:not(:disabled),
-  .evidence-stats > button:hover { transform: none; }
-}
+/* 社区状态筛选：选中项原来是整块黑底，改成浅底 + 强调色字 */
+.comm-chip.on { background: var(--blue-soft); border-color: transparent; color: var(--blue-text); font-weight: 600; }
 
-/* 停留时长 */
+/* ---- 社区条目评分 ---- */
+.comm-score b { font-weight: 650; }
+.comm-bars i { opacity: 0.55; }
+
+/* ---- 停留时长 ---- */
 .progress-dwell { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
 .review-dwell { color: var(--subtle); font-size: 12px; }
-
-/* =====================================================================
- * 改版第二轮（2026-10-31）：深色侧栏、首页渐变横幅、彩色统计卡、
- * 社区条目封面与评分圆环、列表悬停高亮。
- * ===================================================================== */
-
-/* ---- 1. 深靛蓝侧栏 ---- */
-.sidebar {
-  --side-ink: rgb(255 255 255 / 92%);
-  --side-muted: rgb(224 226 255 / 62%);
-  --side-line: rgb(255 255 255 / 10%);
-  background:
-    radial-gradient(120% 50% at 0% 0%, rgb(124 108 255 / 32%) 0%, transparent 60%),
-    linear-gradient(180deg, #1f1b4d 0%, #17153a 100%);
-  border-right-color: transparent;
-  color: var(--side-ink);
-}
-:root[data-theme="dark"] .sidebar {
-  background:
-    radial-gradient(120% 50% at 0% 0%, rgb(124 108 255 / 18%) 0%, transparent 60%),
-    linear-gradient(180deg, #16142e 0%, #100f22 100%);
-  border-right-color: rgb(255 255 255 / 6%);
-}
-.sidebar .brand { color: var(--side-ink); }
-.sidebar .brand-copy > span { color: var(--side-muted); }
-:root[data-theme="dark"] .sidebar .brand-icon,
-.sidebar .brand-icon {
-  background: linear-gradient(145deg, #8b7dff, #5b4bf0);
-  color: #fff;
-  box-shadow: 0 4px 14px rgb(91 75 240 / 45%);
-}
-.sidebar nav > button { color: var(--side-muted); }
-.sidebar nav > button:hover { background: rgb(255 255 255 / 7%); color: var(--side-ink); }
-.sidebar nav > button.selected,
-:root[data-theme="dark"] .sidebar nav > button.selected {
-  background: rgb(255 255 255 / 13%);
-  color: #fff;
-  box-shadow: inset 3px 0 0 #a5b4fc;
-}
-.sidebar nav > button.selected > svg { color: #c7d2fe; }
-.sidebar nav small,
-:root[data-theme="dark"] .sidebar nav small { background: #f472b6; color: #fff; }
-.sidebar .workspace-caption { color: rgb(224 226 255 / 45%); }
-.sidebar .course-add { background: transparent; border-color: var(--side-line); color: var(--side-muted); }
-.sidebar .course-add:hover { background: rgb(255 255 255 / 10%); color: #fff; border-color: rgb(255 255 255 / 25%); }
-.sidebar .course-nav > button.current { background: rgb(255 255 255 / 9%); color: #fff; }
-.sidebar.collapsed nav > button .course-initial { background: rgb(255 255 255 / 12%); color: #e0e7ff; }
-.sidebar .account { border-top-color: var(--side-line); }
-.sidebar .account strong { color: var(--side-ink); }
-.sidebar .account span:not(.avatar) { color: var(--side-muted); }
-.sidebar .account .icon-btn { color: var(--side-muted); }
-.sidebar .account .icon-btn:hover { color: #fff; background: rgb(255 255 255 / 9%); }
-.sidebar .avatar,
-:root[data-theme="dark"] .sidebar .avatar { background: rgb(255 255 255 / 14%); color: #fff; }
-.sidebar :where(button, a):focus-visible { outline-color: #a5b4fc; }
-
-/* ---- 2. 首页「当前待办」渐变横幅 ---- */
-.workspace-hero,
-:root[data-theme="dark"] .workspace-hero {
-  position: relative;
-  overflow: hidden;
-  color: #fff;
-  border: 0;
-  background:
-    radial-gradient(60% 120% at 100% 0%, rgb(236 72 153 / 35%) 0%, transparent 60%),
-    radial-gradient(50% 90% at 0% 100%, rgb(56 189 248 / 28%) 0%, transparent 60%),
-    linear-gradient(120deg, #4f46e5 0%, #6d3ae6 55%, #7c3aed 100%);
-  box-shadow: 0 18px 40px rgb(79 70 229 / 28%);
-}
-:root[data-theme="dark"] .workspace-hero { box-shadow: 0 18px 40px rgb(0 0 0 / 45%); }
-.workspace-hero::after {
-  content: "";
-  position: absolute;
-  right: -60px;
-  top: -80px;
-  width: 260px;
-  height: 260px;
-  border-radius: 50%;
-  border: 40px solid rgb(255 255 255 / 6%);
-  pointer-events: none;
-}
-.workspace-hero > * { position: relative; z-index: 1; }
-.workspace-hero .hero-context,
-.workspace-hero .hero-meta { color: rgb(255 255 255 / 78%); }
-.workspace-hero .course-dot { background: #fff; box-shadow: 0 0 0 3px rgb(255 255 255 / 25%); }
-.workspace-hero .deadline-badge { background: rgb(255 255 255 / 18%); color: #fff; }
-.workspace-hero .deadline-badge.due_soon { background: #fde68a; color: #92400e; }
-.workspace-hero h2 { color: #fff; font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
-.workspace-hero .btn.primary,
-.workspace-hero .btn.primary:hover,
-:root[data-theme="dark"] .workspace-hero .btn.primary {
-  background: #fff;
-  color: #4338ca;
-  box-shadow: 0 6px 18px rgb(30 27 75 / 25%);
-}
-.workspace-hero .btn.secondary,
-.workspace-hero .btn.secondary:hover {
-  background: rgb(255 255 255 / 14%);
-  border-color: rgb(255 255 255 / 30%);
-  color: #fff;
-  box-shadow: none;
-}
-.workspace-hero .btn.secondary:hover { background: rgb(255 255 255 / 22%); }
-.workspace-hero .text-btn { color: #fff; }
-.workspace-hero .hero-summary { border-left-color: rgb(255 255 255 / 20%); }
-.workspace-hero .muted { color: rgb(255 255 255 / 72%); }
-.workspace-hero .phase-grid li { color: rgb(255 255 255 / 70%); }
-.workspace-hero .phase-index { border-color: rgb(255 255 255 / 35%); }
-.workspace-hero .phase-grid .done { color: #bbf7d0; }
-.workspace-hero .phase-grid .done .phase-index { background: rgb(187 247 208 / 20%); color: #bbf7d0; }
-.workspace-hero .phase-grid .current { color: #fff; }
-.workspace-hero .phase-grid .current .phase-index,
-:root[data-theme="dark"] .workspace-hero .phase-grid .current .phase-index { background: #fff; border-color: #fff; color: #4338ca; }
-.workspace-hero .hero-quality { border-top-color: rgb(255 255 255 / 20%); }
-.workspace-hero .hero-quality strong { color: #fff; font-size: 46px; font-weight: 750; }
-.workspace-hero .hero-quality > div > span { color: rgb(255 255 255 / 70%); }
-
-/* ---- 3. 彩色统计卡 ---- */
-.tone-indigo  { --tone: #5546ef; --tone-soft: #eef0ff; }
-.tone-sky     { --tone: #0284c7; --tone-soft: #e0f2fe; }
-.tone-emerald { --tone: #059669; --tone-soft: #d1fae5; }
-.tone-amber   { --tone: #d97706; --tone-soft: #fef3c7; }
-.tone-rose    { --tone: #e11d48; --tone-soft: #ffe4e6; }
-.tone-slate   { --tone: #64748b; --tone-soft: #f1f5f9; }
-:root[data-theme="dark"] .tone-indigo  { --tone: #a5b4fc; --tone-soft: rgb(165 180 252 / 14%); }
-:root[data-theme="dark"] .tone-sky     { --tone: #7dd3fc; --tone-soft: rgb(125 211 252 / 14%); }
-:root[data-theme="dark"] .tone-emerald { --tone: #6ee7b7; --tone-soft: rgb(110 231 183 / 14%); }
-:root[data-theme="dark"] .tone-amber   { --tone: #fcd34d; --tone-soft: rgb(252 211 77 / 14%); }
-:root[data-theme="dark"] .tone-rose    { --tone: #fda4af; --tone-soft: rgb(253 164 175 / 14%); }
-:root[data-theme="dark"] .tone-slate   { --tone: #cbd5e1; --tone-soft: rgb(203 213 225 / 12%); }
-
-.stat-card {
-  position: relative;
-  overflow: hidden;
-  transition: box-shadow 0.18s, transform 0.18s, border-color 0.18s;
-}
-.stat-card::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 3px;
-  background: var(--tone);
-  opacity: 0.85;
-}
-.stat-card:hover { box-shadow: var(--elev-2); transform: translateY(-1px); }
-.stat-card > strong,
-.review-stats .stat-card strong,
-.evidence-stats .stat-card strong,
-.member-stats .stat-card strong { color: var(--tone); }
-.stat-icon {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--tone-soft);
-  color: var(--tone);
-  font-style: normal;
-}
-.progress-stats .stat-card > span svg {
-  box-sizing: content-box;
-  padding: 7px;
-  border-radius: 9px;
-  background: var(--tone-soft);
-  color: var(--tone);
-}
-.evidence-stats > button.stat-card.active {
-  border-color: var(--tone);
-  background: color-mix(in srgb, var(--tone-soft) 70%, var(--paper));
-}
-
-/* ---- 4. 列表悬停高亮 ---- */
-.review-row,
-.work-row,
-.comm-row,
-.progress-entry,
-.evidence-card,
-.assignment-card { transition: background 0.15s, box-shadow 0.18s, border-color 0.18s; }
-.review-row:hover,
-.work-row:hover,
-.comm-row:hover { background: color-mix(in srgb, var(--blue-soft) 55%, var(--paper)); }
-.progress-entry:hover,
-.evidence-card:hover {
-  box-shadow: var(--elev-2);
-  border-color: color-mix(in srgb, var(--blue) 18%, var(--line-soft));
-}
-.assignment-card:hover { background: color-mix(in srgb, var(--blue-soft) 35%, var(--paper)); }
-
-/* ---- 5. 社区条目：封面色块 + 评分圆环 ---- */
-.comm-row { grid-template-columns: 76px minmax(0, 1fr) auto; align-items: center; padding: 18px 22px; }
-.comm-row h3 { font-size: 17px; }
-.comm-cover {
-  width: 76px;
-  height: 76px;
-  border-radius: 16px;
-  display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: 30px;
-  font-weight: 750;
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 12%), 0 6px 16px rgb(22 28 64 / 12%);
-}
-.cover-tone-0 { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
-.cover-tone-1 { background: linear-gradient(135deg, #0ea5e9, #6366f1); }
-.cover-tone-2 { background: linear-gradient(135deg, #10b981, #0ea5e9); }
-.cover-tone-3 { background: linear-gradient(135deg, #f59e0b, #ec4899); }
-.cover-tone-4 { background: linear-gradient(135deg, #ec4899, #8b5cf6); }
-.comm-score { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
-.comm-ring {
-  --ring: var(--blue);
-  width: 62px;
-  height: 62px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  background: conic-gradient(var(--ring) calc(var(--p) * 1%), var(--line-soft) 0);
-}
-.comm-ring.high { --ring: #10b981; }
-.comm-ring.low { --ring: #f59e0b; }
-.comm-ring b {
-  display: grid;
-  place-items: center;
-  width: 50px;
-  height: 50px;
-  border-radius: 50%;
-  background: var(--paper);
-  font-size: 16px;
-  font-weight: 700;
-}
-.comm-score .comm-bars { justify-content: center; margin-top: 2px; }
+.stat-icon-inline { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--surface); color: var(--subtle); }
 
 @media (prefers-reduced-motion: reduce) {
-  .stat-card,
-  .stat-card:hover { transition: none; transform: none; }
+  .btn, .evidence-stats > button, .review-row, .work-row, .comm-row { transition: none; }
 }
 
 /* ---- 用时统计（教学进展页） ---- */
@@ -510,7 +186,6 @@ textarea:focus { box-shadow: var(--focus-ring); }
 .time-stats-toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 36px; color: var(--text); }
 .time-stats-toggle h2 { font-size: 17px; }
 .time-stats-toggle svg.flipped { transform: rotate(-90deg); }
-.stat-icon-inline { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--tone-soft); color: var(--tone); }
 .time-stats-body { margin-top: 16px; }
 .time-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .time-kpis > div { padding: 12px 14px; border-radius: 12px; background: var(--surface); }
@@ -525,8 +200,8 @@ textarea:focus { box-shadow: var(--focus-ring); }
 .time-scatter .axis line { stroke: var(--line-soft); }
 .time-scatter .axis text { fill: var(--subtle); font-size: 11px; }
 .time-scatter .dot { fill: var(--blue); fill-opacity: 0.75; stroke: var(--paper); stroke-width: 2; cursor: pointer; }
-.time-scatter .dot.high { fill: #10b981; }
-.time-scatter .dot.low { fill: #f59e0b; }
+.time-scatter .dot.high { fill: var(--blue); fill-opacity: 0.9; }
+.time-scatter .dot.low { fill: var(--subtle); }
 .time-scatter .dot:hover, .time-scatter .dot:focus-visible { fill-opacity: 1; r: 8; outline: none; }
 .time-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
 .time-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; }

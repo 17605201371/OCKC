@@ -2147,9 +2147,6 @@ onBeforeUnmount(() => {
                   @click="openVersion(p.submission_id)"
                   @keydown.enter="openVersion(p.submission_id)"
                 >
-                  <div class="comm-cover" :class="'cover-tone-' + (Number(p.id) % 5)" aria-hidden="true">
-                    <span>{{ (p.title || '知').slice(0, 1) }}</span>
-                  </div>
                   <div class="comm-row-main">
                     <div class="comm-tags">
                       <span class="comm-tag" :class="commStatusOf(p).c">{{ commStatusOf(p).n }}</span>
@@ -2167,7 +2164,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="comm-score">
                     <template v-if="p.q_final != null">
-                      <div class="comm-ring" :class="{ high: Number(p.q_final) >= 90, low: Number(p.q_final) < 75 }" :style="{ '--p': Math.max(0, Math.min(100, Number(p.q_final))) }"><b>{{ number(p.q_final) }}</b></div><span>质量分</span>
+                      <b>{{ number(p.q_final) }}</b><span>质量分</span>
                       <div class="comm-bars">
                         <i
                           v-for="b in commBars(p)"
