@@ -2147,6 +2147,7 @@ onBeforeUnmount(() => {
                   @click="openVersion(p.submission_id)"
                   @keydown.enter="openVersion(p.submission_id)"
                 >
+                  <div class="comm-cover" :class="'cover-tone-' + (Number(p.id) % 5)" aria-hidden="true">{{ (p.title || '知').slice(0, 1) }}</div>
                   <div class="comm-row-main">
                     <div class="comm-tags">
                       <span class="comm-tag" :class="commStatusOf(p).c">{{ commStatusOf(p).n }}</span>
