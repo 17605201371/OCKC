@@ -40,7 +40,7 @@ public class RubricService {
  Map<String,Object> full(Map<String,Object> r){var m=snapshot(r);for(String k:List.of("id","version_no","state","revision","created_at","updated_at","enabled_at"))m.put(k,r.get(k));return m;}
  Map<String,Object> builtinFull(){var m=builtin();m.put("id",0);m.put("version_no",0);m.put("state","ENABLED");m.put("revision",0);return m;}
  @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ) public Map<String,Object> list(long cid,long uid){
-  String role=s.role(cid,uid);var c=course(cid,false);var rows=s.db.queryForList("SELECT id,version_no,state,revision,title,enabled_at FROM course_rubric WHERE course_id=?"+(role.equals("TEACHER")?"":" AND state='ENABLED'")+" ORDER BY version_no DESC",cid);
+  String role=s.role(cid,uid);var c=course(cid,false);var rows=s.db.queryForList("SELECT id,version_no,state,revision,title,enabled_at,updated_at FROM course_rubric WHERE course_id=?"+(role.equals("TEACHER")?"":" AND state='ENABLED'")+" ORDER BY version_no DESC",cid);
   var items=new ArrayList<Map<String,Object>>();for(var r:rows){r.put("code",code(s.id(r,"id")));items.add(r);}var base=new LinkedHashMap<String,Object>();base.put("id",0);base.put("code","four-dim-v1");base.put("title","四维基础量规");base.put("state","ENABLED");base.put("version_no",0);items.add(base);
   return Map.of("items",items,"catalogRevision",c.get("rubric_revision"),"defaultId",defaultId(c),"defaultCode",code(defaultId(c)),"role",role);
  }

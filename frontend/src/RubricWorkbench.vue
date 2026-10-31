@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { api } from './api';
+import { fmt } from './format';
 import RubricViewer from './RubricViewer.vue';
 
 const props = defineProps<{
@@ -20,13 +21,21 @@ const message = ref('');
 const busy = ref(false);
 const reason = ref('');
 const editing = ref(false);
+const confirming = ref(false);
+const savedAt = ref('');
 const openItems = ref<Record<string, boolean>>({});
+const bulk = ref<Record<string, any>>({});
+const usage = ref<Record<string, number>>({});
 let alive = true;
 
 const pinned = computed(() => !!props.initialSnapshot);
 const dirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== baseline.value);
 const editable = computed(() => props.teacher && !pinned.value && selected.value?.state === 'DRAFT');
+// 库里可能残留多份从没保存过的旧草稿；只有最新那份可以编辑，列表里也只列它。
 const draftItem = computed(() => (catalog.value?.items || []).find((r: any) => r.state === 'DRAFT') || null);
+const versions = computed(() => (catalog.value?.items || []).filter((r: any) => r.state !== 'DRAFT' || r.id === draftItem.value?.id));
+const live = computed(() => (catalog.value?.items || []).find((r: any) => r.id === catalog.value?.defaultId) || null);
+const viewingLive = computed(() => !!selected.value && selected.value.code === catalog.value?.defaultCode);
 const anchors: [string, string][] = [
   ['excellent', '优秀 90–100'],
   ['good', '良好 75–89'],
@@ -34,6 +43,22 @@ const anchors: [string, string][] = [
   ['improve', '待改进 0–59'],
 ];
 const key = (id: number) => `community-rubric-${props.userId}-${props.courseId}-${id}`;
+
+function day(d: string) {
+  return d ? new Date(d).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '';
+}
+/** 版本的可读名：内置版本 / v3 草稿 · 10/31 修改 / v2 已启用 · 10/26 启用。 */
+function versionLabel(r: any) {
+  if (!r) return '';
+  if (Number(r.id) === 0) return '内置版本';
+  return r.state === 'DRAFT'
+    ? `v${r.version_no} 草稿${r.updated_at ? ' · ' + day(r.updated_at) + ' 修改' : ''}`
+    : `v${r.version_no} 已启用${r.enabled_at ? ' · ' + day(r.enabled_at) + ' 启用' : ''}`;
+}
+function optionLabel(r: any) {
+  return `${versionLabel(r)} — ${r.title}`;
+}
+const selectedRow = computed(() => (catalog.value?.items || []).find((r: any) => r.code === selected.value?.code) || selected.value);
 
 /** 四维：代码固定，名称 / 说明 / 权重可编辑。 */
 const dimensions = computed<any[]>(() => {
@@ -45,17 +70,54 @@ const weightOk = computed(() => weightSum.value === 100);
 const allOpen = computed(() =>
   !!draft.value && draft.value.criteria.every((i: any) => openItems.value[i.code]),
 );
+const state = computed(() =>
+  busy.value ? '正在保存…' : dirty.value ? '有未保存的修改' : savedAt.value ? `已保存 · ${fmt(savedAt.value)}` : '未修改',
+);
 function itemsOf(code: string) {
   return (draft.value?.criteria || []).filter((i: any) => String(i.code).startsWith(code));
 }
+function dimOpen(code: string) {
+  const items = itemsOf(code);
+  return items.length > 0 && items.every((i: any) => openItems.value[i.code]);
+}
 function toggleItem(code: string) {
   openItems.value = { ...openItems.value, [code]: !openItems.value[code] };
+}
+function toggleDim(code: string) {
+  const next = !dimOpen(code);
+  const map = { ...openItems.value };
+  for (const i of itemsOf(code)) map[i.code] = next;
+  openItems.value = map;
 }
 function toggleAll() {
   const next = !allOpen.value;
   const map: Record<string, boolean> = {};
   for (const i of draft.value.criteria) map[i.code] = next;
   openItems.value = map;
+}
+function preview(i: any) {
+  const text = String(i.description || '').trim();
+  return text.length > 42 ? text.slice(0, 42) + '…' : text;
+}
+// 统一设置某个维度的四档描述：先带出各项相同的写法，填好后一次写进本维度所有指标。
+function toggleBulk(code: string) {
+  if (bulk.value[code]) {
+    const { [code]: _, ...rest } = bulk.value;
+    bulk.value = rest;
+    return;
+  }
+  const items = itemsOf(code);
+  const row: Record<string, string> = {};
+  for (const [k] of anchors) row[k] = items.every((i: any) => i[k] === items[0]?.[k]) ? items[0]?.[k] || '' : '';
+  bulk.value = { ...bulk.value, [code]: row };
+}
+function applyBulk(code: string) {
+  const row = bulk.value[code];
+  if (!row) return;
+  for (const i of itemsOf(code)) for (const [k] of anchors) if (String(row[k] || '').trim()) i[k] = row[k].trim();
+  const { [code]: _, ...rest } = bulk.value;
+  bulk.value = rest;
+  message.value = `已把四档描述写入 ${code} 维度的 ${itemsOf(code).length} 项指标，保存后生效。`;
 }
 
 function payload() {
@@ -126,12 +188,24 @@ async function fetchCatalog() {
   if (alive) catalog.value = data;
 }
 
+// 「几份作业在用」只是提示，读取失败不影响量规本身。
+async function fetchUsage() {
+  if (!props.teacher) return;
+  try {
+    const rows = await api(`/courses/${props.courseId}/assignments`);
+    const map: Record<string, number> = {};
+    for (const a of rows || []) if (a.rubric_version) map[a.rubric_version] = (map[a.rubric_version] || 0) + 1;
+    if (alive) usage.value = map;
+  } catch {}
+}
+
 function setSelected(data: any) {
   selected.value = data;
   draft.value = JSON.parse(JSON.stringify(data));
   baseline.value = JSON.stringify(draft.value);
 }
 
+// 打开页面时显示正在生效的版本；未启用的草稿只在旁边提示，不默认展示。
 async function load() {
   await task(async () => {
     await fetchCatalog();
@@ -141,12 +215,10 @@ async function load() {
       draft.value = null;
       return;
     }
-    const items = catalog.value?.items || [];
-    const draftRow = props.teacher ? items.find((r: any) => r.state === 'DRAFT') : null;
-    const code = draftRow ? draftRow.code : catalog.value.defaultCode;
-    const data = await api(`/courses/${props.courseId}/rubrics/${code}`);
+    const data = await api(`/courses/${props.courseId}/rubrics/${catalog.value.defaultCode}`);
     if (alive) setSelected(data);
   });
+  void fetchUsage();
 }
 
 async function choose(code: string) {
@@ -167,21 +239,18 @@ function onVersionChange(event: Event) {
   void choose(code);
 }
 
-/** forceNew=true 表示「新建修订版本」：始终基于已启用版本起一份新草稿。 */
-async function startEdit(forceNew = false) {
+/** 唯一的编辑入口：有草稿就打开草稿，没有就以当前查看的已启用版本为底新建一份。 */
+async function startEdit() {
   if (!props.teacher || pinned.value) return;
-  if (!forceNew && selected.value?.state === 'DRAFT') {
-    setSelected(selected.value);
-    editing.value = true;
-    return;
-  }
   await task(async () => {
-    if (forceNew && draftItem.value) {
-      const data = await api(`/courses/${props.courseId}/rubrics/${draftItem.value.code}`);
+    if (draftItem.value) {
+      const data = selected.value?.code === draftItem.value.code
+        ? selected.value
+        : await api(`/courses/${props.courseId}/rubrics/${draftItem.value.code}`);
       if (!alive) return;
       setSelected(data);
       editing.value = true;
-      message.value = '已有未启用草稿，已为你打开；保存并启用后才能再新建修订。';
+      savedAt.value = '';
       return;
     }
     const sourceId = selected.value?.state === 'ENABLED' ? selected.value.id : catalog.value.defaultId;
@@ -189,33 +258,48 @@ async function startEdit(forceNew = false) {
     if (!alive) return;
     setSelected(data);
     editing.value = true;
+    savedAt.value = '';
     await fetchCatalog();
     message.value = '已创建修订草稿，启用后才影响新作业。';
   });
 }
 
+function weightError() {
+  error.value = `四个维度的权重合计必须为 100%，当前为 ${weightSum.value}%。`;
+}
+
+async function putDraft() {
+  const data = await api(`/courses/${props.courseId}/rubrics/${selected.value.id}`, 'PUT', payload());
+  if (!alive) return;
+  setSelected(data);
+  savedAt.value = new Date().toISOString();
+}
+
 async function save() {
-  if (!editable.value) return;
-  if (!weightOk.value) {
-    error.value = `四个维度的权重合计必须为 100%，当前为 ${weightSum.value}%。`;
-    return;
-  }
+  if (!editable.value || !dirty.value) return;
+  if (!weightOk.value) return weightError();
   await task(async () => {
-    const data = await api(`/courses/${props.courseId}/rubrics/${selected.value.id}`, 'PUT', payload());
+    await putDraft();
     if (!alive) return;
-    setSelected(data);
     await fetchCatalog();
     message.value = '草稿已保存。';
   });
 }
 
+function askEnable() {
+  if (!editable.value) return;
+  if (!weightOk.value) return weightError();
+  error.value = '';
+  confirming.value = true;
+}
+
+// 启用前如有未保存的修改，先保存再启用，老师不用分两步点。
 async function activate() {
   if (!editable.value || !reason.value.trim()) return;
-  if (!weightOk.value) {
-    error.value = `四个维度的权重合计必须为 100%，当前为 ${weightSum.value}%。`;
-    return;
-  }
+  if (!weightOk.value) return weightError();
   await task(async () => {
+    if (dirty.value) await putDraft();
+    if (!alive) return;
     const data = await api(`/courses/${props.courseId}/rubrics/${selected.value.id}/enable`, 'POST', {
       revision: selected.value.revision,
       catalogRevision: catalog.value.catalogRevision,
@@ -224,15 +308,19 @@ async function activate() {
     if (!alive) return;
     setSelected(data);
     editing.value = false;
+    confirming.value = false;
     reason.value = '';
     await fetchCatalog();
     message.value = '已启用，新作业默认使用此版本。';
   });
+  void fetchUsage();
 }
 
 function cancel() {
   if (dirty.value && !window.confirm('放弃未保存的修改？')) return;
   editing.value = false;
+  confirming.value = false;
+  bulk.value = {};
   setSelected(selected.value);
   message.value = '';
 }
@@ -257,56 +345,83 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="page rubric-workbench">
-    <header class="page-heading">
-      <div>
-        <h1>课程量规</h1>
-        <p v-if="editing">正在编辑草稿：四维权重与 11 项指标锚点都可调整，启用后只影响新作业。</p>
-        <p v-else>四维按权重加权，11 项二级指标固定。</p>
-      </div>
-      <div class="rw-head-actions">
-        <select
-          v-if="catalog && catalog.items.length > 1 && !pinned"
-          class="rw-version"
-          aria-label="查看量规版本"
-          :value="selected?.code"
-          :disabled="busy || editing"
-          @change="onVersionChange"
-        >
-          <option v-for="r in catalog.items" :key="r.code" :value="r.code">
-            {{ r.title }} · {{ r.state === 'DRAFT' ? '草稿' : '已启用' }}
-          </option>
-        </select>
-        <template v-if="props.teacher && !pinned && !editing">
-          <button class="btn secondary rw-new" :disabled="busy" @click="startEdit(true)">
-            ＋ 新建修订版本
+    <template v-if="!editing">
+      <header class="page-heading">
+        <div>
+          <h1>课程量规</h1>
+          <p v-if="pinned">正在查看这份提交绑定的量规快照，不随课程默认量规变化。</p>
+          <p v-else-if="live" class="rw-live">
+            当前生效：<strong>{{ live.title }}</strong> · {{ versionLabel(live) }}<template v-if="teacher"> · {{ usage[live.code] || 0 }} 份作业在用</template>
+          </p>
+          <p v-else>四维按权重加权，11 项二级指标固定。</p>
+        </div>
+        <div v-if="catalog && !pinned" class="rw-head-actions">
+          <label v-if="versions.length > 1" class="rw-version-label">
+            查看版本
+            <select class="rw-version" aria-label="查看量规版本" :value="selected?.code" :disabled="busy" @change="onVersionChange">
+              <option v-for="r in versions" :key="r.code" :value="r.code">{{ optionLabel(r) }}</option>
+            </select>
+          </label>
+          <button v-if="teacher" class="btn primary rw-edit" :disabled="busy" @click="startEdit">
+            {{ draftItem ? '继续编辑草稿' : '新建修订版本' }}
           </button>
-          <button class="btn primary rw-edit" :disabled="busy" @click="startEdit(false)">
-            {{ selected?.state === 'DRAFT' ? '继续编辑草稿' : '编辑量规' }}
-          </button>
-        </template>
-      </div>
-    </header>
+        </div>
+      </header>
 
-    <p v-if="error" class="notice danger" role="alert">{{ error }}</p>
-    <p v-if="message" class="notice" role="status">{{ message }}</p>
-    <p v-if="!catalog && !error">正在读取量规…</p>
+      <p v-if="error" class="notice danger" role="alert">{{ error }}</p>
+      <p v-if="message" class="notice" role="status">{{ message }}</p>
+      <p v-if="!catalog && !error">正在读取量规…</p>
+      <p v-if="teacher && !pinned && draftItem && selected?.code !== draftItem.code" class="rw-draft-note">
+        有一份未启用的草稿（{{ versionLabel(draftItem) }}），启用前不影响任何作业。
+        <button type="button" class="text-btn" :disabled="busy" @click="startEdit">继续编辑</button>
+      </p>
 
-    <template v-if="catalog">
-      <div v-if="!editing" class="rw-current">
+      <div v-if="catalog && selected" class="rw-current">
         <div class="rw-current-head">
-          <span class="comm-tag" :class="selected?.state === 'DRAFT' ? 'orange' : 'green'">
-            {{ selected?.state === 'DRAFT' ? '草稿 · 未启用' : '已启用' }}
-          </span>
-          <strong>{{ selected?.title }}</strong>
-          <span class="comm-meta-line">{{ selected?.code }}</span>
-          <span v-if="selected?.id === catalog.defaultId" class="comm-tag blue">新作业默认</span>
+          <strong>{{ selected.title }}</strong>
+          <span class="comm-meta-line">{{ pinned ? '提交时的量规快照' : versionLabel(selectedRow) }}</span>
+          <span v-if="pinned" class="comm-tag">当前提交绑定的量规快照</span>
+          <span v-else-if="viewingLive" class="comm-tag blue">当前生效</span>
+          <span v-else-if="selected.state === 'DRAFT'" class="comm-tag orange">草稿 · 未启用</span>
+          <span v-else class="comm-tag">已启用 · 非当前默认</span>
           <span class="grow"></span>
-          <span v-if="pinned" class="comm-meta-line">当前提交绑定的量规快照</span>
+          <span v-if="teacher && !pinned && !viewingLive && usage[selected.code]" class="comm-meta-line">{{ usage[selected.code] }} 份作业在用</span>
         </div>
         <RubricViewer :snapshot="selected" :source="pinned ? initialSource : undefined" />
       </div>
+    </template>
 
-      <form v-else class="rw-form" @submit.prevent="save">
+    <template v-else>
+      <header class="page-heading">
+        <div>
+          <h1>编辑量规草稿</h1>
+          <p>{{ versionLabel(selectedRow) }} · 启用后只影响新发布的作业，已有作业和已交的作业不变。</p>
+        </div>
+      </header>
+
+      <div class="rw-sticky">
+        <div class="rw-toolbar" role="toolbar" aria-label="草稿操作">
+          <span class="rw-state" :class="{ dirty }">{{ state }}</span>
+          <span v-if="!weightOk" class="rw-warn">权重合计 {{ weightSum }}%，需为 100%</span>
+          <span class="grow"></span>
+          <button type="button" class="text-btn" :disabled="busy" @click="cancel">取消</button>
+          <button type="button" class="btn secondary" :disabled="busy || !dirty || !weightOk" :title="!dirty ? '还没有修改' : ''" @click="save">保存草稿</button>
+          <button type="button" class="btn primary" :disabled="busy || !weightOk || confirming" @click="askEnable">启用为新作业默认</button>
+        </div>
+        <div v-if="confirming" class="rw-confirm" role="group" aria-label="启用量规">
+          <p>启用后，新发布的作业默认使用这一版；已有作业和已交的作业不变。<template v-if="dirty">未保存的修改会先保存。</template></p>
+          <label>启用说明（必填，仅任课教师可见）<textarea v-model="reason" rows="2" maxlength="1000" placeholder="例如：补充了教材页码要求" /></label>
+          <div class="rw-confirm-actions">
+            <button type="button" class="btn primary" :disabled="busy || !reason.trim()" @click="activate">确认启用</button>
+            <button type="button" class="text-btn" :disabled="busy" @click="confirming = false">返回编辑</button>
+          </div>
+        </div>
+      </div>
+
+      <p v-if="error" class="notice danger" role="alert">{{ error }}</p>
+      <p v-if="message" class="notice" role="status">{{ message }}</p>
+
+      <form class="rw-form" @submit.prevent="save">
         <fieldset :disabled="busy">
           <section class="rw-block">
             <h2 class="rw-step"><i>1</i>基本信息</h2>
@@ -324,41 +439,17 @@ onBeforeUnmount(() => {
                 <em v-if="!weightOk">需为 100%</em>
               </span>
             </h2>
-            <p class="rw-hint">
-              维度代码 S / A / C / L 固定，可改名称、说明与权重；权重决定该维在总分中的占比，四项合计须为 100%。
-            </p>
+            <p class="rw-hint">维度代码 S / A / C / L 固定，可改名称、说明与权重；权重决定该维在总分中的占比。</p>
             <div class="rw-dims">
               <article v-for="d in dimensions" :key="d.code" class="rw-dim-card">
                 <div class="rw-dim-top">
                   <span class="rw-dim-code">{{ d.code }}</span>
-                  <input
-                    v-model="d.name"
-                    class="rw-dim-name"
-                    maxlength="40"
-                    :aria-label="d.code + ' 维度名称'"
-                    placeholder="维度名称"
-                    required
-                  />
+                  <input v-model="d.name" class="rw-dim-name" maxlength="40" :aria-label="d.code + ' 维度名称'" placeholder="维度名称" required />
                   <span class="rw-dim-weight">
-                    <input
-                      v-model.number="d.weight"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      :aria-label="d.code + ' 维度权重'"
-                      required
-                    />%
+                    <input v-model.number="d.weight" type="number" min="0" max="100" step="1" :aria-label="d.code + ' 维度权重'" required />%
                   </span>
                 </div>
-                <input
-                  v-model="d.description"
-                  class="rw-dim-desc"
-                  maxlength="500"
-                  :aria-label="d.code + ' 维度说明'"
-                  placeholder="这个维度考察什么"
-                  required
-                />
+                <input v-model="d.description" class="rw-dim-desc" maxlength="500" :aria-label="d.code + ' 维度说明'" placeholder="这个维度考察什么" required />
                 <p class="rw-dim-count">{{ itemsOf(d.code).length }} 项指标</p>
               </article>
             </div>
@@ -367,58 +458,45 @@ onBeforeUnmount(() => {
           <section class="rw-block">
             <h2 class="rw-step">
               <i>3</i>指标锚点
-              <button type="button" class="text-btn rw-toggle-all" @click="toggleAll">
-                {{ allOpen ? '全部收起' : '全部展开' }}
-              </button>
+              <button type="button" class="text-btn rw-toggle-all" @click="toggleAll">{{ allOpen ? '全部收起' : '全部展开' }}</button>
             </h2>
-            <p class="rw-hint">11 项二级指标按维度分组，点开某一项可修改说明与四档锚点。</p>
+            <p class="rw-hint">每项指标有一句说明和四档描述。同一维度的四档写法相同时，可用「统一四档描述」一次写好。</p>
 
             <div v-for="d in dimensions" :key="d.code" class="rw-dim-group">
               <div class="rw-dim-group-head">
                 <span class="rw-dim-code">{{ d.code }}</span>
                 <strong>{{ d.name }}</strong>
                 <span class="rw-dim-group-weight">{{ d.weight }}%</span>
+                <span class="grow"></span>
+                <button type="button" class="text-btn" :aria-expanded="!!bulk[d.code]" @click="toggleBulk(d.code)">统一四档描述</button>
+                <button type="button" class="text-btn" @click="toggleDim(d.code)">{{ dimOpen(d.code) ? '收起本维度' : '展开本维度' }}</button>
+              </div>
+              <div v-if="bulk[d.code]" class="rw-bulk">
+                <p>填写后点「写入」，会覆盖 {{ d.code }} 维度 {{ itemsOf(d.code).length }} 项指标的对应档位；留空的档位不改。</p>
+                <div class="rw-anchors">
+                  <label v-for="a in anchors" :key="a[0]">{{ a[1] }}<input v-model="bulk[d.code][a[0]]" maxlength="1000" :aria-label="d.code + ' 统一' + a[1]" /></label>
+                </div>
+                <div class="rw-bulk-actions">
+                  <button type="button" class="btn secondary" @click="applyBulk(d.code)">写入 {{ itemsOf(d.code).map((i: any) => i.code).join(' / ') }}</button>
+                  <button type="button" class="text-btn" @click="toggleBulk(d.code)">取消</button>
+                </div>
               </div>
               <article v-for="i in itemsOf(d.code)" :key="i.code" class="rw-item">
-                <button
-                  type="button"
-                  class="rw-item-head"
-                  :aria-expanded="!!openItems[i.code]"
-                  @click="toggleItem(i.code)"
-                >
+                <button type="button" class="rw-item-head" :aria-expanded="!!openItems[i.code]" @click="toggleItem(i.code)">
                   <span class="rw-caret" :class="{ open: !!openItems[i.code] }">›</span>
                   <b>{{ i.code }}</b>
                   <span class="rw-item-title">{{ i.name }}</span>
-                  <span class="rw-item-preview">{{ openItems[i.code] ? '收起' : '展开编辑' }}</span>
+                  <span class="rw-item-preview">{{ openItems[i.code] ? '收起' : preview(i) || '展开编辑' }}</span>
                 </button>
                 <div v-if="openItems[i.code]" class="rw-item-body">
                   <label class="rw-item-desc">指标说明<input v-model="i.description" maxlength="1000" required /></label>
                   <div class="rw-anchors">
-                    <label v-for="a in anchors" :key="a[0]">
-                      {{ a[1] }}<input v-model="i[a[0]]" maxlength="1000" required />
-                    </label>
+                    <label v-for="a in anchors" :key="a[0]">{{ a[1] }}<input v-model="i[a[0]]" maxlength="1000" required /></label>
                   </div>
                 </div>
               </article>
             </div>
           </section>
-
-          <div class="rw-foot">
-            <label class="rw-reason">
-              变更说明
-              <input v-model="reason" maxlength="1000" placeholder="写入启用记录，仅任课教师可见" />
-            </label>
-            <button class="btn primary" type="submit" :disabled="!dirty || !weightOk">保存草稿</button>
-            <button
-              type="button"
-              class="btn secondary"
-              :disabled="busy || dirty || !weightOk || !reason.trim()"
-              @click="activate"
-            >
-              启用为新作业默认
-            </button>
-            <button type="button" class="text-btn" :disabled="busy" @click="cancel">取消</button>
-          </div>
         </fieldset>
       </form>
     </template>
@@ -427,11 +505,27 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .rubric-workbench { max-width: 1040px; }
-.rw-head-actions { display: flex; align-items: center; gap: 10px; }
-.rw-version { width: auto; max-width: 260px; padding: 7px 10px; font-size: 13px; }
-.rw-edit, .rw-new { white-space: nowrap; }
+.rw-live strong { font-weight: 600; color: var(--text); }
+.rw-head-actions { display: flex; align-items: flex-end; gap: 10px; }
+.rw-version-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.rw-version { width: auto; max-width: 340px; padding: 7px 10px; font-size: 13px; }
+.rw-edit { white-space: nowrap; }
+.rw-draft-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 14px; padding: 10px 14px; font-size: 13px; color: var(--muted); border: 1px dashed var(--border); border-radius: 10px; background: var(--paper); }
 .rw-current { border: 1px solid var(--border); border-radius: 12px; background: var(--paper); padding: 18px 22px 22px; }
-.rw-current-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line-soft); }
+.rw-current-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--line-soft); }
+.rw-current-head strong { font-size: 15px; }
+
+/* 编辑工具条贴在顶栏下方，不压在正文上。 */
+.rw-sticky { position: sticky; top: 56px; z-index: 4; margin: 0 0 6px; background: var(--workspace, var(--bg)); padding: 8px 0; }
+.rw-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--paper); }
+.rw-state { font-size: 13px; color: var(--muted); }
+.rw-state.dirty { color: var(--text); font-weight: 600; }
+.rw-warn { font-size: 12.5px; color: var(--red); }
+.rw-confirm { margin-top: 8px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--paper); }
+.rw-confirm p { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.rw-confirm label { display: block; font-size: 13px; color: var(--muted); }
+.rw-confirm textarea { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
+.rw-confirm-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 
 .rw-form fieldset { border: 0; padding: 0; min-width: 0; }
 .rw-block { margin-top: 22px; }
@@ -457,29 +551,37 @@ onBeforeUnmount(() => {
 .rw-dim-desc { display: block; width: 100%; margin-top: 8px; box-sizing: border-box; font-size: 13px; }
 .rw-dim-count { margin: 8px 0 0; font-size: 11.5px; color: var(--subtle); }
 
-.rw-dim-group { margin-top: 14px; }
-.rw-dim-group-head { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.rw-dim-group { margin-top: 16px; }
+.rw-dim-group-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 .rw-dim-group-head strong { font-size: 14px; }
-.rw-dim-group-weight { margin-left: auto; font-size: 12px; color: var(--subtle); }
-.rw-item { border: 1px solid var(--border); border-radius: 10px; margin-top: 8px; overflow: hidden; }
+.rw-dim-group-head .text-btn { font-size: 12.5px; }
+.rw-dim-group-weight { font-size: 12px; color: var(--blue-text); font-weight: 600; }
+.rw-bulk { margin-top: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.rw-bulk p { margin: 0 0 4px; font-size: 12.5px; color: var(--muted); }
+.rw-bulk label { display: block; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.rw-bulk input { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
+.rw-bulk-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.rw-item { border: 1px solid var(--border); border-radius: 10px; margin-top: 8px; overflow: hidden; background: var(--paper); }
 .rw-item-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px 14px; background: none; border: 0; text-align: left; cursor: pointer; font: inherit; }
 .rw-item-head:hover { background: var(--surface); }
 .rw-caret { display: inline-block; width: 12px; color: var(--subtle); transition: transform .15s ease; }
 .rw-caret.open { transform: rotate(90deg); }
 .rw-item-head b { font-size: 12px; color: var(--blue-text); background: var(--blue-soft); border-radius: 4px; padding: 1px 6px; }
-.rw-item-title { font-size: 14px; font-weight: 600; color: var(--text); }
-.rw-item-preview { margin-left: auto; font-size: 12px; color: var(--subtle); }
+.rw-item-title { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.rw-item-preview { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--subtle); }
 .rw-item-body { padding: 0 14px 14px; }
 .rw-item-body label { display: block; margin: 10px 0 0; font-size: 13px; color: var(--muted); }
 .rw-item-body input { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
 .rw-anchors { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin-top: 4px; }
-
-.rw-foot { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-top: 22px; padding: 14px 0 12px; border-top: 1px solid var(--border); background: var(--bg, var(--paper)); }
-.rw-reason { flex: 1 1 240px; margin: 0 !important; font-size: 13px; color: var(--muted); }
-.rw-reason input { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
 .rubric-workbench p { overflow-wrap: anywhere; }
 @media (max-width: 860px) {
   .rw-dims { grid-template-columns: minmax(0, 1fr); }
   .rw-anchors { grid-template-columns: minmax(0, 1fr); }
+  .rw-head-actions { flex-wrap: wrap; }
+  .rw-version { max-width: 100%; }
+  .rw-item-preview { display: none; }
+}
+@media (max-width: 720px) {
+  .rw-sticky { top: 54px; }
 }
 </style>
