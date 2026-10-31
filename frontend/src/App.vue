@@ -47,7 +47,6 @@ import {
   FileText,
   Clock,
   ShieldCheck,
-  GraduationCap,
   Search,
   X,
   Send,
@@ -63,13 +62,14 @@ import {
   Moon,
   Monitor,
   Layers,
-  CornerDownLeft,
   TrendingUp,
   Sparkles,
 } from "lucide-vue-next";
 import HomeDashboard from "./HomeDashboard.vue";
 import CommunityPage from "./CommunityPage.vue";
 import AssignmentsPage from "./AssignmentsPage.vue";
+import LoginPage from "./LoginPage.vue";
+import CommandPalette from "./CommandPalette.vue";
 import { fmt } from "./format";
 const Editor = defineAsyncComponent(() => import("./Editor.vue"));
 import ProgressPage from "./ProgressPage.vue";
@@ -131,7 +131,6 @@ const homeEntry = ref<any>(null),
   outlineVisible = ref(false),
   panelVisible = ref(true),
   commandOpen = ref(false),
-  commandQuery = ref(""),
   assignmentFilter = ref("all");
 const page = ref("home"),
   loading = ref(true),
@@ -602,46 +601,8 @@ async function selectCourse(id: number) {
   });
   menu.value = false;
 }
-const commandItems = computed(() => {
-  const items: any[] = [
-    ...nav.value.map((n) => ({
-      title: n.id === "home" ? "首页" : n.name,
-      sub: "页面",
-      kind: "page",
-      id: n.id,
-    })),
-    ...courses.value.map((c) => ({
-      title: c.title,
-      sub: "课程",
-      kind: "course",
-      id: c.id,
-    })),
-    ...assignments.value.map((a) => ({
-      title: a.title,
-      sub: "课程作业",
-      kind: "assignment",
-      data: a,
-    })),
-    ...publications.value.map((p) => ({
-      title: p.title,
-      sub: "知识条目 · " + p.author_name,
-      kind: "version",
-      id: p.submission_id,
-    })),
-  ];
-  return items
-    .filter(
-      (i) =>
-        !commandQuery.value ||
-        (i.title + i.sub)
-          .toLowerCase()
-          .includes(commandQuery.value.toLowerCase()),
-    )
-    .slice(0, 16);
-});
 function openCommand() {
   commandOpen.value = true;
-  commandQuery.value = "";
   setTimeout(
     () =>
       document.querySelector<HTMLInputElement>(".command-input input")?.focus(),
@@ -1568,56 +1529,16 @@ onBeforeUnmount(() => {
     <BookOpen :size="30" />
     <p>正在连接课程工作空间…</p>
   </div>
-  <div v-else-if="!me" class="login-layout">
-    <section class="login-story">
-      <div class="brand">
-        <span class="brand-icon">课</span>
-        <div class="brand-copy">
-          <strong>课程开放知识社区</strong><span>面向课程的知识共建空间</span>
-        </div>
-      </div>
-      <div class="login-copy">
-        <h1>让知识，<br />在每一次修订中生长。</h1>
-        <p>
-          从一篇知识帖开始，连接可靠的证据、<br />可执行的反馈与持续改进的学习。
-        </p>
-        <div class="login-principles">
-          <span><CheckCircle2 :size="18" />四维评价</span
-          ><span><History :size="18" />版本可追溯</span
-          ><span><ShieldCheck :size="18" />证据可核验</span>
-        </div>
-      </div>
-    </section>
-    <section class="login-form">
-      <form @submit.prevent="doLogin">
-        <span class="eyebrow">欢迎回来</span>
-        <h2>进入你的课程空间</h2>
-        <p class="muted">使用课程账号登录，继续未完成的探索。</p>
-        <label
-          >账号邮箱<input
-            v-model="email"
-            type="email"
-            autocomplete="username"
-            required
-            placeholder="你的课程账号邮箱" /></label
-        ><label
-          >密码<input
-            v-model="password"
-            type="password"
-            autocomplete="current-password"
-            required
-            placeholder="输入密码"
-        /></label>
-        <p v-if="loginError" class="error-note" role="alert">
-          {{ loginError }}
-        </p>
-        <button v-if="accessBackup" type="button" class="btn secondary full" @click="downloadAccessBackup"><Save :size="16"/>下载未同步草稿备份</button>
-        <button class="btn primary full" :disabled="busy">
-          {{ busy ? "正在登录…" : "登录工作空间" }}<ArrowUpRight :size="18" />
-        </button>
-      </form>
-    </section>
-  </div>
+  <LoginPage
+    v-else-if="!me"
+    v-model:email="email"
+    v-model:password="password"
+    :busy="busy"
+    :error="loginError"
+    :has-backup="!!accessBackup"
+    @submit="doLogin"
+    @download-backup="downloadAccessBackup"
+  />
   <div v-else class="app-layout">
     <div v-if="menu" class="sidebar-scrim" @click="menu = false"></div>
     <aside class="sidebar" :class="{ open: menu, collapsed: sidebarCollapsed }">
@@ -2922,58 +2843,15 @@ onBeforeUnmount(() => {
 
     </main>
   </div>
-  <div
+  <CommandPalette
     v-if="commandOpen"
-    class="modal-scrim command-scrim"
-    @click.self="commandOpen = false"
-  >
-    <section
-      class="command-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-label="搜索页面和课程内容"
-    >
-      <div class="command-input">
-        <Search :size="20" /><input
-          v-model="commandQuery"
-          placeholder="搜索页面、课程、作业或知识条目"
-          aria-label="全局搜索"
-          @keydown.enter.prevent="
-            commandItems[0] && activateCommand(commandItems[0])
-          "
-        /><button class="keycap" @click="commandOpen = false">Esc</button>
-      </div>
-      <div class="command-results">
-        <button
-          v-for="(item, i) in commandItems"
-          :key="i"
-          @click="activateCommand(item)"
-        >
-          <component
-            :is="
-              item.kind === 'course'
-                ? GraduationCap
-                : item.kind === 'page'
-                  ? LayoutDashboard
-                  : item.kind === 'version'
-                    ? Library
-                    : FileText
-            "
-            :size="18"
-          /><span
-            >{{ item.title }}<small>{{ item.sub }}</small></span
-          ><CornerDownLeft :size="15" />
-        </button>
-        <p v-if="!commandItems.length" class="empty-text">
-          没有找到相关内容，换个关键词试试。
-        </p>
-      </div>
-      <footer>
-        <span>只搜索你有权访问的课程内容</span
-        ><span>Enter 打开 · Esc 关闭</span>
-      </footer>
-    </section>
-  </div>
+    :nav="nav"
+    :courses="courses"
+    :assignments="assignments"
+    :publications="publications"
+    @close="commandOpen = false"
+    @activate="activateCommand"
+  />
   <div v-if="toast" class="toast" role="status">
     <CheckCircle2 :size="19" />{{ toast }}
   </div>
