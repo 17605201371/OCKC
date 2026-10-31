@@ -69,6 +69,8 @@ import {
 } from "lucide-vue-next";
 import HomeDashboard from "./HomeDashboard.vue";
 import CommunityPage from "./CommunityPage.vue";
+import AssignmentsPage from "./AssignmentsPage.vue";
+import { fmt } from "./format";
 const Editor = defineAsyncComponent(() => import("./Editor.vue"));
 import ProgressPage from "./ProgressPage.vue";
 import MembersPage from "./MembersPage.vue";
@@ -480,16 +482,6 @@ function dimDone(code: string) {
 const dimsLeft = computed(
   () => rubric.filter((d: any) => !dimDone(d.d)).length,
 );
-function fmt(d: string) {
-  if (!d) return "—";
-  return new Date(d).toLocaleString("zh-CN", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
 function number(n: any) {
   return n == null ? "—" : Number(n).toFixed(1);
 }
@@ -610,11 +602,6 @@ async function selectCourse(id: number) {
   });
   menu.value = false;
 }
-const filteredAssignments = computed(() => assignments.value.filter(a => {
-  if(assignmentFilter.value==='dueSoon')return assignmentState(a,deadlineNow.value)==='DUE_SOON';
-  if(assignmentFilter.value==='closed')return assignmentState(a,deadlineNow.value)==='CLOSED';
-  return assignmentFilter.value==='all'||(assignmentFilter.value==='submitted'?!!a.version_no:assignmentFilter.value==='started'?!!a.entry_id:!a.entry_id);
-}));
 const commandItems = computed(() => {
   const items: any[] = [
     ...nav.value.map((n) => ({
@@ -1831,99 +1818,22 @@ onBeforeUnmount(() => {
 
         <MembersPage v-else-if="page==='members' && isTeacher" :key="cid" :course-id="cid" @changed="refreshAssignmentRules" />
         <section v-else-if="page==='access'" class="page access-changed-page"><div class="card"><ShieldCheck :size="30"/><h1>课程权限已变化</h1><p>{{ accessMessage }}</p><p v-if="accessBackup">刚才编辑的内容已保留在本机，可先下载备份。重新加入课程后，可在原作品中核对恢复。</p><div class="button-row"><button v-if="accessBackup" class="btn secondary" @click="downloadAccessBackup"><Save :size="16"/>下载本机草稿备份</button><button class="btn primary" @click="resumeCourses">重新进入可用课程</button></div></div></section>
-        <section v-else-if="page === 'assignments'" class="page">
-          <div class="page-heading">
-            <div>
-              <span class="eyebrow">课程与学习任务</span>
-              <h1>{{ isStaff ? "课程作业" : "我的作业" }}</h1>
-              <p>从任务要求出发，明确这次创作需要完成什么。</p>
-            </div>
-            <div v-if="isTeacher" class="button-row">
-              <button class="btn secondary" @click="go('members')">
-                <Users :size="17" />成员管理</button
-              ><button class="btn primary" @click="showModal('assignment')">
-                <Plus :size="17" />发布作业
-              </button>
-            </div>
-            <div v-else-if="!isStaff" class="button-row">
-              <button class="btn secondary" :disabled="busy" @click="newFreePost">
-                <PenLine :size="16" />写知识贴
-              </button>
-            </div>
-          </div>
-          <div class="list-tabs" role="group" aria-label="作业筛选">
-            <button
-              v-for="[key, label] in [
-                ['all', '全部作业'],
-                ['started', '已开始'],
-                ['submitted', '已提交'],
-                ['unstarted', '未开始'],
-                ['dueSoon', '即将截止'],
-                ['closed', '已截止'],
-              ]"
-              :key="key"
-              :class="{ active: assignmentFilter === key }"
-              @click="assignmentFilter = key"
-            >
-              {{ label
-              }}<span v-if="key === 'all'">{{ assignments.length }}</span>
-            </button>
-          </div>
-          <div class="assignment-grid">
-            <article
-              v-for="a in filteredAssignments"
-              :key="a.id"
-              class="assignment-card"
-              :data-assignment-id="a.id"
-            >
-              <div class="card-top">
-                <span class="file-icon"><FileText :size="22" /></span
-                ><span class="badge blue">{{ a.free_form ? '自由创作' : a.kind === 'STEP' ? '步骤' : '知识帖' }}</span>
-                <span v-if="!isStaff && a.entry_state === 'PASSED'" class="badge green">已通过定稿</span>
-                <span v-else-if="!isStaff && a.entry_state === 'REVISION'" class="badge orange">已打回 · 待修订</span>
-              </div>
-              <h2>{{ a.title }}</h2>
-              <p>{{ a.requirements }}</p>
-              <div class="meta-line">
-                <template v-if="a.free_form"
-                  ><PenLine :size="16" />自由创作 · 不受截止时间限制</template
-                >
-                <template v-else
-                  ><Clock :size="16" />{{ fmt(a.due_at) }} 截止
-                  <span class="deadline-badge" :class="assignmentState(a,deadlineNow).toLowerCase()">{{ a.manually_closed ? '已结束' : dueLabel(assignmentState(a,deadlineNow)) }}</span></template
-                >
-              </div>
-              <div class="assignment-ai-policy">
-                <div><span><Sparkles :size="14" />AI 修改建议</span><small>{{ a.ai_feedback_enabled ? '已开放' : '未开放' }}</small></div>
-                <button v-if="isTeacher" class="policy-switch" role="switch" :aria-checked="!!a.ai_feedback_enabled" :aria-label="`AI 修改建议：${a.title}`" :disabled="busy" @click="toggleAssignmentAi(a)"><span></span></button>
-                <span v-else class="small-label">{{ a.ai_feedback_enabled ? '已开启' : '未开启' }}</span>
-              </div>
-              <div class="assignment-foot"><button v-if="isTeacher" class="btn secondary manage-assignment-btn" @click="managedAssignment={...a}"><SlidersHorizontal :size="14"/>管理作业</button>
-                <button
-                  class="text-btn"
-                  :disabled="busy || (!isStaff && !a.entry_id && assignmentState(a,deadlineNow)==='CLOSED')"
-                  @click="isStaff ? go('review') : openAssignment(a)"
-                >
-                  {{
-                    isStaff ? "查看提交" : a.entry_state === 'PASSED' ? '查看定稿' : assignmentState(a,deadlineNow)==='CLOSED' ? (a.entry_id ? '查看与整理' : '已截止') : a.entry_id ? "继续编辑" : "开始作答"
-                  }}<ArrowUpRight :size="16" />
-                </button>
-              </div>
-            </article>
-            <div v-if="!filteredAssignments.length" class="empty card">
-              <ClipboardList :size="32" />
-              <h2>还没有发布作业</h2>
-              <p>教师发布任务后，将显示在这里。</p>
-            </div>
-          </div>
-          <button
-            v-if="canCreateCourse"
-            class="text-btn more-space"
-            @click="showModal('course')"
-          >
-            创建另一门课程<Plus :size="15" />
-          </button>
-        </section>
+        <AssignmentsPage
+          v-else-if="page === 'assignments'"
+          v-model:filter="assignmentFilter"
+          :assignments="assignments"
+          :is-staff="isStaff"
+          :is-teacher="isTeacher"
+          :can-create-course="canCreateCourse"
+          :busy="busy"
+          :deadline-now="deadlineNow"
+          @go="go"
+          @show-modal="showModal"
+          @new-free-post="newFreePost"
+          @toggle-ai="toggleAssignmentAi"
+          @manage="managedAssignment = { ...$event }"
+          @open-assignment="openAssignment"
+        />
 
         <RubricWorkbench v-else-if="page === 'rubric'" ref="rubricWorkbench" :key="cid+'-'+me.id+'-'+course?.role+'-'+(rubricFocus?'snapshot-'+rubricFocus.code:'catalog')" :course-id="cid" :teacher="isTeacher" :user-id="me.id" :initial-snapshot="rubricFocus" :initial-source="rubricFocusSource" />
 
