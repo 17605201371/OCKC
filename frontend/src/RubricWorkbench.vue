@@ -83,10 +83,13 @@ function payload() {
 function sessionBackup() {
   if (!dirty.value || !selected.value) return null;
   const data = { rubricId: selected.value.id, courseId: props.courseId, ...payload() };
+  // 本机存储写不进去时要如实返回 persisted:false，App 才会在登录失效时要求先下载备份。
+  let persisted = false;
   try {
     localStorage.setItem(key(selected.value.id), JSON.stringify(data));
+    persisted = localStorage.getItem(key(selected.value.id)) === JSON.stringify(data);
   } catch {}
-  return { data, persisted: true };
+  return { data, persisted };
 }
 
 function canLeave() {
