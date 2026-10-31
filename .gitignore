@@ -25,3 +25,7 @@ test-results/
 
 # Local dependency audit output
 *audit*.json
+
+# Sensitive local database snapshots (source archives are delivered separately)
+*.h2-backup.tar.gz
+__pycache__/

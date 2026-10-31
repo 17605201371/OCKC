@@ -62,3 +62,8 @@ E2E_BASE_URL=http://127.0.0.1:8084 node scripts/studio-e2e.mjs
 ## 质量与反馈右栏
 
 教师按作业开关 AI 入口、侧栏布局和真实模型服务边界见 [FEEDBACK-SIDEBAR.md](FEEDBACK-SIDEBAR.md)。
+
+
+## 可视化公式增量
+
+公式入口现支持六类结构拼装与六个科学模板，可继续编辑 LaTeX；输入方式切换保留本次未应用字段，应用结构后再确认写入。新增选区原文保留、稳定节点 ID、旧位置更新拒绝、长度/命令限制与弹窗键盘焦点循环。详见 `VISUAL-FORMULAS.md`。这是结构化排版，不是求解、配平或完整手写/WYSIWYG 数学系统。

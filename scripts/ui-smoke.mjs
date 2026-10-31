@@ -5,7 +5,7 @@ const { chromium } = makeRequire(
 import fs from "node:fs";
 
 const out =
-  process.env.E2E_OUTPUT_DIR || new URL("../.qa", import.meta.url).pathname;
+  process.env.E2E_OUTPUT_DIR || decodeURIComponent(new URL("../.qa", import.meta.url).pathname);
 const base = process.env.E2E_BASE_URL || "http://127.0.0.1:8080";
 fs.mkdirSync(out, { recursive: true });
 if (!process.env.E2E_PASSWORD)

@@ -1,0 +1,66 @@
+{
+  "runAt": "2026-10-23T02:54:07.485Z",
+  "localOnly": true,
+  "passed": true,
+  "suites": [
+    {
+      "suite": "dimensions",
+      "passed": true,
+      "groups": 5,
+      "screenshots": 3,
+      "kind": "browser",
+      "checks": [
+        "Four separate horizontal lines preserve exact formal dimension values, labels on left and scores on right",
+        "Dark mode keeps semantic line colors and no page overflow",
+        "The quality card remains four horizontal rows at the supported 1280px desktop width",
+        "Explicit boundary fixture distinguishes actual zero and 100 from missing score, with correct accessible progress values",
+        "Pending student work and teacher overview show no fabricated score or class average"
+      ],
+      "elapsedMs": 20872
+    },
+    {
+      "suite": "polish",
+      "passed": true,
+      "groups": 9,
+      "screenshots": 6,
+      "kind": "browser",
+      "checks": [
+        "Save and submit remain visible and uncovered at the end of a long document in both themes; sticky side panels stay below the actionbar",
+        "Formula header/footer fit 1280×720, 1440×900 and 390×844; only content scrolls and confirmation stays reachable after applying a structure",
+        "Cancelling formula dialogs after applying structure never inserts or changes document blocks",
+        "Figure editing controls occupy their own row and do not overlay illustration content",
+        "Key quality, feedback and privacy notes are at least 12px",
+        "Advanced filters are collapsible, disclose active-filter count without clearing conditions, and top pagination is available",
+        "Completion counts valid zero scores and explained N/A only; missing and pending items jump to their correct input without publishing",
+        "Jump opens the next collapsed dimension, focuses its input and keeps grading save actions visible",
+        "Report displays an explicit human-readable timezone while retaining exact source timestamp in semantic time metadata"
+      ],
+      "elapsedMs": 34745
+    },
+    {
+      "suite": "theme",
+      "passed": true,
+      "groups": 10,
+      "screenshots": 7,
+      "kind": "browser",
+      "checks": [
+        "System-dark preference and browser theme color apply before the Vue bundle mounts under real CSP",
+        "System-dark editor heading, outer canvas and evidence pill no longer leak light backgrounds",
+        "Explicit light overrides a dark OS and survives OS changes",
+        "Explicit dark, live system following and saved preference reload agree with the accessible toggle label",
+        "Cross-tab preference changes and key removal update both palette and UI state",
+        "Image dialog, upload zone, figure border/caption/tools use dark surfaces without recoloring original pixels",
+        "Formula, table and callout surfaces share the neutral dark palette",
+        "Failed authenticated image offers retry while keeping source, caption and edit controls; retry recovers",
+        "Keyboard focus has a visible semantic outline and modal inputs remain dark",
+        "1280px desktop light/dark layouts have no horizontal overflow"
+      ],
+      "elapsedMs": 27013
+    }
+  ],
+  "browserCheckGroups": 24,
+  "screenshots": 16,
+  "scope": "Only frontend card markup/CSS changed. Fresh loopback databases; boundary score values are intercepted read-only fixtures. Historical 279 backend checks were not rerun in this increment.",
+  "build": "vue-tsc + Vite and Maven package (-DskipTests) passed",
+  "githubPushed": false
+}

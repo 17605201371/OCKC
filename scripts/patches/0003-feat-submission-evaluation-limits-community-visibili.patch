@@ -1,0 +1,529 @@
+From d000b3d423fcbfee4cc68a21ffff04f3a02ce2b3 Mon Sep 17 00:00:00 2001
+From: zhengshsh <zss@zhengshshdeMacBook-Air.local>
+Date: Sat, 24 Oct 2026 18:16:45 +0900
+Subject: [PATCH 3/4] feat: submission/evaluation limits, community visibility
+ scopes, free-form posts
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- assignment gains max_submissions (default 5) and max_evaluations (default 3),
+  editable in 作业管理 with 0 = unlimited; submit() and evaluate() enforce them
+- editor shows 已提交 n/N and disables 提交评审 once exhausted
+- publication gains visibility (COURSE|PUBLIC); author opts in to public at
+  request time; /publications?scope=COURSE|MINE|PUBLIC powers the community switch
+- free-form posts: POST /courses/{cid}/free-entries creates a standalone entry
+  backed by a hidden free_form assignment row so existing joins stay intact;
+  posts are visible only to their author, submitted through the normal review flow
+- rubric version no longer surfaces on assignment cards, reader, grading or the
+  editor; it stays in 课程量规 and the export report
+---
+ .../cn/course/community/ApiController.java    |   8 +-
+ .../community/AssignmentManagement.java       |  13 +-
+ .../cn/course/community/CommunityService.java |  44 ++++++-
+ .../V13__submission_and_evaluation_limits.sql |   3 +
+ .../migration/V14__publication_visibility.sql |   2 +
+ .../db/migration/V15__free_form_entries.sql   |   2 +
+ frontend/src/App.vue                          | 113 ++++++++++++++++--
+ frontend/src/AssignmentManager.vue            |  10 +-
+ frontend/src/PublicationManager.vue           |  12 +-
+ frontend/src/style.css                        |  19 +++
+ 10 files changed, 190 insertions(+), 36 deletions(-)
+ create mode 100644 backend/src/main/resources/db/migration/V13__submission_and_evaluation_limits.sql
+ create mode 100644 backend/src/main/resources/db/migration/V14__publication_visibility.sql
+ create mode 100644 backend/src/main/resources/db/migration/V15__free_form_entries.sql
+
+diff --git a/backend/src/main/java/cn/course/community/ApiController.java b/backend/src/main/java/cn/course/community/ApiController.java
+index d98c193..26bddd7 100644
+--- a/backend/src/main/java/cn/course/community/ApiController.java
++++ b/backend/src/main/java/cn/course/community/ApiController.java
+@@ -35,6 +35,8 @@ public class ApiController {
+  public record AiSuggestionStateRequest(@NotBlank @Pattern(regexp="OPEN|ADOPTED|DISMISSED") String state){}
+  @PostMapping("/ai-suggestions/{id}/state") public Object aiSuggestionState(@PathVariable long id,@Valid @RequestBody AiSuggestionStateRequest r,Principal p){service.setAiSuggestionState(id,r.state(),uid(p));return Map.of("ok",true);}
+  @PostMapping("/assignments/{aid}/entries") public Object start(@PathVariable long aid,Principal p){return service.start(aid,uid(p));}
++ public record FreeEntryRequest(@NotBlank @Size(max=160) String title){}
++ @PostMapping("/courses/{cid}/free-entries") public Object freeEntry(@PathVariable long cid,@Valid @RequestBody FreeEntryRequest r,Principal p){return service.createFreeEntry(cid,r.title(),uid(p));}
+  @GetMapping("/entries/{eid}") public Object getEntry(@PathVariable long eid,Principal p){return service.getEntry(eid,uid(p));}
+  @PutMapping("/entries/{eid}/draft") public Object save(@PathVariable long eid,@Valid @RequestBody DraftRequest r,Principal p){return service.save(eid,r,uid(p));}
+  @PostMapping("/entries/{eid}/submissions") public Object submit(@PathVariable long eid,@RequestHeader("Idempotency-Key") String key,@Valid @RequestBody SubmitRequest r,Principal p){if(!key.matches("[a-zA-Z0-9_-]{8,80}"))throw ApiError.fail(422,"幂等键格式不正确");return service.submit(eid,r.revision(),key,uid(p));}
+@@ -47,12 +49,12 @@ public class ApiController {
+  @GetMapping("/evidence/{id}/verifications") public Object verifications(@PathVariable long id,Principal p){return service.verifications(id,uid(p));}
+  @PostMapping("/evidence/{id}/verifications") public Object verify(@PathVariable long id,@Valid @RequestBody VerifyRequest r,Principal p){service.verify(id,r.verdict(),r.reason(),uid(p));return Map.of("ok",true);}
+  @PostMapping("/submissions/{sid}/publication") public Object requestPub(@PathVariable long sid,Principal p){service.requestPublication(sid,uid(p));return Map.of("ok",true);}
+- @GetMapping("/courses/{cid}/publications") public Object pubs(@PathVariable long cid,@RequestParam(defaultValue="false") boolean pending,Principal p){return service.publications(cid,uid(p),pending);}
++ @GetMapping("/courses/{cid}/publications") public Object pubs(@PathVariable long cid,@RequestParam(defaultValue="false") boolean pending,@RequestParam(defaultValue="COURSE") String scope,Principal p){return service.publications(cid,uid(p),pending,scope);}
+  @PostMapping("/publications/{id}/actions") public Object pubAction(@PathVariable long id,@Valid @RequestBody ActionRequest r,Principal p){service.publicationAction(id,r.action(),uid(p));return Map.of("ok",true);}
+  public record PublicationDecision(@NotBlank @Pattern(regexp="APPROVE|RETURN|WITHDRAW") String action,@NotBlank @Size(max=2000) String reason,@NotNull @Min(0) Integer revision){}
+- public record PublicationRequest(@NotNull @Min(0) Integer revision,@NotNull @Size(max=2000) String reason){}
++ public record PublicationRequest(@NotNull @Min(0) Integer revision,@NotNull @Size(max=2000) String reason,@Pattern(regexp="COURSE|PUBLIC") String visibility){}
+  @GetMapping("/courses/{cid}/publication-records") public Object publicationRecords(@PathVariable long cid,Principal p){return service.publicationRecords(cid,uid(p));}
+  @GetMapping("/publications/{id}/review") public Object publicationReview(@PathVariable long id,Principal p){return service.publicationReview(id,uid(p));}
+  @PostMapping("/publications/{id}/decisions") public Object publicationDecision(@PathVariable long id,@Valid @RequestBody PublicationDecision r,Principal p){service.publicationAction(id,r.action(),uid(p),r.revision(),r.reason());return Map.of("ok",true);}
+- @PostMapping("/submissions/{sid}/publication-request") public Object publicationRequest(@PathVariable long sid,@Valid @RequestBody PublicationRequest r,Principal p){service.requestPublication(sid,uid(p),r.revision(),r.reason());return Map.of("ok",true);}
++ @PostMapping("/submissions/{sid}/publication-request") public Object publicationRequest(@PathVariable long sid,@Valid @RequestBody PublicationRequest r,Principal p){service.requestPublication(sid,uid(p),r.revision(),r.reason(),r.visibility());return Map.of("ok",true);}
+ }
+diff --git a/backend/src/main/java/cn/course/community/AssignmentManagement.java b/backend/src/main/java/cn/course/community/AssignmentManagement.java
+index f8d0120..7ce2b80 100644
+--- a/backend/src/main/java/cn/course/community/AssignmentManagement.java
++++ b/backend/src/main/java/cn/course/community/AssignmentManagement.java
+@@ -13,14 +13,21 @@ import static cn.course.community.ApiError.fail;
+ public class AssignmentManagement {
+  final Store s;final ObjectMapper json;final NotificationService notices;
+  AssignmentManagement(Store s,ObjectMapper json,NotificationService notices){this.s=s;this.json=json;this.notices=notices;}
+- public record Edit(@NotBlank @Size(max=160) String title,@NotBlank @Size(max=4000) String requirements,@NotBlank String dueAt,@NotBlank @Size(max=1000) String reason,@Min(0) int revision){}
++ public record Edit(@NotBlank @Size(max=160) String title,@NotBlank @Size(max=4000) String requirements,@NotBlank String dueAt,Integer maxSubmissions,Integer maxEvaluations,@NotBlank @Size(max=1000) String reason,@Min(0) int revision){}
+  public record State(@Pattern(regexp="CLOSE|REOPEN") @NotNull String action,@NotBlank @Size(max=1000) String reason,@Min(0) int revision){}
+  Map<String,Object> access(long aid,long uid,boolean lock){var a=s.one("SELECT * FROM assignment WHERE id=?"+(lock?" FOR UPDATE":""),aid);s.teacher(s.id(a,"course_id"),uid);return a;}
+  void revision(Map<String,Object>a,int value){if(((Number)a.get("management_revision")).intValue()!=value)throw fail(409,"作业规则已被另一位教师修改。当前输入仍保留，请重新载入后核对再保存");}
+- static Map<String,Object> snapshot(Map<String,Object>a){var out=new LinkedHashMap<String,Object>();for(String k:List.of("id","title","requirements","due_at","rubric_version","management_revision","manually_closed"))out.put(k,a.get(k));return out;}
++ static Map<String,Object> snapshot(Map<String,Object>a){var out=new LinkedHashMap<String,Object>();for(String k:List.of("id","title","requirements","due_at","rubric_version","management_revision","manually_closed","max_submissions","max_evaluations"))out.put(k,a.get(k));return out;}
+  String encode(Object value){try{return json.writeValueAsString(value);}catch(Exception e){throw new IllegalStateException(e);}}
+  Map<String,Object> changed(Map<String,Object>before,long uid,String action,String reason){long aid=s.id(before,"id"),cid=s.id(before,"course_id");var after=s.one("SELECT * FROM assignment WHERE id=?",aid);s.db.update("INSERT INTO assignment_change(assignment_id,revision_no,actor_id,action_type,reason,before_json,after_json,created_at) VALUES(?,?,?,?,?,?,?,?)",aid,after.get("management_revision"),uid,action,reason.trim(),encode(snapshot(before)),encode(snapshot(after)),Store.now());s.audit(uid,"ASSIGNMENT_"+action,"assignment",aid);String title=action.equals("CLOSE")?"教师已手动结束作业":action.equals("REOPEN")?"教师已重新开放作业":"作业要求或截止时间已更新";for(var m:s.db.queryForList("SELECT user_id FROM course_member WHERE course_id=? AND role<>'TEACHER'",cid))notices.send(s.id(m,"user_id"),cid,"ASSIGNMENT_CHANGE","MEMBER",title,"assignment",aid,"",uid);return after;}
+- @Transactional public Map<String,Object> edit(long aid,long uid,Edit r){var a=access(aid,uid,true);revision(a,r.revision());Instant due;try{due=Instant.parse(r.dueAt());}catch(Exception e){throw fail(422,"截止时间格式错误");}if(!due.isAfter(Instant.now()))throw fail(422,"新的截止时间须晚于当前时间；如需立即停止提交，请使用结束作业");if(a.get("title").equals(r.title().trim())&&a.get("requirements").equals(r.requirements().trim())&&Instant.parse((String)a.get("due_at")).equals(due))throw fail(422,"任务要求和截止时间均未变化");s.db.update("UPDATE assignment SET title=?,requirements=?,due_at=?,management_revision=management_revision+1,updated_at=? WHERE id=?",r.title().trim(),r.requirements().trim(),due.toString(),Store.now(),aid);return changed(a,uid,"EDIT",r.reason());}
++ @Transactional public Map<String,Object> edit(long aid,long uid,Edit r){var a=access(aid,uid,true);revision(a,r.revision());Instant due;try{due=Instant.parse(r.dueAt());}catch(Exception e){throw fail(422,"截止时间格式错误");}if(!due.isAfter(Instant.now()))throw fail(422,"新的截止时间须晚于当前时间；如需立即停止提交，请使用结束作业");
++  // 未传次数上限时保持原值，避免旧客户端把限制悄悄清成 0。
++  int maxSub=r.maxSubmissions()==null?((Number)a.get("max_submissions")).intValue():r.maxSubmissions();
++  int maxEval=r.maxEvaluations()==null?((Number)a.get("max_evaluations")).intValue():r.maxEvaluations();
++  if(maxSub<0||maxSub>50)throw fail(422,"提交次数上限须在 0（不限）到 50 之间");
++  if(maxEval<0||maxEval>20)throw fail(422,"批阅次数上限须在 0（不限）到 20 之间");
++  if(a.get("title").equals(r.title().trim())&&a.get("requirements").equals(r.requirements().trim())&&Instant.parse((String)a.get("due_at")).equals(due)&&((Number)a.get("max_submissions")).intValue()==maxSub&&((Number)a.get("max_evaluations")).intValue()==maxEval)throw fail(422,"任务要求、截止时间与次数上限均未变化");
++  s.db.update("UPDATE assignment SET title=?,requirements=?,due_at=?,max_submissions=?,max_evaluations=?,management_revision=management_revision+1,updated_at=? WHERE id=?",r.title().trim(),r.requirements().trim(),due.toString(),maxSub,maxEval,Store.now(),aid);return changed(a,uid,"EDIT",r.reason());}
+  @Transactional public Map<String,Object> state(long aid,long uid,State r){var a=access(aid,uid,true);revision(a,r.revision());boolean close=r.action().equals("CLOSE");if(Boolean.TRUE.equals(a.get("manually_closed"))==close)throw fail(422,close?"作业已经手动结束":"作业未被手动结束；如已自然截止，请先延长截止时间");if(!close&&!Instant.parse((String)a.get("due_at")).isAfter(Instant.now()))throw fail(422,"原截止时间已过，请先调整截止时间，再重新开放");s.db.update("UPDATE assignment SET manually_closed=?,management_revision=management_revision+1,updated_at=? WHERE id=?",close,Store.now(),aid);return changed(a,uid,r.action(),r.reason());}
+  public List<Map<String,Object>> history(long aid,long uid){access(aid,uid,false);var rows=s.db.queryForList("SELECT h.*,u.display_name AS actor_name FROM assignment_change h JOIN app_user u ON u.id=h.actor_id WHERE h.assignment_id=? ORDER BY h.revision_no DESC LIMIT 100",aid);for(var r:rows){try{r.put("before",json.readTree((String)r.remove("before_json")));r.put("after",json.readTree((String)r.remove("after_json")));}catch(Exception e){throw new IllegalStateException(e);}}return rows;}
+ }
+diff --git a/backend/src/main/java/cn/course/community/CommunityService.java b/backend/src/main/java/cn/course/community/CommunityService.java
+index e754bb9..6c471cc 100644
+--- a/backend/src/main/java/cn/course/community/CommunityService.java
++++ b/backend/src/main/java/cn/course/community/CommunityService.java
+@@ -21,7 +21,7 @@ public class CommunityService {
+  void visible(Map<String,Object> v,long uid){String r=s.role(s.id(v,"course_id"),uid);if(s.id(v,"author_id")==uid||r.equals("TEACHER")||r.equals("ASSISTANT"))return;
+   if(s.db.queryForObject("SELECT COUNT(*) FROM publication WHERE submission_id=? AND state='PUBLISHED'",Integer.class,v.get("id"))==0)throw fail(403,"该提交尚未获准在课程社区展示");}
+  public List<Map<String,Object>> courses(long uid){return s.db.queryForList("SELECT c.*,m.role FROM course c JOIN course_member m ON m.course_id=c.id WHERE m.user_id=? ORDER BY c.id",uid);}
+- public List<Map<String,Object>> assignments(long cid,long uid){s.role(cid,uid);var rows=s.db.queryForList("SELECT a.*,e.id AS entry_id,e.revision AS draft_revision,(SELECT MAX(v.version_no) FROM submission v WHERE v.entry_id=e.id) AS version_no FROM assignment a LEFT JOIN entry e ON e.assignment_id=a.id AND e.author_id=? WHERE a.course_id=? ORDER BY a.id DESC",uid,cid);Instant clock=Instant.now();for(var a:rows){Instant due=Instant.parse((String)a.get("due_at"));a.put("server_now",clock.toString());a.put("due_status",Boolean.TRUE.equals(a.get("manually_closed"))||!due.isAfter(clock)?"CLOSED":!due.isAfter(clock.plusSeconds(86400))?"DUE_SOON":"OPEN");}return rows;}
++ public List<Map<String,Object>> assignments(long cid,long uid){s.role(cid,uid);var rows=s.db.queryForList("SELECT a.*,e.id AS entry_id,e.revision AS draft_revision,(SELECT MAX(v.version_no) FROM submission v WHERE v.entry_id=e.id) AS version_no FROM assignment a LEFT JOIN entry e ON e.assignment_id=a.id AND e.author_id=? WHERE a.course_id=? AND (a.free_form=FALSE OR e.id IS NOT NULL) ORDER BY a.id DESC",uid,cid);Instant clock=Instant.now();for(var a:rows){Instant due=Instant.parse((String)a.get("due_at"));a.put("server_now",clock.toString());a.put("due_status",Boolean.TRUE.equals(a.get("manually_closed"))||!due.isAfter(clock)?"CLOSED":!due.isAfter(clock.plusSeconds(86400))?"DUE_SOON":"OPEN");}return rows;}
+  public Map<String,Object> progress(long cid,long uid){
+   String role=s.role(cid,uid);boolean staff=Set.of("TEACHER","ASSISTANT").contains(role);
+   String filter=staff?"":" AND e.author_id="+uid;
+@@ -146,7 +146,18 @@ public class CommunityService {
+   if(content==null||content.toString().isBlank())throw new IllegalStateException("模型无输出");
+   return content.toString();
+  }
+- @Transactional public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM assignment WHERE id=? FOR UPDATE",aid);s.student(s.id(a,"course_id"),uid);var existing=s.db.queryForList("SELECT id FROM entry WHERE assignment_id=? AND author_id=?",aid,uid);if(!existing.isEmpty())return getEntry(s.id(existing.getFirst(),"id"),uid);if(Boolean.TRUE.equals(a.get("manually_closed"))||!Instant.parse((String)a.get("due_at")).isAfter(Instant.now()))throw fail(422,"作业已结束或截止，不能新建作答；已有草稿仍可整理保存");
++ @Transactional // 自由创作：为作者新建一条不挂作业要求与截止时间的知识帖（内部用 free_form 作业占位，沿用既有联表逻辑）。
++ public Map<String,Object> createFreeEntry(long cid,String title,long uid){
++  s.student(cid,uid);
++  String t=title==null?"":title.trim();
++  if(t.isEmpty()||t.length()>160)throw fail(422,"标题需为 1-160 字");
++  var rubric=rubrics.selection(cid,null);long rid=((Number)rubric.get("id")).longValue();
++  Instant due=Instant.now().plusSeconds(3600L*24*365*100);
++  long aid=s.insert("INSERT INTO assignment(course_id,title,requirements,due_at,rubric_version,rubric_id,created_at,ai_feedback_enabled,free_form) VALUES(?,?,?,?,?,?,?,FALSE,TRUE)",cid,t,"自由创作：不受作业要求与截止时间约束；提交后由任课教师审核，通过后可在知识社区展示。",due.toString(),rubric.get("code"),rid==0?null:rid,now());
++  s.audit(uid,"FREE_ENTRY_CREATE","assignment",aid);
++  return start(aid,uid);
++ }
++public Map<String,Object> start(long aid,long uid){var a=s.one("SELECT * FROM assignment WHERE id=? FOR UPDATE",aid);s.student(s.id(a,"course_id"),uid);var existing=s.db.queryForList("SELECT id FROM entry WHERE assignment_id=? AND author_id=?",aid,uid);if(!existing.isEmpty())return getEntry(s.id(existing.getFirst(),"id"),uid);if(Boolean.TRUE.equals(a.get("manually_closed"))||!Instant.parse((String)a.get("due_at")).isAfter(Instant.now()))throw fail(422,"作业已结束或截止，不能新建作答；已有草稿仍可整理保存");
+   String block=UUID.randomUUID().toString();String doc="{\"type\":\"doc\",\"content\":[{\"type\":\"paragraph\",\"attrs\":{\"blockId\":\""+block+"\"}}]}";
+   long id=s.insert("INSERT INTO entry(assignment_id,author_id,title,draft_json,evidence_json,revision,updated_at) VALUES(?,?,?,?,?,0,?)",aid,uid,a.get("title"),doc,"[]",now());s.audit(uid,"ENTRY_CREATE","entry",id);return getEntry(id,uid);}
+  public Map<String,Object> getEntry(long id,long uid){var e=entry(id);String role=s.role(s.id(e,"course_id"),uid);if(s.id(e,"author_id")!=uid&&!role.equals("TEACHER"))throw fail(403,"草稿仅作者与任课教师可见");e.put("rubric",rubrics.forAssignment(s.id(e,"assignment_id")));e.put("content",decode(e.remove("draft_json")));e.put("evidence",decode(e.remove("evidence_json")));
+@@ -206,6 +217,10 @@ public class CommunityService {
+   var rule=s.one("SELECT * FROM assignment WHERE id=? FOR UPDATE",e.get("assignment_id"));
+   if(Boolean.TRUE.equals(rule.get("manually_closed")))throw fail(422,"教师已结束作业；已有草稿仍可保存，但不能提交新版本");
+   if(((Number)e.get("revision")).intValue()!=revision)throw fail(409,"草稿版本已变化，请保存并刷新后再提交");if(!Instant.parse((String)rule.get("due_at")).isAfter(Instant.now()))throw fail(422,"作业已截止，本版尚不支持迟交");
++  // 提交次数上限：0 表示不限。达到上限后仍可保存草稿，但不能冻结新版本。
++  int submitLimit=rule.get("max_submissions")==null?0:((Number)rule.get("max_submissions")).intValue();
++  int submitted=s.db.queryForObject("SELECT COUNT(*) FROM submission WHERE entry_id=?",Integer.class,eid);
++  if(submitLimit>0&&submitted>=submitLimit)throw fail(422,"本作业最多提交 "+submitLimit+" 个版本，你已用完；可以继续修改草稿，但不能再提交新版本");
+   JsonNode doc=decode(e.get("draft_json"));validateContent(doc);if(text(doc).isBlank())throw fail(422,"请先填写正文");
+   var latest=s.db.queryForList("SELECT id,content_hash FROM submission WHERE entry_id=? ORDER BY version_no DESC LIMIT 1",eid);
+   if(!latest.isEmpty()&&s.db.queryForObject("SELECT COUNT(*) FROM evaluation WHERE submission_id=? AND active=TRUE",Integer.class,latest.getFirst().get("id"))==0)throw fail(422,"上一版本尚未完成教师评审，请等待反馈后修订");
+@@ -227,6 +242,10 @@ public class CommunityService {
+   return rows;}
+  public List<Map<String,Object>> queue(long cid,long uid){String role=s.role(cid,uid);if(!List.of("TEACHER","ASSISTANT").contains(role))throw fail(403,"批改队列仅教师或助教可见");return s.db.queryForList("SELECT v.id,v.title,v.version_no,v.created_at,e.author_id,u.display_name AS author_name,a.title AS assignment_title,g.q_final,d.updated_at AS review_draft_updated_at FROM submission v JOIN entry e ON e.id=v.entry_id JOIN app_user u ON u.id=e.author_id JOIN assignment a ON a.id=e.assignment_id LEFT JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE LEFT JOIN review_draft d ON d.submission_id=v.id AND d.teacher_id=? AND ?=TRUE WHERE a.course_id=? ORDER BY v.created_at DESC",uid,role.equals("TEACHER"),cid);}
+  @Transactional public Map<String,Object> evaluate(long sid,ApiController.EvaluationRequest req,long uid){var v=submission(sid);s.teacher(s.id(v,"course_id"),uid);s.one("SELECT id FROM submission WHERE id=? FOR UPDATE",sid);rubrics.forSubmission(v);int current=s.db.queryForObject("SELECT COUNT(*) FROM evaluation WHERE submission_id=?",Integer.class,sid);if(req.expectedRevision()!=current)throw fail(409,"评价已被其他窗口更新，请重新加载后再评");
++  // 同一版本批阅次数上限：0 表示不限。首次评分与复评都计入。
++  var evalRule=s.one("SELECT max_evaluations FROM assignment WHERE id=?",s.id(v,"assignment_id"));
++  int evalLimit=evalRule.get("max_evaluations")==null?0:((Number)evalRule.get("max_evaluations")).intValue();
++  if(evalLimit>0&&current>=evalLimit)throw fail(422,"该版本已批阅 "+current+" 次，达到本作业上限（"+evalLimit+" 次），不能再复评");
+   var result=QualityCalculator.calculate(req.items(),req.gateReason());
+   if(s.db.queryForObject("SELECT COUNT(*) FROM evidence WHERE submission_id=? AND state IN ('PENDING','DISPUTED')",Integer.class,sid)>0)throw fail(422,"有待核验或有争议的证据，请先完成核验再发布正式评分");
+   s.db.update("UPDATE evaluation SET active=FALSE WHERE submission_id=? AND active=TRUE",sid);
+@@ -251,15 +270,19 @@ public class CommunityService {
+   String state=teacher?verdict:prior.stream().anyMatch(x->!verdict.equals(x.get("verdict")))?"DISPUTED":verdict;
+   s.db.update("INSERT INTO verification(evidence_id,verifier_id,verdict,reason,created_at,verifier_role) VALUES(?,?,?,?,?,?)",id,uid,verdict,reason.trim(),now(),role);s.db.update("UPDATE evidence SET state=? WHERE id=?",state,id);s.audit(uid,"EVIDENCE_"+verdict,"evidence",id);notices.send(s.id(v,"author_id"),s.id(v,"course_id"),"EVIDENCE","MEMBER","证据核验结果已更新","evidence",id,"",uid);if(state.equals("DISPUTED"))notices.teachers(s.id(v,"course_id"),"EVIDENCE_DISPUTED","证据存在争议，等待教师裁定","evidence",id,uid);}
+  public List<Map<String,Object>> verifications(long eid,long uid){var ev=s.one("SELECT * FROM evidence WHERE id=?",eid);var v=submission(s.id(ev,"submission_id"));s.role(s.id(v,"course_id"),uid);return s.db.queryForList("SELECT x.*,u.display_name AS verifier_name FROM verification x JOIN app_user u ON u.id=x.verifier_id WHERE x.evidence_id=? ORDER BY x.id",eid);}
+- @Transactional public void requestPublication(long sid,long uid){requestPublication(sid,uid,null,"");}
+- @Transactional public void requestPublication(long sid,long uid,Integer expected,String reason){
++ @Transactional public void requestPublication(long sid,long uid){requestPublication(sid,uid,null,"","COURSE");}
++ @Transactional public void requestPublication(long sid,long uid,Integer expected,String reason){requestPublication(sid,uid,expected,reason,"COURSE");}
++ @Transactional public void requestPublication(long sid,long uid,Integer expected,String reason,String visibility){
++  // 可见范围由作者显式选择；缺省沿用该版已有设置，避免旧客户端把公开版本悄悄收回课程内。
++  String scope=visibility==null||visibility.isBlank()?null:visibility.trim();
++  if(scope!=null&&!Set.of("COURSE","PUBLIC").contains(scope))throw fail(422,"未知的可见范围");
+   var v=submission(sid);own(v,uid);s.one("SELECT id FROM submission WHERE id=? FOR UPDATE",sid);
+   var grade=(Map<String,Object>)getEvaluation(sid);if(grade==null)throw fail(422,"请先等待教师发布评分");
+   var rows=s.db.queryForList("SELECT * FROM publication WHERE submission_id=?",sid);Map<String,Object> pub;
+   if(rows.isEmpty()){if(expected!=null&&expected!=0)throw fail(409,"发布状态已变化，请刷新后核对");long id=s.insert("INSERT INTO publication(submission_id,author_id,state,requested_at) VALUES(?,?,'NEW',?)",sid,uid,now());pub=s.one("SELECT * FROM publication WHERE id=?",id);}
+   else pub=rows.getFirst();
+   checkPublicationRevision(pub,expected);if(!Set.of("NEW","WITHDRAWN","RETURNED").contains(pub.get("state")))throw fail(409,"该版已申请或已发布");
+-  s.db.update("UPDATE publication SET requested_at=?,reviewed_at=NULL,reviewer_id=NULL,requested_evaluation_revision=? WHERE id=?",now(),grade.get("revision_no"),pub.get("id"));
++  s.db.update("UPDATE publication SET requested_at=?,reviewed_at=NULL,reviewer_id=NULL,requested_evaluation_revision=?,visibility=COALESCE(?,visibility) WHERE id=?",now(),grade.get("revision_no"),scope,pub.get("id"));
+   publicationEvent(pub,uid,s.role(s.id(v,"course_id"),uid),"REQUEST","PENDING",reason.isBlank()?"作者申请展示此提交版本":reason,(Number)grade.get("revision_no"));
+   s.audit(uid,"PUBLICATION_REQUEST","submission",sid);notices.teachers(s.id(v,"course_id"),"PUBLICATION_REQUEST","有新的课程内发布申请","publication",sid,uid);
+  }
+@@ -300,5 +323,14 @@ public class CommunityService {
+   p.put("title",v.get("title"));p.put("version_no",v.get("version_no"));p.put("author_name",v.get("author_name"));p.put("events",s.db.queryForList("SELECT h.*,u.display_name AS actor_name FROM publication_event h JOIN app_user u ON u.id=h.actor_id WHERE h.publication_id=? ORDER BY h.revision_no DESC",id));return p;
+  }
+  public List<Map<String,Object>> publicationRecords(long cid,long uid){String role=s.role(cid,uid);return s.db.queryForList("SELECT p.*,v.title,v.version_no,u.display_name AS author_name,a.title AS assignment_title FROM publication p JOIN submission v ON v.id=p.submission_id JOIN entry e ON e.id=v.entry_id JOIN assignment a ON a.id=e.assignment_id JOIN app_user u ON u.id=e.author_id WHERE a.course_id=?"+(role.equals("TEACHER")?"":" AND p.author_id="+uid)+" ORDER BY p.requested_at DESC,p.id DESC",cid);}
+- public List<Map<String,Object>> publications(long cid,long uid,boolean pending){if(pending)s.teacher(cid,uid);else s.role(cid,uid);var rows=s.db.queryForList("SELECT p.*,v.title,v.version_no,v.content_json,u.display_name AS author_name,g.q_final,g.summary,g.dimensions_json,(SELECT COUNT(*) FROM feedback f WHERE f.submission_id=v.id) AS discussion_count FROM publication p JOIN submission v ON v.id=p.submission_id JOIN entry e ON e.id=v.entry_id JOIN app_user u ON u.id=e.author_id JOIN assignment a ON a.id=e.assignment_id JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE a.course_id=? AND p.state=? ORDER BY COALESCE(p.published_at,p.reviewed_at,p.requested_at) DESC,p.id DESC",cid,pending?"PENDING":"PUBLISHED");for(var row:rows){var content=decode(row.remove("content_json"));row.put("cover",mediaSources(content).stream().findFirst().orElse(""));Object dims=row.remove("dimensions_json");row.put("dims",dims==null?Map.of():decode(dims));if(!pending){row.remove("last_reason");row.remove("requested_evaluation_revision");}}return rows;}
++ public List<Map<String,Object>> publications(long cid,long uid,boolean pending){return publications(cid,uid,pending,"COURSE");}
++ public List<Map<String,Object>> publications(long cid,long uid,boolean pending,String scope){String mode=scope==null||scope.isBlank()?"COURSE":scope.trim().toUpperCase();if(!Set.of("COURSE","MINE","PUBLIC").contains(mode))throw fail(422,"未知的社区范围");
++  // 待审核列表只对任课教师开放，且始终按本课程过滤。
++  if(pending){s.teacher(cid,uid);mode="COURSE";}else s.role(cid,uid);
++  String where;Object[] args;
++  if("MINE".equals(mode)){where="a.course_id IN (SELECT course_id FROM course_member WHERE user_id=?) AND p.state='PUBLISHED'";args=new Object[]{uid};}
++  else if("PUBLIC".equals(mode)){where="p.visibility='PUBLIC' AND p.state='PUBLISHED'";args=new Object[]{};}
++  else {where="a.course_id=? AND p.state=?";args=new Object[]{cid,pending?"PENDING":"PUBLISHED"};}
++  var rows=s.db.queryForList("SELECT p.*,v.title,v.version_no,v.content_json,u.display_name AS author_name,a.course_id,c.title AS course_title,g.q_final,g.summary,g.dimensions_json,(SELECT COUNT(*) FROM feedback f WHERE f.submission_id=v.id) AS discussion_count FROM publication p JOIN submission v ON v.id=p.submission_id JOIN entry e ON e.id=v.entry_id JOIN app_user u ON u.id=e.author_id JOIN assignment a ON a.id=e.assignment_id JOIN course c ON c.id=a.course_id JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE "+where+" ORDER BY COALESCE(p.published_at,p.reviewed_at,p.requested_at) DESC,p.id DESC",args);
++  for(var row:rows){var content=decode(row.remove("content_json"));row.put("cover",mediaSources(content).stream().findFirst().orElse(""));Object dims=row.remove("dimensions_json");row.put("dims",dims==null?Map.of():decode(dims));if(!pending){row.remove("last_reason");row.remove("requested_evaluation_revision");}}return rows;}
+ }
+diff --git a/backend/src/main/resources/db/migration/V13__submission_and_evaluation_limits.sql b/backend/src/main/resources/db/migration/V13__submission_and_evaluation_limits.sql
+new file mode 100644
+index 0000000..07f9384
+--- /dev/null
++++ b/backend/src/main/resources/db/migration/V13__submission_and_evaluation_limits.sql
+@@ -0,0 +1,3 @@
++-- 提交与批阅次数上限（0 表示不限）。默认：每份作业最多提交 5 个版本，同一版本最多批阅 3 次。
++ALTER TABLE assignment ADD COLUMN max_submissions INT NOT NULL DEFAULT 5;
++ALTER TABLE assignment ADD COLUMN max_evaluations INT NOT NULL DEFAULT 3;
+diff --git a/backend/src/main/resources/db/migration/V14__publication_visibility.sql b/backend/src/main/resources/db/migration/V14__publication_visibility.sql
+new file mode 100644
+index 0000000..cd51c07
+--- /dev/null
++++ b/backend/src/main/resources/db/migration/V14__publication_visibility.sql
+@@ -0,0 +1,2 @@
++-- 发布可见范围：COURSE 仅本课程（默认）／PUBLIC 全站公开（需作者显式同意）。
++ALTER TABLE publication ADD COLUMN visibility VARCHAR(16) NOT NULL DEFAULT 'COURSE';
+diff --git a/backend/src/main/resources/db/migration/V15__free_form_entries.sql b/backend/src/main/resources/db/migration/V15__free_form_entries.sql
+new file mode 100644
+index 0000000..89bef3d
+--- /dev/null
++++ b/backend/src/main/resources/db/migration/V15__free_form_entries.sql
+@@ -0,0 +1,2 @@
++-- 自由创作：不挂作业要求与截止时间的知识帖。用 free_form 标记，使既有「entry 必须属于 assignment」的联表逻辑保持不变。
++ALTER TABLE assignment ADD COLUMN free_form BOOLEAN NOT NULL DEFAULT FALSE;
+diff --git a/frontend/src/App.vue b/frontend/src/App.vue
+index 7eb98a5..ab68183 100644
+--- a/frontend/src/App.vue
++++ b/frontend/src/App.vue
+@@ -243,12 +243,37 @@ const navName = computed(
+ const currentAssignment = computed(() =>
+   assignments.value.find((a) => a.id === entry.value?.assignment_id),
+ );
++// 提交次数上限（0 = 不限）：用于在编辑器里提示剩余版本，并在用尽后禁用提交。
++const submitLimit = computed(() => Number(currentAssignment.value?.max_submissions ?? 0));
++const submittedCount = computed(() => (entry.value?.versions || []).length);
++const submitExhausted = computed(
++  () => submitLimit.value > 0 && submittedCount.value >= submitLimit.value,
++);
+ const pendingQueue = computed(() => queue.value.filter((q) => q.q_final === null));
+ const pendingReviewCount=computed(()=>reviewQueueSummary.value?.pending_count??pendingQueue.value.length);
+ watch([()=>cid.value,()=>me.value?.id,()=>course.value?.role],()=>{reviewFilters.value=defaultReviewQuery();reviewNavScope.value=null;reviewQueueSummary.value=null;nextReviewMessage.value='';});
+ const myWork = computed(() => assignments.value.filter((a) => a.entry_id));
+ const commTab = ref("all"),
+   commStatus = ref("all");
++// 社区可见范围：本课程 / 我参与的所有课程 / 全站公开（仅作者授权公开的帖子）。
++const commScope = ref("COURSE");
++const commScopes = [
++  { id: "COURSE", name: "本课程" },
++  { id: "MINE", name: "我的课程" },
++  { id: "PUBLIC", name: "全站公开" },
++];
++async function loadCommunity() {
++  const activeCourse = cid.value, epoch = accessEpoch;
++  const rows = await api(
++    `/courses/${cid.value}/publications?scope=${commScope.value}`,
++  );
++  if (activeCourse !== cid.value || epoch !== accessEpoch) return;
++  publications.value = rows;
++}
++watch(commScope, () => {
++  commTab.value = "all";
++  loadCommunity().catch((e) => notify(e.message || "无法切换社区范围"));
++});
+ const commSource = computed(() => [
+   ...publications.value.map((p: any) => ({ ...p, _pending: false })),
+   ...(isTeacher.value ? pending.value.map((p: any) => ({ ...p, _pending: true })) : []),
+@@ -684,6 +709,31 @@ async function logout() {
+     page.value = "home";
+   });
+ }
++// 自由创作：直接新建知识帖，不挂在作业下；提交后仍走教师审核与正式评价。
++async function newFreePost() {
++  const title = prompt("给这篇知识帖起个标题（之后可在编辑器里改）");
++  if (title === null) return;
++  if (!title.trim()) {
++    notify("标题不能为空");
++    return;
++  }
++  await run(async () => {
++    if (!(await flushBeforeLeave())) return;
++    const epoch = accessEpoch, uid = me.value?.id, courseId = cid.value;
++    const e = await api(`/courses/${courseId}/free-entries`, "POST", {
++      title: title.trim(),
++    });
++    if (epoch !== accessEpoch || uid !== me.value?.id || courseId !== cid.value)
++      return;
++    entry.value = e;
++    await loadEditorState();
++    if (entry.value?.id !== e.id) return;
++    page.value = "editor";
++    menu.value = false;
++    await refreshCourse();
++    notify("已新建知识帖；提交后由任课教师审核");
++  });
++}
+ async function openAssignment(a: any) {
+   await run(async () => {
+     if (!(await flushBeforeLeave())) return;
+@@ -1153,7 +1203,7 @@ async function modalSubmit() {
+         rubricId:Number(f.rubricId),
+       });
+       await refreshCourse();
+-      notify(`作业已创建，量规锁定为 ${created.rubric_version}`);
++      notify(`作业已创建`);
+     }
+     if (modal.value === "course") {
+       const c = await api("/courses", "POST", {
+@@ -1584,6 +1634,11 @@ onBeforeUnmount(() => {
+                 <Plus :size="17" />发布作业
+               </button>
+             </div>
++            <div v-else-if="!isStaff" class="button-row">
++              <button class="btn secondary" :disabled="busy" @click="newFreePost">
++                <PenLine :size="16" />写知识贴
++              </button>
++            </div>
+           </div>
+           <div class="list-tabs" role="group" aria-label="作业筛选">
+             <button
+@@ -1612,13 +1667,18 @@ onBeforeUnmount(() => {
+             >
+               <div class="card-top">
+                 <span class="file-icon"><FileText :size="22" /></span
+-                ><span class="badge blue">知识帖</span>
++                ><span class="badge blue">{{ a.free_form ? '自由创作' : '知识帖' }}</span>
+               </div>
+               <h2>{{ a.title }}</h2>
+               <p>{{ a.requirements }}</p>
+               <div class="meta-line">
+-                <Clock :size="16" />{{ fmt(a.due_at) }} 截止
+-                <span class="deadline-badge" :class="assignmentState(a,deadlineNow).toLowerCase()">{{ a.manually_closed ? '已结束' : dueLabel(assignmentState(a,deadlineNow)) }}</span>
++                <template v-if="a.free_form"
++                  ><PenLine :size="16" />自由创作 · 不受截止时间限制</template
++                >
++                <template v-else
++                  ><Clock :size="16" />{{ fmt(a.due_at) }} 截止
++                  <span class="deadline-badge" :class="assignmentState(a,deadlineNow).toLowerCase()">{{ a.manually_closed ? '已结束' : dueLabel(assignmentState(a,deadlineNow)) }}</span></template
++                >
+               </div>
+               <div class="assignment-ai-policy">
+                 <div><span><Sparkles :size="14" />AI 修改建议</span><small>{{ a.ai_feedback_enabled ? '已开放入口 · 服务待配置' : '未开放 · 学生端不显示' }}</small></div>
+@@ -1626,8 +1686,7 @@ onBeforeUnmount(() => {
+                 <span v-else class="small-label">{{ a.ai_feedback_enabled ? '已开启' : '未开启' }}</span>
+               </div>
+               <div class="assignment-foot"><button v-if="isTeacher" class="btn secondary manage-assignment-btn" @click="managedAssignment={...a}"><SlidersHorizontal :size="14"/>管理作业</button>
+-                <span class="muted">{{ a.rubric_version }}</span
+-                ><button
++                <button
+                   class="text-btn"
+                   :disabled="busy || (!isStaff && !a.entry_id && assignmentState(a,deadlineNow)==='CLOSED')"
+                   @click="isStaff ? go('review') : openAssignment(a)"
+@@ -1665,8 +1724,32 @@ onBeforeUnmount(() => {
+               <h1>知识社区</h1>
+               <p>同学们共同撰写、评议与核验的知识条目。</p>
+             </div>
+-            <button class="btn secondary" @click="go('assignments')">
+-              去创作 <Plus :size="15" />
++            <div class="button-row">
++              <button
++                v-if="!isStaff"
++                class="btn primary"
++                :disabled="busy"
++                @click="newFreePost"
++              >
++                写知识贴 <PenLine :size="15" />
++              </button>
++              <button class="btn secondary" @click="go('assignments')">
++                去作业 <Plus :size="15" />
++              </button>
++            </div>
++          </div>
++
++          <div class="comm-scopes" role="radiogroup" aria-label="可见范围">
++            <button
++              v-for="s in commScopes"
++              :key="s.id"
++              class="comm-scope"
++              :class="{ on: commScope === s.id }"
++              role="radio"
++              :aria-checked="commScope === s.id"
++              @click="commScope = s.id"
++            >
++              {{ s.name }}
+             </button>
+           </div>
+ 
+@@ -1850,12 +1933,18 @@ onBeforeUnmount(() => {
+                 @click="saveDraftAndReturn"
+               >
+                 <Save :size="17" />保存草稿</button
++              ><span
++                v-if="submitLimit > 0"
++                class="submit-quota"
++                :class="{ done: submitExhausted }"
++                :title="submitExhausted ? '本作业的提交次数已用完，仍可保存草稿' : '本作业最多可提交 ' + submitLimit + ' 个版本'"
++              >已提交 {{ submittedCount }}/{{ submitLimit }}</span
+               ><button
+                 class="btn primary"
+-                :disabled="saving || busy || conflicted || uploadingMedia || (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED')"
++                :disabled="saving || busy || conflicted || uploadingMedia || submitExhausted || (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED')"
+                 @click="submit"
+               >
+-                <Send :size="17" />{{ currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED' ? (currentAssignment?.manually_closed?'作业已结束':'作业已截止') : '提交评审' }}
++                <Send :size="17" />{{ submitExhausted ? '提交次数已用完' : (currentAssignment && assignmentState(currentAssignment,deadlineNow)==='CLOSED' ? (currentAssignment?.manually_closed?'作业已结束':'作业已截止') : '提交评审') }}
+               </button>
+             </div>
+           </div>
+@@ -2172,8 +2261,7 @@ onBeforeUnmount(() => {
+             </aside>
+             <div class="document-column">
+               <div class="document-paper" @mouseup="captureSelection">
+-                <span class="eyebrow"
+-                  >{{ version.rubric_version }} · 不可变提交版本</span
++                <span class="eyebrow">不可变提交版本</span
+                 >
+                 <h2 class="reader-title">{{ version.title }}</h2>
+                 <div class="document-meta">
+@@ -2354,7 +2442,6 @@ onBeforeUnmount(() => {
+                 <section class="grade-block">
+                   <div class="grade-block-head">
+                     <h4>内容质量</h4>
+-                    <span>{{ version.rubric_version }}</span>
+                   </div>
+                   <div v-for="d in rubric" :key="d.d" class="grade-dim">
+                     <span class="grade-dim-name"
+diff --git a/frontend/src/AssignmentManager.vue b/frontend/src/AssignmentManager.vue
+index 679c63e..a3e61b3 100644
+--- a/frontend/src/AssignmentManager.vue
++++ b/frontend/src/AssignmentManager.vue
+@@ -3,17 +3,17 @@ import {ref,computed,onMounted,onBeforeUnmount,nextTick} from 'vue';
+ import {X,History,Save,LockKeyhole,RotateCcw,AlertCircle} from 'lucide-vue-next';
+ import {api} from './api';
+ const props=defineProps<{assignment:any}>();const emit=defineEmits(['close','changed']);
+-const dialog=ref<HTMLDialogElement>();const current=ref({...props.assignment}),title=ref(''),requirements=ref(''),due=ref(''),reason=ref(''),tab=ref('settings'),records=ref<any[]>([]),busy=ref(false),error=ref(''),conflict=ref(false),saved=ref(''),historyError=ref('');let returnFocus:HTMLElement|null=null;
++const dialog=ref<HTMLDialogElement>();const current=ref({...props.assignment}),title=ref(''),requirements=ref(''),due=ref(''),maxSub=ref(5),maxEval=ref(3),reason=ref(''),tab=ref('settings'),records=ref<any[]>([]),busy=ref(false),error=ref(''),conflict=ref(false),saved=ref(''),historyError=ref('');let returnFocus:HTMLElement|null=null;
+ function localTime(value:string){const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);}
+-function reset(){title.value=current.value.title;requirements.value=current.value.requirements;due.value=localTime(current.value.due_at);reason.value='';}
+-reset();const dirty=computed(()=>title.value!==current.value.title||requirements.value!==current.value.requirements||due.value!==localTime(current.value.due_at));
++function reset(){title.value=current.value.title;requirements.value=current.value.requirements;due.value=localTime(current.value.due_at);maxSub.value=current.value.max_submissions??5;maxEval.value=current.value.max_evaluations??3;reason.value='';}
++reset();const dirty=computed(()=>title.value!==current.value.title||requirements.value!==current.value.requirements||due.value!==localTime(current.value.due_at)||maxSub.value!==(current.value.max_submissions??5)||maxEval.value!==(current.value.max_evaluations??3));
+ const canSave=computed(()=>dirty.value&&!!title.value.trim()&&!!requirements.value.trim()&&!!due.value&&!!reason.value.trim()&&!busy.value&&!conflict.value);
+ const actionName:Record<string,string>={EDIT:'修改任务规则',CLOSE:'手动结束',REOPEN:'重新开放'};
+ function time(s:string){return new Date(s).toLocaleString('zh-CN',{hour12:false});}
+ async function history(){historyError.value='';try{records.value=await api(`/assignments/${current.value.id}/history`);}catch(e:any){historyError.value=e.message;}}
+ function close(){if(busy.value)return;if((dirty.value||reason.value)&&!confirm('放弃本次未保存的作业管理输入？'))return;dialog.value?.close();emit('close');}
+ async function reload(){if((dirty.value||reason.value)&&!confirm('重新载入将放弃当前未保存的作业管理输入，确认继续？'))return;busy.value=true;error.value='';try{const rows=await api(`/courses/${current.value.course_id}/assignments`);const found=rows.find((a:any)=>a.id===current.value.id);if(!found)throw Error('作业已不可访问');current.value={...found};reset();conflict.value=false;await history();}catch(e:any){error.value=e.message;}finally{busy.value=false;}}
+-async function save(){if(!canSave.value)return;const d=new Date(due.value);if(!Number.isFinite(d.getTime())){error.value='请填写有效截止时间';return;}if(!current.value.manually_closed&&Date.parse(current.value.due_at)<=Date.now()&&!confirm('该作业已自然截止。保存新的未来截止时间后，将恢复学生作答与提交。确认延期？'))return;busy.value=true;error.value='';saved.value='';try{current.value=await api(`/assignments/${current.value.id}`,'PUT',{title:title.value,requirements:requirements.value,dueAt:due.value===localTime(current.value.due_at)?current.value.due_at:d.toISOString(),reason:reason.value,revision:current.value.management_revision});reset();saved.value='作业规则已更新，课程学生将收到提醒。';emit('changed');await history();}catch(e:any){error.value=e.message;conflict.value=e.status===409;}finally{busy.value=false;}}
++async function save(){if(!canSave.value)return;const d=new Date(due.value);if(!Number.isFinite(d.getTime())){error.value='请填写有效截止时间';return;}if(!current.value.manually_closed&&Date.parse(current.value.due_at)<=Date.now()&&!confirm('该作业已自然截止。保存新的未来截止时间后，将恢复学生作答与提交。确认延期？'))return;busy.value=true;error.value='';saved.value='';try{current.value=await api(`/assignments/${current.value.id}`,'PUT',{title:title.value,requirements:requirements.value,dueAt:due.value===localTime(current.value.due_at)?current.value.due_at:d.toISOString(),maxSubmissions:Number(maxSub.value),maxEvaluations:Number(maxEval.value),reason:reason.value,revision:current.value.management_revision});reset();saved.value='作业规则已更新，课程学生将收到提醒。';emit('changed');await history();}catch(e:any){error.value=e.message;conflict.value=e.status===409;}finally{busy.value=false;}}
+ async function changeState(){if(dirty.value){error.value='请先保存或重置未保存的任务要求，再改变开放状态。';return;}if(!reason.value.trim()){error.value='请填写变更原因，再改变开放状态。';return;}const closed=current.value.manually_closed;if(!confirm(closed?'重新开放后，学生可在截止前继续提交。确认开放？':'结束后停止新建作答和提交；已有草稿、评审与历史保留。确认结束？'))return;busy.value=true;error.value='';saved.value='';try{current.value=await api(`/assignments/${current.value.id}/state`,'POST',{action:closed?'REOPEN':'CLOSE',reason:reason.value,revision:current.value.management_revision});reset();saved.value=closed?'作业已重新开放。':'作业已手动结束，已有草稿仍可整理。';emit('changed');await history();}catch(e:any){error.value=e.message;conflict.value=e.status===409;}finally{busy.value=false;}}
+ function unload(e:BeforeUnloadEvent){if(dirty.value||reason.value||busy.value){e.preventDefault();e.returnValue='';}}
+ onMounted(async()=>{returnFocus=document.activeElement as HTMLElement;dialog.value?.showModal();await nextTick();await history();window.addEventListener('beforeunload',unload);});
+@@ -21,5 +21,5 @@ onBeforeUnmount(()=>{window.removeEventListener('beforeunload',unload);returnFoc
+ </script>
+ <template><Teleport to="body"><dialog ref="dialog" class="assignment-manager" aria-labelledby="assignment-manager-heading" @cancel.prevent="close"><header><div><span class="eyebrow">教师作业管理 · r{{ current.management_revision }}</span><h2 id="assignment-manager-heading">管理作业</h2></div><button class="icon-btn" aria-label="关闭作业管理" :disabled="busy" @click="close"><X :size="20"/></button></header><div class="assignment-manager-tabs list-tabs"><button :class="{active:tab==='settings'}" @click="tab='settings'">任务与开放状态</button><button :class="{active:tab==='history'}" @click="tab='history';history()"><History :size="14"/>变更记录</button></div>
+ <div class="assignment-manager-body"><p v-if="error" class="notice-error" role="alert"><AlertCircle :size="16"/>{{ error }}</p><button v-if="conflict" class="btn secondary" :disabled="busy" @click="reload">重新载入最新规则</button><p v-if="saved" class="management-success" role="status">{{ saved }}</p>
+-<form v-if="tab==='settings'" @submit.prevent="save"><div class="management-state"><strong>{{ current.manually_closed?'已手动结束':(Date.parse(current.due_at)<=Date.now()?'已自然截止':'按截止时间开放') }}</strong><span>{{ time(current.due_at) }} 截止</span></div><p class="management-help">绑定量规：{{ current.rubric_version }}。此版本不可在作业管理中改绑；调整课程默认量规不影响本作业。</p><p class="management-help">修改不覆盖作品正文、已提交版本或正式评价。自然截止后延期会恢复提交；手动结束后调整截止时间不会自动开放，需另行确认。</p><fieldset :disabled="busy||conflict"><label>作业标题<input v-model="title" maxlength="160" required /></label><label>任务要求<textarea v-model="requirements" rows="5" maxlength="4000" required /></label><label>截止时间（本地时区）<input v-model="due" type="datetime-local" required /></label><label>变更原因<textarea v-model="reason" rows="2" maxlength="1000" placeholder="说明要求调整、延期或结束的原因；会保存在教师变更记录中" required /></label></fieldset><footer><button type="button" class="btn secondary" :disabled="busy||conflict" @click="changeState"><RotateCcw v-if="current.manually_closed" :size="15"/><LockKeyhole v-else :size="15"/>{{ current.manually_closed?'重新开放作业':'结束作业' }}</button><div><button type="button" class="text-btn" :disabled="busy" @click="reset">重置输入</button><button type="submit" class="btn primary" :disabled="!canSave"><Save :size="15"/>{{ busy?'正在保存…':'保存规则' }}</button></div></footer></form>
++<form v-if="tab==='settings'" @submit.prevent="save"><div class="management-state"><strong>{{ current.manually_closed?'已手动结束':(Date.parse(current.due_at)<=Date.now()?'已自然截止':'按截止时间开放') }}</strong><span>{{ time(current.due_at) }} 截止</span></div><p class="management-help">量规已随作业锁定，作业管理中不可改绑；调整课程默认量规不影响本作业。</p><p class="management-help">修改不覆盖作品正文、已提交版本或正式评价。自然截止后延期会恢复提交；手动结束后调整截止时间不会自动开放，需另行确认。</p><fieldset :disabled="busy||conflict"><label>作业标题<input v-model="title" maxlength="160" required /></label><label>任务要求<textarea v-model="requirements" rows="5" maxlength="4000" required /></label><label>截止时间（本地时区）<input v-model="due" type="datetime-local" required /></label><div class="limit-row"><label>最多提交版本数<input v-model.number="maxSub" type="number" min="0" max="50" step="1" /><span class="field-hint">0 表示不限。达到上限后学生仍可改草稿，但不能提交新版本。</span></label><label>同一版本最多批阅次数<input v-model.number="maxEval" type="number" min="0" max="20" step="1" /><span class="field-hint">0 表示不限。首次评分与复评都计入。</span></label></div><label>变更原因<textarea v-model="reason" rows="2" maxlength="1000" placeholder="说明要求调整、延期或结束的原因；会保存在教师变更记录中" required /></label></fieldset><footer><button type="button" class="btn secondary" :disabled="busy||conflict" @click="changeState"><RotateCcw v-if="current.manually_closed" :size="15"/><LockKeyhole v-else :size="15"/>{{ current.manually_closed?'重新开放作业':'结束作业' }}</button><div><button type="button" class="text-btn" :disabled="busy" @click="reset">重置输入</button><button type="submit" class="btn primary" :disabled="!canSave"><Save :size="15"/>{{ busy?'正在保存…':'保存规则' }}</button></div></footer></form>
+ <section v-else class="assignment-change-list"><p class="management-help">保留最近 100 次规则变更；仅任课教师可见。</p><p v-if="historyError" role="alert">{{ historyError }}<button class="text-btn" @click="history">重试</button></p><p v-else-if="!records.length" class="empty-text">还没有规则变更。当前作业规则为初始版本。</p><article v-for="r in records" :key="r.id"><div><strong>{{ actionName[r.action_type] }}</strong><span>r{{ r.revision_no }} · {{ r.actor_name }}</span></div><time>{{ time(r.created_at) }}</time><p>{{ r.reason }}</p><details><summary>查看变更前后规则</summary><div class="rule-comparison"><section v-for="side in ['before','after']" :key="side"><b>{{ side==='before'?'变更前':'变更后' }}</b><p>{{ r[side].title }}</p><p class="rule-requirements">{{ r[side].requirements }}</p><p>{{ time(r[side].due_at) }} 截止</p><p>{{ r[side].manually_closed?'手动结束':'按截止时间开放' }}</p></section></div></details></article></section></div></dialog></Teleport></template>
+diff --git a/frontend/src/PublicationManager.vue b/frontend/src/PublicationManager.vue
+index 3cd62e2..7be1a81 100644
+--- a/frontend/src/PublicationManager.vue
++++ b/frontend/src/PublicationManager.vue
+@@ -3,7 +3,7 @@ import {ref,computed,watch,onBeforeUnmount,nextTick} from 'vue';
+ import {History,X,RefreshCw,Search,ArrowUpRight,ShieldCheck} from 'lucide-vue-next';
+ import {api} from './api';
+ const props=defineProps<{courseId:number;userId:number;role:string}>();const emit=defineEmits(['changed','open-submission']);
+-const dialog=ref<HTMLDialogElement>(),detail=ref<any>(null),records=ref<any[]>([]),mode=ref('records'),action=ref('APPROVE'),reason=ref(''),q=ref(''),state=ref(''),page=ref(1),loading=ref(false),busy=ref(false),error=ref(''),message=ref(''),conflict=ref(false);let generation=0,alive=true,returnFocus:HTMLElement|null=null;
++const dialog=ref<HTMLDialogElement>(),detail=ref<any>(null),records=ref<any[]>([]),mode=ref('records'),action=ref('APPROVE'),reason=ref(''),visibility=ref('COURSE'),q=ref(''),state=ref(''),page=ref(1),loading=ref(false),busy=ref(false),error=ref(''),message=ref(''),conflict=ref(false);let generation=0,alive=true,returnFocus:HTMLElement|null=null;
+ const teacher=computed(()=>props.role==='TEACHER');const names:Record<string,string>={PENDING:'待审核',PUBLISHED:'已发布',RETURNED:'已退回',WITHDRAWN:'已撤回'};const actions:Record<string,string>={REQUEST:'申请发布',APPROVE:'审核通过',RETURN:'退回修改',CANCEL:'撤回申请',TEACHER_WITHDRAW:'教师撤回展示',AUTHOR_WITHDRAW:'作者撤回展示',REGRADE:'复评自动撤回'};
+ const filtered=computed(()=>records.value.filter(r=>(!state.value||r.state===state.value)&&`${r.title} ${r.author_name} ${r.assignment_title}`.toLocaleLowerCase().includes(q.value.trim().toLocaleLowerCase())));const pages=computed(()=>Math.max(1,Math.ceil(filtered.value.length/20)));const shown=computed(()=>filtered.value.slice((page.value-1)*20,page.value*20));
+ const allowed=computed(()=>{const d=detail.value;if(!d)return false;if(action.value==='REQUEST')return d.author_id===props.userId&&(!d.id||['WITHDRAWN','RETURNED'].includes(d.state));if(['APPROVE','RETURN'].includes(action.value))return teacher.value&&d.state==='PENDING';return action.value==='WITHDRAW'&&(teacher.value||d.author_id===props.userId)&&['PENDING','PUBLISHED'].includes(d.state);});
+@@ -12,24 +12,24 @@ function fmt(s:string){return s?new Date(s).toLocaleString('zh-CN',{hour12:false
+ async function present(){returnFocus=document.activeElement as HTMLElement;error.value='';message.value='';reason.value='';conflict.value=false;await nextTick();if(!dialog.value?.open)dialog.value?.showModal();}
+ async function load(){const g=++generation;loading.value=true;error.value='';try{const r=await api(`/courses/${props.courseId}/publication-records`);if(alive&&g===generation)records.value=r;}catch(e:any){if(g===generation)error.value=e.message;}finally{if(g===generation)loading.value=false;}}
+ async function list(){mode.value='records';detail.value=null;await present();await load();}
+-async function fetchDetail(id:number){const g=++generation;loading.value=true;error.value='';try{const d=await api(`/publications/${id}/review`);if(alive&&g===generation){detail.value=d;conflict.value=false;}}catch(e:any){if(g===generation){error.value=e.message;conflict.value=true;detail.value=null;}}finally{if(g===generation)loading.value=false;}}
++async function fetchDetail(id:number){const g=++generation;loading.value=true;error.value='';try{const d=await api(`/publications/${id}/review`);if(alive&&g===generation){detail.value=d;visibility.value=d.visibility==='PUBLIC'?'PUBLIC':'COURSE';conflict.value=false;}}catch(e:any){if(g===generation){error.value=e.message;conflict.value=true;detail.value=null;}}finally{if(g===generation)loading.value=false;}}
+ async function open(id:number,a=''){mode.value='detail';action.value=a;detail.value=null;await present();await fetchDetail(id);}
+-async function request(sid:number,p:any,title:string){if(p){await open(p.id,'REQUEST');return;}mode.value='detail';action.value='REQUEST';await present();detail.value={submission_id:sid,title,author_id:props.userId,revision:0,events:[]};}
++async function request(sid:number,p:any,title:string){visibility.value='COURSE';if(p){await open(p.id,'REQUEST');return;}mode.value='detail';action.value='REQUEST';await present();detail.value={submission_id:sid,title,author_id:props.userId,revision:0,events:[]};}
+ function close(){if(busy.value)return;if(reason.value.trim()&&!confirm('离开将放弃尚未提交的发布理由，是否继续？'))return;generation++;dialog.value?.close();reason.value='';detail.value=null;returnFocus?.focus();}
+ async function refresh(){if(detail.value?.id){await fetchDetail(detail.value.id);message.value='状态已刷新，输入的理由仍保留；请重新核对后提交。';}else await load();}
+-async function submit(){if(!detail.value||!allowed.value||busy.value||conflict.value||loading.value)return;const d=detail.value;busy.value=true;error.value='';try{if(action.value==='REQUEST')await api(`/submissions/${d.submission_id}/publication-request`,'POST',{revision:d.revision,reason:reason.value});else await api(`/publications/${d.id}/decisions`,'POST',{action:action.value,revision:d.revision,reason:reason.value});reason.value='';action.value='';message.value='发布处理已保存。指定提交版本不变，操作历史已保留。';if(d.id)await fetchDetail(d.id);else {await load();const p=records.value.find(x=>x.submission_id===d.submission_id);if(p)await fetchDetail(p.id);}if(alive)emit('changed');}catch(e:any){error.value=e.message;if([409,403,422].includes(e.status))conflict.value=true;}finally{busy.value=false;}}
++async function submit(){if(!detail.value||!allowed.value||busy.value||conflict.value||loading.value)return;const d=detail.value;busy.value=true;error.value='';try{if(action.value==='REQUEST')await api(`/submissions/${d.submission_id}/publication-request`,'POST',{revision:d.revision,reason:reason.value,visibility:visibility.value});else await api(`/publications/${d.id}/decisions`,'POST',{action:action.value,revision:d.revision,reason:reason.value});reason.value='';action.value='';message.value='发布处理已保存。指定提交版本不变，操作历史已保留。';if(d.id)await fetchDetail(d.id);else {await load();const p=records.value.find(x=>x.submission_id===d.submission_id);if(p)await fetchDetail(p.id);}if(alive)emit('changed');}catch(e:any){error.value=e.message;if([409,403,422].includes(e.status))conflict.value=true;}finally{busy.value=false;}}
+ function read(sid:number){close();if(!dialog.value?.open)emit('open-submission',sid);}
+ function unload(e:BeforeUnloadEvent){if(reason.value.trim()||busy.value){e.preventDefault();e.returnValue='';}}
+ watch([q,state],()=>page.value=1);watch(()=>[props.courseId,props.userId,props.role],()=>{generation++;reason.value='';records.value=[];detail.value=null;dialog.value?.close();});window.addEventListener('beforeunload',unload);onBeforeUnmount(()=>{alive=false;generation++;window.removeEventListener('beforeunload',unload);});defineExpose({open,request});
+ </script>
+ <template><Teleport to="#publication-entry"><button class="btn secondary" @click="list"><History :size="16"/>{{ teacher?'发布审核与记录':'我的发布记录' }}</button></Teleport>
+ <dialog ref="dialog" class="publication-dialog" aria-labelledby="pub-title" @cancel.prevent="close"><header><div><span class="eyebrow">课程知识共建 · 指定版本发布</span><h2 id="pub-title">{{ mode==='records'?(teacher?'发布审核与记录':'我的发布记录'):'发布审核详情' }}</h2></div><button class="icon-btn" aria-label="关闭发布详情" :disabled="busy" @click="close"><X :size="20"/></button></header>
+-<div class="publication-body"><p class="muted"><ShieldCheck :size="15"/>仅在本课程展示；审核理由与操作记录仅作者和任课教师可见。后续草稿不会替换已发布版本。</p><p v-if="error" class="alert error" role="alert">{{ error }}</p><p v-if="message" class="alert" role="status">{{ message }}</p><p v-if="loading" role="status">正在读取发布记录…</p>
++<div class="publication-body"><p class="muted"><ShieldCheck :size="15"/>默认仅在本课程展示；作者可在申请时选择全站公开。审核理由与操作记录仅作者和任课教师可见。后续草稿不会替换已发布版本。</p><p v-if="error" class="alert error" role="alert">{{ error }}</p><p v-if="message" class="alert" role="status">{{ message }}</p><p v-if="loading" role="status">正在读取发布记录…</p>
+ <template v-if="mode==='records'"><div class="filter-row"><label class="search-box"><Search :size="16"/><input v-model="q" aria-label="搜索发布记录" placeholder="标题、作者或作业" maxlength="80"/></label><select v-model="state" aria-label="发布记录状态"><option value="">全部状态</option><option v-for="(n,s) in names" :value="s" :key="s">{{ n }}</option></select><button class="btn secondary" :disabled="loading" @click="load"><RefreshCw :size="15"/>刷新记录</button></div><article v-for="r in shown" :key="r.id" class="publication-record"><div><strong>{{ r.title }}</strong><p class="muted">{{ r.author_name }} · v{{ r.version_no }} · {{ r.assignment_title }}</p><small class="muted">申请于 {{ fmt(r.requested_at) }}</small></div><span class="badge" :class="r.state==='PUBLISHED'?'green':r.state==='PENDING'?'orange':''">{{ names[r.state] }}</span><button class="btn secondary" @click="open(r.id)">查看发布详情</button></article><p v-if="!loading&&!filtered.length" class="empty-text">没有匹配的发布记录。先获得教师正式评价，再申请发布。</p><div class="publication-pagination"><span class="muted">{{ filtered.length }} 条记录 · 第 {{ page }}/{{ pages }} 页</span><button class="btn secondary" :disabled="page<=1" @click="page--">上一页</button><button class="btn secondary" :disabled="page>=pages" @click="page++">下一页</button></div></template>
+ <template v-else-if="detail"><div class="publication-detail-heading"><div><h3>{{ detail.title }}</h3><p class="muted">{{ detail.author_name }} <template v-if="detail.version_no">· v{{ detail.version_no }}</template> · {{ names[detail.state]||'尚未申请' }}</p></div><button class="text-btn" @click="read(detail.submission_id)">阅读指定版本<ArrowUpRight :size="15"/></button></div>
+ <div v-if="detail.last_reason" class="publication-reason"><strong>最近处理理由</strong><p>{{ detail.last_reason }}</p></div>
+ <div v-if="mayDecide" class="button-row"><template v-if="detail.state==='PENDING'&&teacher"><button class="btn secondary" @click="action='APPROVE'">审核通过</button><button class="btn secondary" @click="action='RETURN'">退回修改</button></template><button v-if="['PENDING','PUBLISHED'].includes(detail.state)" class="btn secondary" @click="action='WITHDRAW'">{{ detail.state==='PENDING'?'撤回发布申请':'撤回社区展示' }}</button><button v-if="detail.author_id===userId&&['RETURNED','WITHDRAWN'].includes(detail.state)" class="btn secondary" @click="action='REQUEST'">重新申请发布</button><button v-if="detail.id" class="text-btn" :disabled="busy||loading" @click="refresh"><RefreshCw :size="15"/>刷新当前状态</button></div>
+-<form v-if="action" class="publication-form" @submit.prevent="submit"><h3>{{ action==='REQUEST'?'申请发布':action==='RETURN'?'退回修改':action==='APPROVE'?'同意发布':'撤回此版本' }}</h3><p class="muted">{{ action==='RETURN'?'请说明需要补充或修改什么。作者可按此理由修订，也可为此提交版重新申请。':action==='WITHDRAW'?'撤回后同学无法继续访问此版本；作品、正式评价及历史记录不会删除。':'本次仅处理当前不可变提交版本，不会发布正在编辑的草稿。' }}</p><label for="publication-reason">{{ action==='REQUEST'?'申请说明（选填）':'处理理由（必填）' }}</label><textarea id="publication-reason" v-model="reason" :required="action!=='REQUEST'" maxlength="2000" rows="4" :disabled="busy" placeholder="写下本次处理依据，便于作者与教师后续核对"/><p v-if="!allowed" class="muted">当前状态不再允许此操作，请核对上方状态并选择可用操作。</p><p v-if="conflict" class="muted">输入已保留。请刷新状态后重新核对，不会自动重试或覆盖新记录。</p><button class="btn primary" :disabled="!allowed||busy||loading||conflict||(action!=='REQUEST'&&!reason.trim())">{{ busy?'正在保存…':'确认发布处理' }}</button></form>
++<form v-if="action" class="publication-form" @submit.prevent="submit"><h3>{{ action==='REQUEST'?'申请发布':action==='RETURN'?'退回修改':action==='APPROVE'?'同意发布':'撤回此版本' }}</h3><p class="muted">{{ action==='RETURN'?'请说明需要补充或修改什么。作者可按此理由修订，也可为此提交版重新申请。':action==='WITHDRAW'?'撤回后同学无法继续访问此版本；作品、正式评价及历史记录不会删除。':'本次仅处理当前不可变提交版本，不会发布正在编辑的草稿。' }}</p><fieldset v-if="action==='REQUEST'" class="visibility-choice"><legend>可见范围</legend><label><input type="radio" value="COURSE" v-model="visibility"/> 仅本课程同学可见</label><label><input type="radio" value="PUBLIC" v-model="visibility"/> 全站公开（其他课程的同学也能读到，需你本人同意）</label><p class="muted">可以随时在发布记录里撤回；撤回后该版本不再对外展示。</p></fieldset><label for="publication-reason">{{ action==='REQUEST'?'申请说明（选填）':'处理理由（必填）' }}</label><textarea id="publication-reason" v-model="reason" :required="action!=='REQUEST'" maxlength="2000" rows="4" :disabled="busy" placeholder="写下本次处理依据，便于作者与教师后续核对"/><p v-if="!allowed" class="muted">当前状态不再允许此操作，请核对上方状态并选择可用操作。</p><p v-if="conflict" class="muted">输入已保留。请刷新状态后重新核对，不会自动重试或覆盖新记录。</p><button class="btn primary" :disabled="!allowed||busy||loading||conflict||(action!=='REQUEST'&&!reason.trim())">{{ busy?'正在保存…':'确认发布处理' }}</button></form>
+ <h3 class="publication-history-title">操作历史 <span class="badge">{{ detail.events.length }} 条</span></h3><article v-for="h in detail.events" :key="h.id" class="publication-history"><strong>{{ actions[h.action_type]||h.action_type }}</strong><span class="muted">{{ h.actor_name }} · {{ h.actor_role==='TEACHER'?'教师':'作者' }} · {{ fmt(h.created_at) }}</span><p>{{ h.reason }}</p><small class="muted">{{ h.before_state==='NEW'?'未申请':names[h.before_state] }} → {{ names[h.after_state] }}<template v-if="h.evaluation_revision"> · 评价 r{{ h.evaluation_revision }}</template></small></article><p v-if="!detail.events.length" class="muted">暂无操作历史；历史版本升级前的审核过程不会补造。</p></template></div>
+ <footer><button class="btn secondary" :disabled="busy" @click="close">关闭发布记录</button></footer></dialog></template>
+ <style scoped>
+diff --git a/frontend/src/style.css b/frontend/src/style.css
+index 4dbcd48..b79e9b7 100644
+--- a/frontend/src/style.css
++++ b/frontend/src/style.css
+@@ -4032,6 +4032,14 @@ summary:focus-visible {
+ .management-state { display:flex; justify-content:space-between; gap:16px; font-size:13px; padding:12px; background:var(--surface); border-radius:6px; }
+ .management-state span,.management-help { color:var(--muted); }
+ .management-help { font-size:12px; line-height:1.85; margin:12px 0 20px; }
++/* 次数上限：两个数字输入并排，提示文字压在输入框下方 */
++.limit-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:4px 0 12px; }
++.limit-row label { margin:0; }
++.field-hint { display:block; margin-top:6px; font-size:11px; line-height:1.6; color:var(--muted); font-weight:400; }
++@media (max-width:720px) { .limit-row { grid-template-columns:1fr; } }
++/* 编辑器顶部：剩余提交版本提示 */
++.submit-quota { align-self:center; font-size:12px; color:var(--muted); white-space:nowrap; font-variant-numeric:tabular-nums; }
++.submit-quota.done { color:#b45309; }
+ .assignment-manager footer { display:flex; justify-content:space-between; align-items:center; gap:12px; padding-top:22px; }
+ .assignment-manager footer > div { display:flex; gap:14px; align-items:center; }
+ .assignment-manager .notice-error { display:flex; gap:8px; align-items:flex-start; }
+@@ -4311,6 +4319,17 @@ dialog.account-settings::backdrop{background:#0007;}
+ /* ---------- 知识社区 ---------- */
+ .community-page .page-heading { margin-bottom: 16px; }
+ .comm-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; flex-wrap: wrap; }
++/* 社区可见范围切换：独立于下方的状态标签页 */
++.comm-scopes { display:inline-flex; gap:2px; padding:3px; margin-bottom:14px; background:var(--surface); border:1px solid var(--border); border-radius:10px; }
++.comm-scope { border:0; background:transparent; color:var(--muted); font-size:13px; padding:6px 14px; border-radius:7px; cursor:pointer; transition:background .15s,color .15s; }
++.comm-scope:hover { color:var(--text); }
++.comm-scope.on { background:var(--paper); color:var(--text); font-weight:600; box-shadow:0 1px 2px rgb(15 23 42 / 8%); }
++/* 发布申请：可见范围选择 */
++.visibility-choice { border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin:14px 0; }
++.visibility-choice legend { font-size:12px; color:var(--muted); padding:0 6px; }
++.visibility-choice label { display:flex; gap:8px; align-items:center; margin:8px 0; font-size:13px; font-weight:400; }
++.visibility-choice label input { width:auto; margin:0; }
++.visibility-choice p { margin:8px 0 0; font-size:12px; }
+ .comm-tab { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 10px 12px; font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; }
+ .comm-tab:hover { color: var(--text); }
+ .comm-tab.on { color: var(--text); font-weight: 600; border-bottom-color: var(--text); }
+-- 
+2.50.1 (Apple Git-155)
+

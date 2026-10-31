@@ -1,0 +1,405 @@
+From 1564432616f457ef32098da7b9f5554b8819491f Mon Sep 17 00:00:00 2001
+From: ockc <zss@zhengshshdeMacBook-Air.local>
+Date: Sat, 24 Oct 2026 17:31:09 +0900
+Subject: [PATCH 2/4] feat: persist AI suggestions with anchors, add insert
+ menu and return navigation
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- ai_suggestion table (V12) replaces the one-shot ai_feedback_cache payload;
+  each suggestion keeps paragraph_id/quote_text so it can be located in the body
+- generate prompt now asks for paragraphId + verbatim quote, validated against
+  the document anchors before persisting; max 4 suggestions per revision
+- POST /api/ai-suggestions/{id}/state lets the author or teacher mark
+  OPEN/ADOPTED/DISMISSED; AI cards expose 定位正文 and 采纳 with optimistic update
+- editor toolbar gains text labels plus a code-block button; the '/' insert hack
+  is replaced by a real dropdown menu that also works inside code/figure blocks
+- editor heading is no longer a sticky floating card above the toolbar
+- 保存草稿 / 提交评审 / 发布正式评价 return to the originating list by default
+---
+ .../cn/course/community/ApiController.java    |  2 +
+ .../cn/course/community/CommunityService.java | 57 +++++++++++------
+ .../db/migration/V12__ai_suggestions.sql      | 14 +++++
+ frontend/src/AiFeedback.vue                   | 20 +++++-
+ frontend/src/App.vue                          | 14 ++++-
+ frontend/src/Editor.vue                       | 63 +++++++++++++------
+ frontend/src/style.css                        | 28 ++++++---
+ 7 files changed, 149 insertions(+), 49 deletions(-)
+ create mode 100644 backend/src/main/resources/db/migration/V12__ai_suggestions.sql
+
+diff --git a/backend/src/main/java/cn/course/community/ApiController.java b/backend/src/main/java/cn/course/community/ApiController.java
+index 9a4df97..d98c193 100644
+--- a/backend/src/main/java/cn/course/community/ApiController.java
++++ b/backend/src/main/java/cn/course/community/ApiController.java
+@@ -32,6 +32,8 @@ public class ApiController {
+  @PostMapping("/courses/{cid}/assignments") public Object createAssignment(@PathVariable long cid,@Valid @RequestBody AssignmentRequest r,Principal p){return service.createAssignment(cid,r.title(),r.requirements(),r.dueAt(),Boolean.TRUE.equals(r.aiFeedbackEnabled()),r.rubricId(),uid(p));}
+  @PutMapping("/assignments/{aid}/ai-policy") public Object aiPolicy(@PathVariable long aid,@Valid @RequestBody AiPolicyRequest r,Principal p){return service.setAiPolicy(aid,r.enabled(),uid(p));}
+  @GetMapping("/entries/{eid}/ai-feedback") public Object aiFeedback(@PathVariable long eid,@RequestParam(defaultValue="false") boolean generate,Principal p){return service.aiFeedback(eid,uid(p),generate);}
++ public record AiSuggestionStateRequest(@NotBlank @Pattern(regexp="OPEN|ADOPTED|DISMISSED") String state){}
++ @PostMapping("/ai-suggestions/{id}/state") public Object aiSuggestionState(@PathVariable long id,@Valid @RequestBody AiSuggestionStateRequest r,Principal p){service.setAiSuggestionState(id,r.state(),uid(p));return Map.of("ok",true);}
+  @PostMapping("/assignments/{aid}/entries") public Object start(@PathVariable long aid,Principal p){return service.start(aid,uid(p));}
+  @GetMapping("/entries/{eid}") public Object getEntry(@PathVariable long eid,Principal p){return service.getEntry(eid,uid(p));}
+  @PutMapping("/entries/{eid}/draft") public Object save(@PathVariable long eid,@Valid @RequestBody DraftRequest r,Principal p){return service.save(eid,r,uid(p));}
+diff --git a/backend/src/main/java/cn/course/community/CommunityService.java b/backend/src/main/java/cn/course/community/CommunityService.java
+index ce8e09c..e754bb9 100644
+--- a/backend/src/main/java/cn/course/community/CommunityService.java
++++ b/backend/src/main/java/cn/course/community/CommunityService.java
+@@ -64,36 +64,55 @@ public class CommunityService {
+   if(!enabled)return Map.of("enabled",false,"status","DISABLED","suggestions",List.of(),"formalScore",false);
+   if(aiKey==null||aiKey.isBlank())return Map.of("enabled",true,"status","NOT_CONFIGURED","suggestions",List.of(),"formalScore",false);
+   int rev=((Number)e.get("revision")).intValue();
+-  var cached=s.db.queryForList("SELECT payload_json FROM ai_feedback_cache WHERE entry_id=? AND revision=?",eid,rev);
+-  if(!cached.isEmpty()){
+-   var node=decode(cached.getFirst().get("payload_json"));var list=new ArrayList<Map<String,Object>>();
+-   for(var item:node.path("suggestions"))list.add(Map.of("dimension",item.path("dimension").asText("C"),"title",item.path("title").asText(""),"body",item.path("body").asText("")));
+-   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"cached",true,"model",aiModel);
+-  }
++  var saved=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY id",eid,rev);
++  if(!saved.isEmpty())return Map.of("enabled",true,"status","READY","suggestions",saved,"formalScore",false,"saved",true,"model",aiModel);
+   if(!generate)return Map.of("enabled",true,"status","NOT_GENERATED","suggestions",List.of(),"formalScore",false,"model",aiModel);
+-  String body=text(decode(e.get("draft_json")));
+-  if(body.isBlank())return Map.of("enabled",true,"status","EMPTY","suggestions",List.of(),"formalScore",false);
+-  if(body.length()>6000)body=body.substring(0,6000);
++  var paragraphs=anchors(decode(e.get("draft_json")));
++  if(paragraphs.isEmpty()||text(decode(e.get("draft_json"))).isBlank())return Map.of("enabled",true,"status","EMPTY","suggestions",List.of(),"formalScore",false);
++  // 只把段落标识与正文交给模型，图片与证据原文不出网。
++  StringBuilder listing=new StringBuilder();
++  for(var en:paragraphs.entrySet()){
++   String value=en.getValue().trim();
++   if(value.isEmpty())continue;
++   listing.append('[').append(en.getKey()).append("] ").append(value).append('\n');
++   if(listing.length()>6000)break;
++  }
+   String title=(String)e.get("title");
+   try{
+-   String content=requestSuggestions(title,body);
++   String content=requestSuggestions(title,listing.substring(0,Math.min(listing.length(),6000)));
+    var node=decode(stripFence(content));
+    if(!node.path("suggestions").isArray()||node.path("suggestions").isEmpty())throw new IllegalStateException("模型未返回可用建议");
+-   s.db.update("DELETE FROM ai_feedback_cache WHERE entry_id=?",eid);
+-   s.db.update("INSERT INTO ai_feedback_cache(entry_id,revision,payload_json,created_at) VALUES(?,?,?,?)",eid,rev,encode(node),now());
+-   s.audit(uid,"AI_FEEDBACK_GENERATE","entry",eid);
+-   var list=new ArrayList<Map<String,Object>>();
++   s.db.update("DELETE FROM ai_suggestion WHERE entry_id=? AND revision=?",eid,rev);
+    int count=0;
+    for(var item:node.path("suggestions")){
+     if(count++>=4)break;
+-    list.add(Map.of("dimension",item.path("dimension").asText("C"),"title",item.path("title").asText(""),"body",item.path("body").asText("")));
++    String pid=item.path("paragraphId").asText("").trim();
++    // 段落标识必须是本文真实存在的锚点，否则建议无法定位，只保留文字。
++    if(!paragraphs.containsKey(pid))pid="";
++    String quote=item.path("quote").asText("").trim();
++    if(quote.length()>600||(!pid.isEmpty()&&!paragraphs.get(pid).contains(quote)))quote="";
++    s.db.update("INSERT INTO ai_suggestion(entry_id,revision,paragraph_id,quote_text,dimension,title,body,state,created_at) VALUES(?,?,?,?,?,?,?,'OPEN',?)",
++     eid,rev,pid.isEmpty()?null:pid,quote.isEmpty()?null:quote,
++     item.path("dimension").asText("C"),trimTo(item.path("title").asText(""),200),trimTo(item.path("body").asText(""),1000),now());
+    }
+-   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"cached",false,"model",aiModel);
++   s.audit(uid,"AI_FEEDBACK_GENERATE","entry",eid);
++   var list=s.db.queryForList("SELECT id,paragraph_id,quote_text,dimension,title,body,state FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY id",eid,rev);
++   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"saved",true,"model",aiModel);
+   }catch(Exception ex){
+    org.slf4j.LoggerFactory.getLogger(CommunityService.class).warn("AI feedback failed for entry {}: {}",eid,ex.toString());
+    return Map.of("enabled",true,"status","FAILED","message","模型服务暂时不可用，请稍后重试","suggestions",List.of(),"formalScore",false);
+   }
+  }
++ private String trimTo(String value,int max){String v=value==null?"":value.trim();return v.length()>max?v.substring(0,max):v;}
++ @Transactional public void setAiSuggestionState(long id,String state,long uid){
++  if(!Set.of("OPEN","ADOPTED","DISMISSED").contains(state))throw fail(422,"未知的建议状态");
++  var rows=s.db.queryForList("SELECT entry_id FROM ai_suggestion WHERE id=?",id);
++  if(rows.isEmpty())throw fail(404,"建议不存在");
++  var e=entry(s.id(rows.getFirst(),"entry_id"));String role=s.role(s.id(e,"course_id"),uid);
++  if(s.id(e,"author_id")!=uid&&!"TEACHER".equals(role))throw fail(403,"无权处理该建议");
++  s.db.update("UPDATE ai_suggestion SET state=? WHERE id=?",state,id);
++  s.audit(uid,"AI_SUGGESTION_"+state,"ai_suggestion",id);
++ }
+  private String stripFence(String raw){
+   String t=raw==null?"":raw.trim();
+   if(t.startsWith("```")){int nl=t.indexOf('\n');if(nl>0)t=t.substring(nl+1);int end=t.lastIndexOf("```");if(end>=0)t=t.substring(0,end);}
+@@ -107,8 +126,10 @@ public class CommunityService {
+   var client=org.springframework.web.client.RestClient.builder().baseUrl(aiBase).requestFactory(factory).build();
+   String system=("你是课程写作助教，帮助学生改进知识帖。只能依据四维量规给出可执行的修改建议，不得编造来源。"
+    +"四个维度：S 科学性（概念与机制是否正确）、A 准确性（表述与数据是否有据）、C 完整性（关键环节是否交代）、L 逻辑性（论证链条是否连贯）。"
+-   +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出问题并给出改法\"}]}。最多 4 条，按重要程度排序。");
+-  String user="标题："+(title==null?"":title)+"\n正文：\n"+body+"\n\n请给出 3 到 4 条修改建议。";
++   +"我会给你带段落标识的正文，每行形如 [p_xxx] 段落内容。"
++   +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中 10-40 字的原文片段\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出问题并给出改法\"}]}。"
++   +"paragraphId 必须来自我给出的列表；quote 必须逐字出现在该段落里。最多 4 条，按重要程度排序。");
++  String user="标题："+(title==null?"":title)+"\n正文（带段落标识）：\n"+body+"\n\n请给出 3 到 4 条修改建议。";
+   Map<String,Object> payload=new LinkedHashMap<>();
+   payload.put("model",aiModel);
+   payload.put("temperature",0.3);
+diff --git a/backend/src/main/resources/db/migration/V12__ai_suggestions.sql b/backend/src/main/resources/db/migration/V12__ai_suggestions.sql
+new file mode 100644
+index 0000000..0464a97
+--- /dev/null
++++ b/backend/src/main/resources/db/migration/V12__ai_suggestions.sql
+@@ -0,0 +1,14 @@
++-- AI 建议：从一次性缓存升级为可采纳、可定位的条目，与教师批注并列展示但不参与评分。
++CREATE TABLE ai_suggestion (
++ id BIGINT AUTO_INCREMENT PRIMARY KEY,
++ entry_id BIGINT NOT NULL,
++ revision INT NOT NULL,
++ paragraph_id VARCHAR(80),
++ quote_text VARCHAR(600),
++ dimension VARCHAR(8) NOT NULL,
++ title VARCHAR(200) NOT NULL,
++ body VARCHAR(1000) NOT NULL,
++ state VARCHAR(16) NOT NULL DEFAULT 'OPEN',
++ created_at VARCHAR(40) NOT NULL
++);
++CREATE INDEX idx_ai_suggestion_entry_rev ON ai_suggestion(entry_id, revision);
+diff --git a/frontend/src/AiFeedback.vue b/frontend/src/AiFeedback.vue
+index 6206c0a..4eda3ea 100644
+--- a/frontend/src/AiFeedback.vue
++++ b/frontend/src/AiFeedback.vue
+@@ -3,13 +3,22 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue';
+ import { Sparkles, RefreshCw, ShieldCheck, AlertCircle, Wand2 } from 'lucide-vue-next';
+ import { api } from './api';
+ const props = defineProps<{ entryId: number; assignmentEnabled?: boolean }>();
+-const emit = defineEmits<{ visibility: [enabled: boolean] }>();
++const emit = defineEmits<{ visibility: [enabled: boolean]; locate: [paragraphId: string] }>();
+ const enabled = ref(false), loading = ref(false), failed = ref(false);
+ const status = ref(''), message = ref(''), model = ref('');
+-const suggestions = ref<Array<{ dimension: string; title: string; body: string }>>([]);
++const suggestions = ref<Array<{ id?: number; paragraph_id?: string | null; quote_text?: string | null; dimension: string; title: string; body: string; state?: string }>>([]);
+ let sequence = 0;
+ const DIM: Record<string, string> = { S: '科学性', A: '准确性', C: '完整性', L: '逻辑性' };
+ function dimName(code: string) { return DIM[String(code || 'C').charAt(0)] || '建议'; }
++async function toggleAdopt(s: any) {
++  if (!s.id) return;
++  const previous = s.state || 'OPEN';
++  const next = previous === 'ADOPTED' ? 'OPEN' : 'ADOPTED';
++  s.state = next;
++  try { await api(`/ai-suggestions/${s.id}/state`, 'POST', { state: next }); }
++  catch { s.state = previous; }
++}
++function locate(s: any) { if (s.paragraph_id) emit('locate', s.paragraph_id); }
+ async function load(generate = false) {
+   const current = ++sequence; loading.value = true; failed.value = false;
+   try {
+@@ -37,9 +46,14 @@ onBeforeUnmount(() => { sequence++; });
+     <header class="sidebar-section-heading"><h3><Sparkles :size="15" />AI 反馈</h3><span class="small-label">{{ status === 'READY' ? (model || '已生成') : '教师已开启' }}</span></header>
+ 
+     <div v-if="status === 'READY' && suggestions.length" class="ai-suggestion-list">
+-      <article v-for="(s, i) in suggestions" :key="i" class="ai-suggestion">
++      <article v-for="(s, i) in suggestions" :key="s.id || i" class="ai-suggestion" :class="{ adopted: s.state === 'ADOPTED' }">
+         <div class="ai-suggestion-top"><span class="ai-dim">{{ dimName(s.dimension) }}</span><strong>{{ s.title }}</strong></div>
+         <p>{{ s.body }}</p>
++        <blockquote v-if="s.quote_text" class="ai-quote">{{ s.quote_text }}</blockquote>
++        <div class="ai-suggestion-actions">
++          <button v-if="s.paragraph_id" class="text-btn" @click="locate(s)">定位正文</button>
++          <button class="text-btn" :class="{ adopted: s.state === 'ADOPTED' }" @click="toggleAdopt(s)">{{ s.state === 'ADOPTED' ? '已采纳' : '采纳' }}</button>
++        </div>
+       </article>
+       <button class="text-btn ai-refresh" :disabled="loading" @click="load(true)"><RefreshCw :size="13" :class="{ spinning: loading }" />重新生成建议</button>
+     </div>
+diff --git a/frontend/src/App.vue b/frontend/src/App.vue
+index b8a188f..7eb98a5 100644
+--- a/frontend/src/App.vue
++++ b/frontend/src/App.vue
+@@ -803,6 +803,12 @@ async function saveDraft(): Promise<boolean> {
+   })();
+   return inFlight;
+ }
++// 保存草稿后默认回到作业列表，避免停在编辑页误以为已经提交。
++async function saveDraftAndReturn() {
++  if (!(await saveDraft())) return;
++  notify("草稿已保存");
++  await go("assignments");
++}
+ function restoreBackup() {
+   if (!backup.value) return;
+   entry.value.title = backup.value.title;
+@@ -848,6 +854,8 @@ async function submit() {
+     await loadEditorState();
+     await refreshCourse();
+     notify(`已提交 v${v.version_no}，等待教师评审`);
++    // 提交成功后默认回到作业列表。
++    await go("assignments");
+   });
+ }
+ async function openVersion(sid: number, asReview = false, keepReviewScope=false) {
+@@ -1238,6 +1246,8 @@ async function publishGrade() {
+     await review.load(version.value.id);
+     await refreshCourse();
+     notify("正式评价已发布并留存历史记录");
++    // 发布后默认回到批改队列，继续处理下一份。
++    await go("review");
+     } finally { reviewPublishing.value=false; }
+   });
+ }
+@@ -1837,7 +1847,7 @@ onBeforeUnmount(() => {
+               ><button
+                 class="btn secondary"
+                 :disabled="saving || busy || uploadingMedia"
+-                @click="saveDraft"
++                @click="saveDraftAndReturn"
+               >
+                 <Save :size="17" />保存草稿</button
+               ><button
+@@ -2025,7 +2035,7 @@ onBeforeUnmount(() => {
+                 </article>
+                 <div v-if="!latest?.feedback?.length" class="sidebar-empty"><MessageSquare :size="21" /><p>{{ latest ? '还没有教师批注' : '提交后，在这里查看教师批注' }}</p><span>批注会定位到对应段落或图片。</span></div>
+               </section>
+-              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" @visibility="aiSidebarVisible = $event" />
++              <AiFeedback :key="entry.id" :entry-id="entry.id" :assignment-enabled="!!currentAssignment?.ai_feedback_enabled" @visibility="aiSidebarVisible = $event" @locate="focusAnchor" />
+               <details class="sidebar-version-history" :open="feedbackTab === 'versions'"><summary><History :size="14" />版本记录<span>{{ entry.versions.length }}</span><ChevronRight :size="14" class="history-chevron" /></summary>
+               <div class="version-list">
+                 <button
+diff --git a/frontend/src/Editor.vue b/frontend/src/Editor.vue
+index 2037a4b..a394736 100644
+--- a/frontend/src/Editor.vue
++++ b/frontend/src/Editor.vue
+@@ -366,15 +366,21 @@ function insertCommand(id: string) {
+   else if (id === "code") chain.setCodeBlock().run();
+   else if (id === "rule") chain.setHorizontalRule().run();
+ }
+-function openInsert() {
+-  const e = editor.value;
+-  if (!e) return;
+-  e.chain().focus().run();
+-  if (e.state.selection.$from.parent.textContent)
+-    e.chain().insertContent({ type: "paragraph" }).run();
+-  dismissedSlash = "";
+-  e.chain().insertContent("/").run();
+-  syncUi();
++// 插入菜单直接用按钮弹出列表：原先靠写入 "/" 触发斜杠菜单，在代码块、图片块等
++// 无法插入文本的节点里会静默失败，表现为“点了没反应”。
++const insertOpen = ref(false);
++function toggleInsert() {
++  insertOpen.value = !insertOpen.value;
++}
++function chooseInsert(id: string) {
++  insertOpen.value = false;
++  insertCommand(id);
++}
++function onDocumentMouseDown(e: MouseEvent) {
++  if (!insertOpen.value) return;
++  const t = e.target as HTMLElement | null;
++  if (t?.closest?.(".writer-insert-wrap")) return;
++  insertOpen.value = false;
+ }
+ async function showHelp() {
+   closeSlash();
+@@ -743,10 +749,12 @@ function onViewportChange() {
+ onMounted(() => {
+   window.addEventListener("resize", onViewportChange);
+   window.addEventListener("scroll", onViewportChange, true);
++  document.addEventListener("mousedown", onDocumentMouseDown);
+ });
+ onBeforeUnmount(() => {
+   window.removeEventListener("resize", onViewportChange);
+   window.removeEventListener("scroll", onViewportChange, true);
++  document.removeEventListener("mousedown", onDocumentMouseDown);
+   editor.value?.destroy();
+ });
+ </script>
+@@ -778,16 +786,33 @@ onBeforeUnmount(() => {
+         <span class="writer-key">Markdown</span>
+       </div>
+       <div class="writer-actions">
+-        <button
+-          type="button"
+-          class="writer-tool"
+-          aria-label="插入内容"
+-          title="插入内容"
+-          @mousedown.prevent
+-          @click="openInsert"
+-        >
+-          <Plus :size="17" /><span>插入</span>
+-        </button>
++        <div class="writer-insert-wrap">
++          <button
++            type="button"
++            class="writer-tool"
++            aria-label="插入内容"
++            title="插入内容"
++            :aria-expanded="insertOpen"
++            @mousedown.prevent
++            @click="toggleInsert"
++          >
++            <Plus :size="17" /><span>插入</span>
++          </button>
++          <div v-if="insertOpen" class="writer-insert-menu" role="menu" aria-label="插入内容">
++            <button
++              v-for="c in commands"
++              :key="c.id"
++              type="button"
++              role="menuitem"
++              @mousedown.prevent
++              @click="chooseInsert(c.id)"
++            >
++              <component :is="c.icon" :size="16" />
++              <span class="insert-text"><strong>{{ c.label }}</strong><small>{{ c.detail }}</small></span>
++              <kbd>{{ c.hint }}</kbd>
++            </button>
++          </div>
++        </div>
+         <button
+           type="button"
+           class="writer-icon"
+diff --git a/frontend/src/style.css b/frontend/src/style.css
+index 11a5ea0..4dbcd48 100644
+--- a/frontend/src/style.css
++++ b/frontend/src/style.css
+@@ -3777,6 +3777,14 @@ summary:focus-visible {
+ .creation-workspace .writer-mode { font-size: 10px; gap: 5px; }
+ .creation-workspace .writer-key { padding: 1px 4px; font-size: 10px; }
+ .creation-workspace .writer-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
++.writer-insert-wrap { position: relative; display: inline-flex; }
++.writer-insert-menu { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 40; width: 272px; max-height: 330px; overflow-y: auto; padding: 6px; background: var(--paper); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px #0f172a1f; display: grid; gap: 2px; }
++.writer-insert-menu button { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 7px; text-align: left; color: var(--text); }
++.writer-insert-menu button:hover { background: var(--blue-soft); color: var(--blue); }
++.writer-insert-menu .insert-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
++.writer-insert-menu .insert-text strong { font-size: 13px; font-weight: 600; }
++.writer-insert-menu .insert-text small { font-size: 11px; color: var(--muted); }
++.writer-insert-menu kbd { font-size: 10px; color: var(--subtle); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px; white-space: nowrap; }
+ .creation-workspace .writer-tool,.creation-workspace .writer-icon { min-height: 26px; min-width: 28px; padding: 0 8px; font-size: 11px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+ .creation-workspace .writer-actions svg { width: 14px; height: 14px; }
+ .creation-workspace .writer-editable .prose-editor { max-width: none; min-height: 550px; padding-bottom: 60px; font-size: 15px; line-height: 1.95; }
+@@ -4166,20 +4174,21 @@ dialog.account-settings::backdrop{background:#0007;}
+ 
+ /* Page usability polish: keep actions reachable without changing save/publish semantics. */
+ @media (min-width: 1000px) {
+-  .creation-workspace .editing-page { --workspace-action-height: 104px; }
++  .creation-workspace .editing-page { --workspace-action-height: 0px; }
++  /* 标题不再吸顶：吸顶时白底会盖住工具栏首行，视觉上像一块浮起来的卡片。 */
+   .creation-workspace .editor-heading {
+-    position: sticky; top: 56px; z-index: 24;
+-    min-height: 104px; box-sizing: border-box;
+-    padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--border);
++    position: static;
++    min-height: 0; box-sizing: border-box;
++    padding: 0 0 16px; background: transparent; border-bottom: 0;
+     align-items: center;
+   }
+   .creation-workspace .document-outline,
+   .creation-workspace .feedback-sidebar {
+-    top: calc(64px + var(--workspace-action-height));
+-    max-height: calc(100dvh - 76px - var(--workspace-action-height));
++    top: 68px;
++    max-height: calc(100dvh - 88px);
+   }
+   .creation-workspace .prose-editor [data-block-id],
+-  .creation-workspace .reader-document [data-block-id] { scroll-margin-top: 180px; }
++  .creation-workspace .reader-document [data-block-id] { scroll-margin-top: 96px; }
+ }
+ /* Native dialogs retain top-layer focus trapping; only the middle scrolls. */
+ .writer-dialog[open] { display: flex; flex-direction: column; overflow: hidden; max-height: calc(100dvh - 32px); }
+@@ -4273,6 +4282,11 @@ dialog.account-settings::backdrop{background:#0007;}
+ .ai-suggestion-top strong { font-size: 12.5px; }
+ .ai-dim { flex-shrink: 0; font-size: 11px; padding: 2px 7px; border-radius: 999px; background: color-mix(in srgb, var(--blue, #2563eb) 12%, transparent); color: var(--blue, #2563eb); }
+ .ai-suggestion p { margin: 0; font-size: 12.5px; line-height: 1.7; color: var(--muted); }
++.ai-suggestion.adopted { border-color: color-mix(in srgb, var(--green, #16a34a) 40%, var(--border)); background: var(--green-soft, #ecfdf3); }
++.ai-quote { margin: 6px 0 0; padding: 6px 8px; border-left: 3px solid var(--border); background: var(--paper); border-radius: 4px; font-size: 11.5px; color: var(--subtle); line-height: 1.6; }
++.ai-suggestion-actions { display: flex; gap: 10px; margin-top: 8px; }
++.ai-suggestion-actions .text-btn { font-size: 11.5px; }
++.ai-suggestion-actions .text-btn.adopted { color: var(--green, #16a34a); font-weight: 600; }
+ 
+ /* ---- 图片批注入口（图块右下角） ---- */
+ .knowledge-figure { position: relative; }
+-- 
+2.50.1 (Apple Git-155)
+

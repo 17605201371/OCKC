@@ -86,3 +86,29 @@ counts为全课程全部提交版本的状态统计，不跟随列表筛选。�
 | POST | `/publications/{id}/decisions` | `{action: APPROVE|RETURN|WITHDRAW, revision: integer>=0, reason: nonblank string<=2000}`；通过/退回仅教师；撤回仅作者/教师 |
 
 新写接口需要 CSRF；状态/修订冲突为 409；无正式评价为 422。`RETURNED` 与 `WITHDRAWN` 可重新申请；每次改变追加事件。已公开列表和普通同伴的提交读取不暴露私有申请/审核理由。复评自动撤回待审核或已发布记录。旧端点保留兼容默认说明及行锁，但没有新端点的必填客户端修订号；新版 UI 不再使用它们。发布记录和历史目前全量按权限读取，分页为前端 20 行展示，并非服务端分页。详见 [发布流程](PUBLICATIONS.md)。
+
+## 本地待发布：个人账号
+
+- `GET /api/account`：本人安全资料；no-store。
+- `PUT /api/account/profile`：`{displayName, revision}`；需要 CSRF；过期版本返回 409。
+- `PUT /api/account/password`：`{currentPassword, newPassword, confirmation}`；验证旧密码；密码不是纯空白，至少 12 码点、最多 72 UTF-8 字节。成功注销当前会话，其他旧会话下次受保护请求返回 401。
+- 当前密码第 5 次失败触发 15 分钟锁定，429/Retry-After；错误当前密码为 400，不触发前端会话注销。
+- 不接受目标账号、邮箱或角色覆盖，不提供注册/找回/SSO。
+- 详情：[ACCOUNT-SETTINGS.md](ACCOUNT-SETTINGS.md)。
+
+
+## 课程量规版本（本地待发布）
+
+目录/版本、教师修订、启用、默认切换与历史接口详见 [RUBRIC-VERSIONS.md](RUBRIC-VERSIONS.md)。新建作业可附 `rubricId`，提交详情增加 `rubricSnapshot` 与 `rubricSnapshotSource`。基础历史提交未保存锚点时明确标记 `BUILTIN_LEGACY`，不以新增锚点补写历史。
+
+
+## 学习报告导出（本地待发布）
+
+- `GET /api/courses/{cid}/progress-export.csv?q=&assignmentId=0&authorId=0&state=ALL&sort=recent`：CSV 文件，覆盖全部匹配页，最多 2000 篇，超限 422，不截断。筛选与进展页面同源；学生仅本人，教师/助教按本课只读权限。
+- `GET /api/progress-entries/{id}/report`：schemaVersion 1 的作品报告 JSON；最多 200 个提交、500 条反馈、1500 条反馈动作。非作者学生即使能读公开提交也不可读取私有报告。
+- 两个响应均 `Cache-Control: no-store`；CSV 带附件文件名、UTF-8 BOM。无新增数据库迁移。报告不含正文、未提交草稿、邮箱、私有评分草稿或原始量规 JSON。详见 [PROGRESS-REPORTS.md](PROGRESS-REPORTS.md)。
+
+
+## 批改工作台（本地待发布）
+
+`GET /api/courses/{cid}/review-workbench` 提供 q、assignmentId、authorId、state、drafts、evidence、versions、sort、page 筛选和 20 行分页；`/dashboard` 返回全课统计与最多 6 行摘录；`/next` 在当前范围实时选择另一份无正式评价提交，excludeId 必须属于本课。三个端点只读且 no-store；教师/助教可读，助教不能读取私有评分草稿标记或用 drafts 参数筛选。参数枚举、统计口径和兼容行为详见 [REVIEW-WORKBENCH.md](REVIEW-WORKBENCH.md)。无新增数据库迁移。

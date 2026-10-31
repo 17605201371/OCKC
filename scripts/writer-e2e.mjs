@@ -7,7 +7,7 @@ const { chromium } = createRequire(
 const base = process.env.E2E_BASE_URL || "http://127.0.0.1:8084";
 const out =
   process.env.E2E_OUTPUT_DIR ||
-  new URL("../.qa/writer", import.meta.url).pathname;
+  decodeURIComponent(new URL("../.qa/writer", import.meta.url).pathname);
 const password = process.env.E2E_PASSWORD;
 if (!password) throw Error("Set E2E_PASSWORD for an isolated demo database");
 fs.mkdirSync(out, { recursive: true });
