@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { api } from './api';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
+import { api, ApiFailure } from './api';
 import { fmt } from './format';
 import RubricViewer from './RubricViewer.vue';
 
@@ -26,11 +26,16 @@ const savedAt = ref('');
 const openItems = ref<Record<string, boolean>>({});
 const bulk = ref<Record<string, any>>({});
 const usage = ref<Record<string, number>>({});
+// 保存冲突（其他窗口先保存了同一份草稿）和本机未同步备份。
+const conflict = ref(false);
+const recovery = ref<any>(null);
 let alive = true;
 
 const pinned = computed(() => !!props.initialSnapshot);
 const dirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== baseline.value);
 const editable = computed(() => props.teacher && !pinned.value && selected.value?.state === 'DRAFT');
+// 新建修订时先只在页面里复制一份，第一次保存才在服务器上建草稿，取消就不会留下空草稿。
+const unsaved = computed(() => editing.value && selected.value?.state === 'DRAFT' && selected.value?.id == null);
 // 库里可能残留多份从没保存过的旧草稿；只有最新那份可以编辑，列表里也只列它。
 const draftItem = computed(() => (catalog.value?.items || []).find((r: any) => r.state === 'DRAFT') || null);
 const versions = computed(() => (catalog.value?.items || []).filter((r: any) => r.state !== 'DRAFT' || r.id === draftItem.value?.id));
@@ -42,7 +47,7 @@ const anchors: [string, string][] = [
   ['pass', '基本 60–74'],
   ['improve', '待改进 0–59'],
 ];
-const key = (id: number) => `community-rubric-${props.userId}-${props.courseId}-${id}`;
+const key = (id: number | null | undefined) => `community-rubric-${props.userId}-${props.courseId}-${id ?? 'new'}`;
 
 function day(d: string) {
   return d ? new Date(d).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '';
@@ -59,6 +64,9 @@ function optionLabel(r: any) {
   return `${versionLabel(r)} — ${r.title}`;
 }
 const selectedRow = computed(() => (catalog.value?.items || []).find((r: any) => r.code === selected.value?.code) || selected.value);
+const editLabel = computed(() => (unsaved.value ? `基于${versionLabel(sourceRow.value)}的新修订 · 尚未保存` : versionLabel(selectedRow.value)));
+const sourceRow = ref<any>(null);
+const draftBackup = computed(() => (draftItem.value ? readBackup(draftItem.value.id) : null));
 
 /** 四维：代码固定，名称 / 说明 / 权重可编辑。 */
 const dimensions = computed<any[]>(() => {
@@ -71,7 +79,7 @@ const allOpen = computed(() =>
   !!draft.value && draft.value.criteria.every((i: any) => openItems.value[i.code]),
 );
 const state = computed(() =>
-  busy.value ? '正在保存…' : dirty.value ? '有未保存的修改' : savedAt.value ? `已保存 · ${fmt(savedAt.value)}` : '未修改',
+  busy.value ? '正在保存…' : dirty.value ? '有未保存的修改' : savedAt.value ? `已保存 · ${fmt(savedAt.value)}` : unsaved.value ? '未修改 · 保存后才生成草稿' : '未修改',
 );
 function itemsOf(code: string) {
   return (draft.value?.criteria || []).filter((i: any) => String(i.code).startsWith(code));
@@ -142,9 +150,44 @@ function payload() {
   };
 }
 
+function readBackup(id: number | null | undefined) {
+  try {
+    const raw = localStorage.getItem(key(id));
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function clearBackup(id: number | null | undefined) {
+  try { localStorage.removeItem(key(id)); } catch {}
+}
+const content = (d: any) => JSON.stringify({ title: d?.title, instructions: d?.instructions, dimensions: d?.dimensions, criteria: d?.criteria });
+// 进入编辑时，如果本机有和服务器不一样的未同步修改，就提示恢复。
+function checkRecovery() {
+  const saved = readBackup(selected.value?.id);
+  if (!saved) { recovery.value = null; return; }
+  const local = { ...draft.value, ...saved, dimensions: saved.dimensions, criteria: (draft.value?.criteria || []).map((i: any) => ({ ...i, ...(saved.criteria || []).find((x: any) => x.code === i.code) })) };
+  recovery.value = content(local) === content(draft.value) ? null : saved;
+  if (!recovery.value) clearBackup(selected.value?.id);
+}
+function restoreRecovery() {
+  const saved = recovery.value;
+  if (!saved || !draft.value) return;
+  draft.value.title = saved.title;
+  draft.value.instructions = saved.instructions;
+  if (Array.isArray(saved.dimensions)) draft.value.dimensions = draft.value.dimensions.map((d: any) => ({ ...d, ...saved.dimensions.find((x: any) => x.code === d.code) }));
+  if (Array.isArray(saved.criteria)) for (const i of draft.value.criteria) Object.assign(i, saved.criteria.find((x: any) => x.code === i.code) || {});
+  recovery.value = null;
+  message.value = '已恢复本机的修改，核对后保存。';
+}
+function discardRecovery() {
+  clearBackup(selected.value?.id);
+  recovery.value = null;
+}
+
 function sessionBackup() {
   if (!dirty.value || !selected.value) return null;
-  const data = { rubricId: selected.value.id, courseId: props.courseId, ...payload() };
+  const data = { rubricId: selected.value.id, courseId: props.courseId, savedAt: new Date().toISOString(), baseRevision: selected.value.revision, ...payload() };
   // 本机存储写不进去时要如实返回 persisted:false，App 才会在登录失效时要求先下载备份。
   let persisted = false;
   try {
@@ -177,7 +220,9 @@ async function task(fn: () => Promise<void>) {
   try {
     await fn();
   } catch (e: any) {
-    if (alive) error.value = e.message || '操作失败，请重试';
+    if (!alive) return;
+    error.value = e.message || '操作失败，请重试';
+    if (e instanceof ApiFailure && e.status === 409 && editing.value) conflict.value = true;
   } finally {
     if (alive) busy.value = false;
   }
@@ -251,17 +296,20 @@ async function startEdit() {
       setSelected(data);
       editing.value = true;
       savedAt.value = '';
+      conflict.value = false;
       return;
     }
-    const sourceId = selected.value?.state === 'ENABLED' ? selected.value.id : catalog.value.defaultId;
-    const data = await api(`/courses/${props.courseId}/rubrics`, 'POST', { sourceId });
+    const source = selected.value?.state === 'ENABLED'
+      ? selected.value
+      : await api(`/courses/${props.courseId}/rubrics/${catalog.value.defaultCode}`);
     if (!alive) return;
-    setSelected(data);
+    sourceRow.value = (catalog.value?.items || []).find((r: any) => r.code === source.code) || source;
+    setSelected({ ...JSON.parse(JSON.stringify(source)), id: null, code: null, state: 'DRAFT', revision: 0, sourceId: Number(source.id) || 0 });
     editing.value = true;
     savedAt.value = '';
-    await fetchCatalog();
-    message.value = '已创建修订草稿，启用后才影响新作业。';
+    message.value = '这是一份修订副本，第一次保存时才会生成草稿；取消不会留下任何记录。';
   });
+  if (editing.value) checkRecovery();
 }
 
 function weightError() {
@@ -269,14 +317,24 @@ function weightError() {
 }
 
 async function putDraft() {
+  const previousId = selected.value.id;
+  if (previousId == null) {
+    const created = await api(`/courses/${props.courseId}/rubrics`, 'POST', { sourceId: selected.value.sourceId ?? catalog.value.defaultId });
+    if (!alive) return;
+    selected.value = { ...selected.value, id: created.id, code: created.code, revision: created.revision, version_no: created.version_no };
+  }
   const data = await api(`/courses/${props.courseId}/rubrics/${selected.value.id}`, 'PUT', payload());
   if (!alive) return;
   setSelected(data);
+  clearBackup(previousId);
+  clearBackup(data.id);
+  conflict.value = false;
+  recovery.value = null;
   savedAt.value = new Date().toISOString();
 }
 
 async function save() {
-  if (!editable.value || !dirty.value) return;
+  if (!editable.value || (!dirty.value && !unsaved.value)) return;
   if (!weightOk.value) return weightError();
   await task(async () => {
     await putDraft();
@@ -298,7 +356,7 @@ async function activate() {
   if (!editable.value || !reason.value.trim()) return;
   if (!weightOk.value) return weightError();
   await task(async () => {
-    if (dirty.value) await putDraft();
+    if (dirty.value || unsaved.value) await putDraft();
     if (!alive) return;
     const data = await api(`/courses/${props.courseId}/rubrics/${selected.value.id}/enable`, 'POST', {
       revision: selected.value.revision,
@@ -307,6 +365,7 @@ async function activate() {
     });
     if (!alive) return;
     setSelected(data);
+    clearBackup(data.id);
     editing.value = false;
     confirming.value = false;
     reason.value = '';
@@ -316,14 +375,59 @@ async function activate() {
   void fetchUsage();
 }
 
+// 其他窗口先保存了这份草稿：载入服务器上的最新版本号，保留当前输入，再保存就以当前输入为准。
+async function keepMine() {
+  await task(async () => {
+    const latest = await api(`/courses/${props.courseId}/rubrics/${selected.value.code}`);
+    if (!alive) return;
+    if (latest.state !== 'DRAFT') {
+      error.value = '这份草稿已在其他窗口启用，不能再修改。你的输入仍在页面上，可先复制，再取消并新建修订版本。';
+      return;
+    }
+    const mine = draft.value;
+    selected.value = latest;
+    baseline.value = JSON.stringify(JSON.parse(JSON.stringify(latest)));
+    draft.value = mine;
+    conflict.value = false;
+    message.value = '已载入最新版本，你的输入保留；保存后会覆盖其他窗口的修改。';
+  });
+}
+async function takeTheirs() {
+  await task(async () => {
+    const latest = await api(`/courses/${props.courseId}/rubrics/${selected.value.code}`);
+    if (!alive) return;
+    setSelected(latest);
+    clearBackup(latest.id);
+    conflict.value = false;
+    if (latest.state !== 'DRAFT') editing.value = false;
+    message.value = '已改为显示其他窗口保存的版本。';
+  });
+}
+
 function cancel() {
   if (dirty.value && !window.confirm('放弃未保存的修改？')) return;
+  clearBackup(selected.value?.id);
   editing.value = false;
   confirming.value = false;
+  conflict.value = false;
+  recovery.value = null;
   bulk.value = {};
-  setSelected(selected.value);
+  // 新修订还没保存过：回到原来查看的版本。
+  if (selected.value?.id == null && sourceRow.value) void choose(sourceRow.value.code);
+  else setSelected(selected.value);
   message.value = '';
 }
+
+// 编辑时持续在本机留一份未同步备份：浏览器崩溃或误关页面后，下次进来能恢复。
+let backupTimer: ReturnType<typeof setTimeout> | undefined;
+watch(draft, () => {
+  clearTimeout(backupTimer);
+  backupTimer = setTimeout(() => {
+    if (!editing.value || !selected.value) return;
+    if (dirty.value) sessionBackup();
+    else clearBackup(selected.value.id);
+  }, 600);
+}, { deep: true });
 
 function unload(e: BeforeUnloadEvent) {
   if (dirty.value) {
@@ -338,6 +442,7 @@ onMounted(() => {
   void load();
 });
 onBeforeUnmount(() => {
+  clearTimeout(backupTimer);
   alive = false;
   window.removeEventListener('beforeunload', unload);
 });
@@ -368,11 +473,14 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <p v-if="error" class="notice danger" role="alert">{{ error }}</p>
+      <p v-if="error" class="notice danger" role="alert">
+        {{ error }}
+        <button v-if="!catalog" type="button" class="text-btn" :disabled="busy" @click="load">重新读取</button>
+      </p>
       <p v-if="message" class="notice" role="status">{{ message }}</p>
       <p v-if="!catalog && !error">正在读取量规…</p>
       <p v-if="teacher && !pinned && draftItem && selected?.code !== draftItem.code" class="rw-draft-note">
-        有一份未启用的草稿（{{ versionLabel(draftItem) }}），启用前不影响任何作业。
+        有一份未启用的草稿（{{ versionLabel(draftItem) }}），启用前不影响任何作业。<template v-if="draftBackup">本机还有上次没保存的修改，进入编辑时可以恢复。</template>
         <button type="button" class="text-btn" :disabled="busy" @click="startEdit">继续编辑</button>
       </p>
 
@@ -394,8 +502,8 @@ onBeforeUnmount(() => {
     <template v-else>
       <header class="page-heading">
         <div>
-          <h1>编辑量规草稿</h1>
-          <p>{{ versionLabel(selectedRow) }} · 启用后只影响新发布的作业，已有作业和已交的作业不变。</p>
+          <h1>{{ unsaved ? '新建修订版本' : '编辑量规草稿' }}</h1>
+          <p>{{ editLabel }} · 启用后只影响新发布的作业，已有作业和已交的作业不变。</p>
         </div>
       </header>
 
@@ -418,7 +526,21 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <div v-if="recovery" class="rw-recovery" role="alert">
+        <p><strong>发现本机未同步的修改</strong>{{ recovery.savedAt ? '（' + fmt(recovery.savedAt) + '）' : '' }}。上次离开或掉线时没有保存到服务器。</p>
+        <div class="rw-recovery-actions">
+          <button type="button" class="btn secondary" :disabled="busy" @click="restoreRecovery">恢复到编辑器</button>
+          <button type="button" class="text-btn" :disabled="busy" @click="discardRecovery">丢弃本机修改</button>
+        </div>
+      </div>
       <p v-if="error" class="notice danger" role="alert">{{ error }}</p>
+      <div v-if="conflict" class="rw-recovery">
+        <p>你可以保留自己的输入并以它为准再保存，或者放弃自己的输入，查看其他窗口保存的版本。</p>
+        <div class="rw-recovery-actions">
+          <button type="button" class="btn secondary" :disabled="busy" @click="keepMine">载入最新版本并保留我的输入</button>
+          <button type="button" class="text-btn" :disabled="busy" @click="takeTheirs">放弃我的输入，看对方的版本</button>
+        </div>
+      </div>
       <p v-if="message" class="notice" role="status">{{ message }}</p>
 
       <form class="rw-form" @submit.prevent="save">
@@ -526,6 +648,10 @@ onBeforeUnmount(() => {
 .rw-confirm label { display: block; font-size: 13px; color: var(--muted); }
 .rw-confirm textarea { display: block; width: 100%; margin-top: 6px; box-sizing: border-box; }
 .rw-confirm-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+.rw-recovery { margin: 0 0 12px; padding: 12px 16px; border: 1px solid var(--border); border-left: 3px solid var(--blue); border-radius: 10px; background: var(--paper); }
+.rw-recovery p { margin: 0; font-size: 13px; color: var(--muted); }
+.rw-recovery strong { color: var(--text); }
+.rw-recovery-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
 
 .rw-form fieldset { border: 0; padding: 0; min-width: 0; }
 .rw-block { margin-top: 22px; }
