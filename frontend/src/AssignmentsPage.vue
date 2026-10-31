@@ -16,6 +16,7 @@ const props = defineProps<{
 }>();
 const assignmentFilter = defineModel<string>("filter", { required: true });
 const emit = defineEmits<{
+  "review-assignment": [assignment: any];
   go: [target: string];
   "show-modal": [kind: string];
   "new-free-post": [];
@@ -103,7 +104,7 @@ const filteredAssignments = computed(() => props.assignments.filter(a => {
         <button
           class="text-btn"
           :disabled="busy || (!isStaff && !a.entry_id && assignmentState(a,deadlineNow)==='CLOSED')"
-          @click="isStaff ? emit('go', 'review') : emit('open-assignment', a)"
+          @click="isStaff ? emit('review-assignment', a) : emit('open-assignment', a)"
         >
           {{
             isStaff ? "查看提交" : a.entry_state === 'PASSED' ? '查看定稿' : assignmentState(a,deadlineNow)==='CLOSED' ? (a.entry_id ? '查看与整理' : '已截止') : a.entry_id ? "继续编辑" : "开始作答"

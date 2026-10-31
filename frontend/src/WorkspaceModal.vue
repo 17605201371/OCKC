@@ -15,12 +15,14 @@ defineProps<{
   assignmentRubrics: any[];
   assignmentRubricLoading: boolean;
   assignmentRubricError: string;
+  hint?: string;
 }>();
-const emit = defineEmits<{ close: []; submit: []; "load-rubrics": [] }>();
+// dismiss：点遮罩；close：点「取消」或关闭按钮。前者在有输入时由 App 拦下。
+const emit = defineEmits<{ close: []; dismiss: []; submit: []; "load-rubrics": [] }>();
 </script>
 
 <template>
-<div class="modal-scrim" @click.self="emit('close')">
+<div class="modal-scrim" @click.self="emit('dismiss')">
   <section
     class="modal"
     role="dialog"
@@ -272,6 +274,7 @@ const emit = defineEmits<{ close: []; submit: []; "load-rubrics": [] }>();
         </p></template
       >
       <p v-if="error" class="error-note" role="alert">{{ error }}</p>
+      <p v-if="hint" class="form-note modal-hint" role="status">{{ hint }}</p>
       <footer>
         <button type="button" class="btn secondary" @click="emit('close')">
           取消</button

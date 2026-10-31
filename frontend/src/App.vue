@@ -7,6 +7,8 @@ import PublicationManager from "./PublicationManager.vue";
 import ReviewWorkbench from "./ReviewWorkbench.vue";
 import {defaultReviewQuery,reviewParams,reviewAdvanceBlocked,type ReviewQuery} from "./reviewQuery";
 const reviewFilters=ref<ReviewQuery>(defaultReviewQuery()),reviewNavScope=ref<ReviewQuery|null>(null),reviewQueueSummary=ref<any>(null),nextReviewBusy=ref(false),nextReviewMessage=ref('');
+// 课程作业卡片上的「查看提交」：直接打开只含这份作业的批改队列，不用再手动筛选。
+async function reviewAssignment(a:any){if(!a)return;if(!(await flushBeforeLeave()))return;reviewFilters.value={...defaultReviewQuery(),assignmentId:String(a.id)};await go('review');}
 async function openReviewRow(value:any){reviewFilters.value={...value.filters};if(await openVersion(value.id,true,true))reviewNavScope.value={...value.filters};}
 async function nextReview(){if(nextReviewBusy.value||busy.value)return;nextReviewBusy.value=true;nextReviewMessage.value='';try{if(reviewAdvanceBlocked(review.state,isTeacher.value)){error.value='请先处理评分草稿的加载、恢复或冲突提示，再切换提交。';return;}if(!await flushBeforeLeave())return;const id=cid.value,uid=me.value?.id,epoch=accessEpoch,sid=version.value?.id,scope={...(reviewNavScope.value||defaultReviewQuery())};const params=reviewParams(scope,true);params.set('excludeId',String(sid));const result=await api(`/courses/${id}/review-workbench/next?${params}`);if(id!==cid.value||uid!==me.value?.id||epoch!==accessEpoch||page.value!=='grading'||version.value?.id!==sid)return;if(!result.item){nextReviewMessage.value='当前队列范围没有其他待评审提交。可返回队列调整筛选。';return;}await openVersion(result.item.id,true,true);reviewNavScope.value=scope;}catch(e:any){error.value=e.message||'无法读取下一份提交，当前评分仍保留';}finally{nextReviewBusy.value=false;}}
 const publicationManager=ref<InstanceType<typeof PublicationManager>>();
@@ -98,6 +100,16 @@ import { criterionDescription } from "./rubricText";
 import { useDwellTime } from "./dwellTime";
 const clockNow = ref(Date.now()), serverOffset = ref(0);
 let deadlineTimer: ReturnType<typeof setInterval>;
+// 平时每 30 秒对一次时钟；离最近的截止时刻再单独定一个点，截止那一刻就把「提交评审」切成「作业已截止」，
+// 不用等到下一个 30 秒（那半分钟里按钮还亮着，点了会被服务器拒绝）。
+let dueTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleDueTick() {
+  clearTimeout(dueTimer);
+  const now = Date.now() + serverOffset.value;
+  const next = assignments.value.map((a: any) => Date.parse(a.due_at)).filter((t: number) => Number.isFinite(t) && t > now).sort((x: number, y: number) => x - y)[0];
+  if (next && next - now < 2_000_000_000) dueTimer = setTimeout(() => { clockNow.value = Date.now(); scheduleDueTick(); }, next - now + 250);
+}
+// 监听放在 assignments 声明之后（见 registerDueTick 调用处），否则 setup 时读到未初始化的 ref，watch 会静默失效。
 const deadlineNow = computed(() => clockNow.value + serverOffset.value);
 import { api, login, ApiFailure, resetApiSession } from "./api";
 const me = ref<any>(null),
@@ -555,6 +567,7 @@ async function go(target: string) {
   window.scrollTo(0, 0);
 }
 async function flushBeforeLeave() {
+  if (annotationTyped() && !confirm('批注还没添加，离开会丢掉这段文字。确定离开吗？')) return false;
   if(page.value==="rubric"&&rubricWorkbench.value&&!rubricWorkbench.value.canLeave())return false;
   if (page.value === "grading" && isTeacher.value && !await review.flush()) { error.value = review.state.error || "评分草稿尚未保存，请先处理保存失败或冲突。"; return false; }
   if (uploadingMedia.value) { notify("图片上传中，请稍候再离开"); return false; }
@@ -903,18 +916,23 @@ const annotationDim = ref("C");
 const annotationBusy = ref(false);
 const annotationError = ref("");
 // 切换页面时收起批注浮层：否则它会留在创作页面上，看起来像「填了却没保存」。
-watch(page, () => { annotation.value = null; annotationError.value = ""; });
+watch(page, () => { clearAnnotation(); });
 function clearAnnotation() { annotation.value = null; annotationBody.value = ""; annotationError.value = ""; }
+// 批注里已经写了字：点浮层外面、或再选中别的文字，都不清空，只提示用「取消」放弃。
+const annotationTyped = () => !!annotation.value && !!annotationBody.value.trim();
+const ANNOTATION_KEEP = "这条批注还没添加。要放弃请点「取消」。";
 function onOutsideMouseDown(e: MouseEvent) {
   if (!annotation.value) return;
   const t = e.target as HTMLElement | null;
   if (t?.closest?.(".annotation-popover")) return;
+  if (annotationTyped()) { annotationError.value = ANNOTATION_KEEP; return; }
   clearAnnotation();
 }
 onMounted(() => document.addEventListener("mousedown", onOutsideMouseDown, true));
 onBeforeUnmount(() => document.removeEventListener("mousedown", onOutsideMouseDown, true));
 function captureSelection() {
   if (page.value !== "grading" || !isTeacher.value) return;
+  if (annotationTyped()) return;
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed) return;
   const text = sel.toString().trim();
@@ -943,6 +961,7 @@ function captureSelection() {
 // 图片块没有可选中文本，改为在图片右下角提供入口，浮层贴着图片出现。
 function annotateFigure(payload: { blockId: string; label: string }) {
   if (page.value !== "grading" || !isTeacher.value) return;
+  if (annotationTyped()) { annotationError.value = ANNOTATION_KEEP; return; }
   if (!payload?.blockId) return;
   const el = document.querySelector(`[data-block-id="${payload.blockId}"]`) as HTMLElement | null;
   const rect = el?.getBoundingClientRect();
@@ -1045,6 +1064,8 @@ function showModal(kind: string, data: Record<string, any> = {}) {
     role: "STUDENT",
     ...data,
   };
+  modalBaseline.value = JSON.parse(JSON.stringify(form.value));
+  modalHint.value = "";
   if(kind==='assignment')void loadAssignmentRubrics();
   setTimeout(
     () =>
@@ -1063,8 +1084,23 @@ async function toggleAssignmentAi(a: any) {
     notify(updated.ai_feedback_enabled ? '已开放 AI 反馈' : '已关闭 AI 反馈');
   });
 }
-function closeModal() {
-  if (!busy.value) modal.value = "";
+// 弹窗里已经填了内容时，按 Esc 或点弹窗外面不再直接关掉（以前会把填好的摘录、理由一起丢掉）；
+// 只有点「取消」或右上角关闭才放弃。量规版本是自动带出的，不算用户输入。
+const modalBaseline = ref<Record<string, any>>({});
+const modalHint = ref("");
+function modalDirty() {
+  if (!modal.value || modal.value === "records") return false;
+  const f = form.value, b = modalBaseline.value;
+  return Object.keys(f).some((k) => k !== "rubricId" && JSON.stringify(f[k]) !== JSON.stringify(b[k]));
+}
+function closeModal(soft = false) {
+  if (busy.value) return;
+  if (soft && modalDirty()) {
+    modalHint.value = "已填写的内容还没提交。要放弃请点「取消」。";
+    return;
+  }
+  modal.value = "";
+  modalHint.value = "";
 }
 async function modalSubmit() {
   await run(async () => {
@@ -1259,7 +1295,7 @@ function keydown(e: KeyboardEvent) {
     }
   }
   if (e.key === "Escape") {
-    closeModal();
+    closeModal(true);
     menu.value = false;
     commandOpen.value = false;
   }
@@ -1304,6 +1340,8 @@ onMounted(async () => {
   window.addEventListener("resize", scheduleSidebarFit);
   window.addEventListener("ockc-session-expired",sessionExpired);
   deadlineTimer=setInterval(()=>{clockNow.value=Date.now();void refreshAssignmentRules()},30000);
+  watch(() => [assignments.value, serverOffset.value], scheduleDueTick);
+  scheduleDueTick();
   window.addEventListener("focus",refreshAssignmentRules);
   window.addEventListener("beforeunload", beforeUnload);
   window.addEventListener("keydown", keydown);
@@ -1320,7 +1358,7 @@ onBeforeUnmount(() => {
   window.removeEventListener("scroll", scheduleSidebarFit);
   window.removeEventListener("resize", scheduleSidebarFit);
   window.removeEventListener("ockc-session-expired",sessionExpired);
-  clearTimeout(saveTimer);clearInterval(deadlineTimer);
+  clearTimeout(saveTimer);clearInterval(deadlineTimer);clearTimeout(dueTimer);
   window.removeEventListener("beforeunload", beforeUnload);
   window.removeEventListener("keydown", keydown);
   window.removeEventListener("focus",refreshAssignmentRules);
@@ -1559,6 +1597,7 @@ onBeforeUnmount(() => {
           @toggle-ai="toggleAssignmentAi"
           @manage="managedAssignment = { ...$event }"
           @open-assignment="openAssignment"
+          @review-assignment="reviewAssignment"
         />
 
         <RubricWorkbench v-else-if="page === 'rubric'" ref="rubricWorkbench" :key="cid+'-'+me.id+'-'+course?.role+'-'+(rubricFocus?'snapshot-'+rubricFocus.code:'catalog')" :course-id="cid" :teacher="isTeacher" :user-id="me.id" :initial-snapshot="rubricFocus" :initial-source="rubricFocusSource" />
@@ -1865,7 +1904,9 @@ onBeforeUnmount(() => {
     :assignment-rubrics="assignmentRubrics"
     :assignment-rubric-loading="assignmentRubricLoading"
     :assignment-rubric-error="assignmentRubricError"
-    @close="closeModal"
+    :hint="modalHint"
+    @close="closeModal()"
+    @dismiss="closeModal(true)"
     @submit="modalSubmit"
     @load-rubrics="loadAssignmentRubrics"
   />
