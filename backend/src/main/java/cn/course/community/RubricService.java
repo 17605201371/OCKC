@@ -24,7 +24,7 @@ public class RubricService {
  public static List<Map<String,Object>> builtinDimensions(){var out=new ArrayList<Map<String,Object>>();for(int i=0;i<4;i++)out.add(Map.of("code",DIM_CODES.get(i),"name",DIM_NAMES.get(i),"description",DIM_DESCS.get(i),"weight",25));return out;}
  public static Map<String,Object> builtin(){
   var criteria=new ArrayList<Map<String,Object>>();for(int i=0;i<11;i++){String name=NAMES.get(i);criteria.add(Map.of("code",QualityCalculator.CODES.get(i),"name",name,"description","依据作品实际内容判断「"+name+"」，评分应与可核验文本相对应。","excellent","90–100：该指标表现充分、清晰，关键论断有适当支持。","good","75–89：基本达到要求，仍有少量需要完善之处。","pass","60–74：达到基本要求，但存在需要明确修订的问题。","improve","0–59：关键要求尚未达到，需要针对性补充或纠正。"));}
-  var m=new LinkedHashMap<String,Object>();m.put("schemaVersion",1);m.put("code","four-dim-v1");m.put("title","四维基础量规");m.put("instructions","四维按权重加权，每维取有效二级指标平均；N/A 不计零分，待核验不发布正式评价。严重缺陷由教师确认后综合分封顶 89。以下为通用锚点，不代表特定学科的标准答案。");m.put("algorithm","four-dim-weighted-v1");m.put("dimensions",builtinDimensions());m.put("criteria",criteria);return m;
+  var m=new LinkedHashMap<String,Object>();m.put("schemaVersion",1);m.put("code","four-dim-v1");m.put("title","四维基础量规");m.put("instructions","四维按权重加权，每维取有效二级指标平均；N/A 不计零分，待核验不发布正式评价。严重缺陷由教师确认后综合分封顶 89。");m.put("algorithm","four-dim-weighted-v1");m.put("dimensions",builtinDimensions());m.put("criteria",criteria);return m;
  }
  String encode(Object o){try{return json.writeValueAsString(o);}catch(Exception e){throw new IllegalStateException(e);}}
  JsonNode decode(Object o){try{return json.readTree((String)o);}catch(Exception e){throw new IllegalStateException(e);}}

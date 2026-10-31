@@ -987,7 +987,7 @@ onBeforeUnmount(() => {
           <label>图片说明（替代文本）<input v-model="media.alt" maxlength="300" placeholder="简要描述图片内容，便于理解和无障碍阅读" /></label>
           <label>图注<input v-model="media.caption" maxlength="1000" placeholder="例如：图 1　类囊体薄膜上的电子传递与 ATP 合成" /></label>
           <label>图片来源<input v-model="media.source" maxlength="1000" placeholder="教材版本及页码、原始网址，或注明自绘" /></label>
-          <p class="small-note">仅上传有权使用的图片。来源说明不等于证据已通过核验。</p><p v-if="mediaError" role="alert" class="writer-field-error">{{ mediaError }}</p>
+          <p v-if="mediaError" role="alert" class="writer-field-error">{{ mediaError }}</p>
         </div>
         <div class="writer-dialog-foot"><button class="btn secondary" :disabled="mediaBusy" @click="mediaDialog?.close()">取消</button><button class="btn primary" :disabled="mediaBusy" @click="insertImage">{{ mediaPosition !== null ? '更新图片' : '插入图片' }}</button></div>
       </dialog>
@@ -1003,7 +1003,7 @@ onBeforeUnmount(() => {
             <p class="small-note">{{mathLatex.length}} / {{MAX_FORMULA_LENGTH}} 字符 · 确认后写入正文；取消或 Escape 不修改正文。</p>
           </div>
           <div class="formula-examples" role="group" aria-label="常用公式模板"><span>快速模板</span><button v-for="t in formulaTemplates" :key="t.id" type="button" @click="selectMathTemplate(t.latex)">{{t.label}}</button></div>
-          <p class="small-note">公式只做符号排版，不代表结论已核验。模板仅供编辑参考；不执行脚本或加载外部资源。</p><p v-if="mathError" role="alert" class="writer-field-error">{{mathError}}</p>
+          <p v-if="mathError" role="alert" class="writer-field-error">{{mathError}}</p>
         </div><div class="writer-dialog-foot"><button type="button" class="btn secondary" @click="mathDialog?.close()">取消</button><button type="button" class="btn primary" :disabled="mathMode==='visual'" @click="insertMath">{{mathPosition!==null?'更新公式':'确认公式'}}</button></div>
       </dialog>
       <div
@@ -1127,9 +1127,6 @@ onBeforeUnmount(() => {
               autofocus
               required
             />
-            <p class="writer-link-note">
-              链接用于阅读跳转，不代表证据已经核验。
-            </p>
             <p v-if="linkError" role="alert" class="writer-link-error">
               {{ linkError }}
             </p>

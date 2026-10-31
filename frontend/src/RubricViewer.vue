@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { criterionDescription, rubricInstructions } from './rubricText';
 
 const props = defineProps<{ snapshot: any; source?: string }>();
 const bands: [string, string][] = [
@@ -39,7 +40,7 @@ function inGroup(criteria: any[], d: string) {
     <p v-if="snapshot.legacy || source === 'BUILTIN_LEGACY'" class="rv-legacy">
       历史提交未保存锚点，仅显示当时固定的指标代码。
     </p>
-    <p v-if="snapshot.instructions" class="rv-instructions">{{ snapshot.instructions }}</p>
+    <p v-if="rubricInstructions(snapshot.instructions)" class="rv-instructions">{{ rubricInstructions(snapshot.instructions) }}</p>
 
     <section v-for="g in groups" :key="g.code" class="rv-group">
       <div class="rv-group-head">
@@ -52,7 +53,7 @@ function inGroup(criteria: any[], d: string) {
         <div class="rv-item-head">
           <b>{{ i.code }}</b><span>{{ i.name }}</span>
         </div>
-        <p v-if="i.description" class="rv-item-desc">{{ i.description }}</p>
+        <p v-if="criterionDescription(i)" class="rv-item-desc">{{ criterionDescription(i) }}</p>
         <div v-if="i.excellent || i.good || i.pass || i.improve" class="rv-bands">
           <div v-for="b in bands" :key="b[0]">
             <small>{{ b[1] }}</small>

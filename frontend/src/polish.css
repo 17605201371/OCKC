@@ -1,0 +1,266 @@
+/*
+ * 视觉打磨层（2026-10-28）。
+ * 在 style.css 之后加载，只调整颜色层次、阴影、圆角和字重，不改布局与尺寸（44px 点击区保持不变）。
+ * 要整体回退，删掉 main.ts 里对本文件的 import 即可。
+ */
+
+:root {
+  --workspace: #f4f5fa;
+  --elev-1: 0 1px 2px rgb(22 28 64 / 4%), 0 2px 8px rgb(22 28 64 / 4%);
+  --elev-2: 0 1px 3px rgb(22 28 64 / 5%), 0 12px 32px rgb(22 28 64 / 8%);
+  --brand-grad: linear-gradient(135deg, #7465ff 0%, #5546ef 55%, #4836dd 100%);
+  --brand-glow: 0 1px 2px rgb(85 70 239 / 24%), 0 6px 16px rgb(85 70 239 / 22%);
+  --focus-ring: 0 0 0 3px rgb(85 70 239 / 16%);
+  --card-radius: 14px;
+}
+:root[data-theme="dark"] {
+  --workspace: #161616;
+  --elev-1: 0 1px 2px rgb(0 0 0 / 35%);
+  --elev-2: 0 1px 3px rgb(0 0 0 / 40%), 0 12px 32px rgb(0 0 0 / 40%);
+  --brand-grad: linear-gradient(135deg, #c3cbfe 0%, #a5b4fc 100%);
+  --brand-glow: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 16px rgb(165 180 252 / 14%);
+  --focus-ring: 0 0 0 3px rgb(165 180 252 / 24%);
+}
+
+/* ---- 外壳：浅灰蓝工作区 + 白色卡片，靠层次而不是边框区分区域 ---- */
+.main { background: var(--workspace); }
+.topbar,
+.creation-workspace .topbar {
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  -webkit-backdrop-filter: saturate(1.6) blur(12px);
+  backdrop-filter: saturate(1.6) blur(12px);
+  border-bottom-color: var(--line-soft);
+}
+
+.sidebar {
+  background: var(--paper);
+  border-right-color: var(--line-soft);
+}
+.sidebar nav > button {
+  border-radius: 10px;
+  transition: background 0.15s, color 0.15s;
+}
+.sidebar nav > button.selected {
+  background: var(--blue-soft);
+  border-color: transparent;
+  color: var(--blue-text);
+  font-weight: 600;
+}
+.sidebar nav > button.selected > svg { color: var(--blue); }
+.course-nav > button.current { background: var(--surface); }
+.workspace-caption {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--subtle);
+}
+.local-note { font-size: 12px; color: var(--subtle); }
+.account { border-top-color: var(--line-soft); }
+.avatar {
+  background: var(--blue-soft);
+  color: var(--blue-text);
+  font-weight: 600;
+}
+
+.command-trigger {
+  background: var(--surface);
+  border-color: transparent;
+  border-radius: 10px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.command-trigger:hover { background: var(--paper); border-color: var(--border); }
+.role-label {
+  background: var(--blue-soft);
+  border-color: transparent;
+  border-radius: 999px;
+  color: var(--blue-text);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 10px;
+}
+.privacy { font-size: 13px; }
+
+/* ---- 页面标题 ---- */
+.page-heading .eyebrow,
+.page-heading .page-kicker {
+  color: var(--blue-text);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.page-heading h1 {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* ---- 卡片 ---- */
+.card,
+.list-card,
+.dashboard-card,
+.workspace-hero,
+.assignment-grid,
+.comm-list,
+.comm-card,
+.evidence-card,
+.progress-entry,
+.rw-current,
+.review-stats > article,
+.evidence-stats > button,
+.progress-stats article,
+.member-stats > article {
+  border-color: var(--line-soft);
+  border-radius: var(--card-radius);
+  box-shadow: var(--elev-1);
+}
+.evidence-stats > button {
+  transition: box-shadow 0.18s, border-color 0.18s, transform 0.18s;
+}
+.evidence-stats > button:hover {
+  border-color: color-mix(in srgb, var(--blue) 22%, var(--line-soft));
+  box-shadow: var(--elev-2);
+  transform: translateY(-1px);
+}
+.review-stats > article strong,
+.member-stats > article strong,
+.evidence-stats > button strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* 直接放在工作区底色上的控件：原来用 --surface 底色，和新底色几乎一样，改成纸面色 */
+.tabs button span {
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 0 7px;
+  font-size: 12px;
+}
+.tabs .active span {
+  background: var(--blue-soft);
+  border-color: transparent;
+  color: var(--blue-text);
+}
+.comm-scopes {
+  background: var(--paper);
+  border-color: var(--line-soft);
+  box-shadow: var(--elev-1);
+}
+.comm-scope.on {
+  background: var(--blue-soft);
+  color: var(--blue-text);
+  box-shadow: none;
+}
+.evidence-search { background: var(--paper); border-radius: 10px; }
+.review-workbench .small-label {
+  background: var(--paper);
+  border-color: var(--line-soft);
+  border-radius: 10px;
+}
+
+/* 首页主卡：唯一带品牌色渐变的区域，让视线先落在「当前待办」上 */
+.workspace-hero {
+  background:
+    radial-gradient(120% 160% at 0% 0%, color-mix(in srgb, var(--blue-soft) 90%, transparent) 0%, transparent 52%),
+    radial-gradient(80% 120% at 100% 100%, color-mix(in srgb, var(--blue-soft) 45%, transparent) 0%, transparent 60%),
+    var(--paper);
+  border-color: color-mix(in srgb, var(--blue) 12%, var(--line-soft));
+  box-shadow: var(--elev-2);
+}
+
+/* 文件与作品图标：从灰底换成品牌浅色底 */
+.file-icon,
+.square-icon,
+.work-thumb {
+  background: var(--blue-soft);
+  border-color: transparent;
+  color: var(--blue);
+}
+.todo-icon { color: var(--blue); }
+
+/* ---- 按钮 ---- */
+.btn {
+  border-radius: 10px;
+  font-weight: 550;
+  box-shadow: 0 1px 2px rgb(22 28 64 / 5%);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.15s, filter 0.15s;
+}
+.btn:hover {
+  background: var(--paper);
+  border-color: color-mix(in srgb, var(--blue) 28%, var(--border));
+  box-shadow: 0 2px 8px rgb(22 28 64 / 8%);
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn.primary,
+.btn.primary:hover {
+  background: var(--brand-grad);
+  border-color: transparent;
+  box-shadow: var(--brand-glow);
+}
+.btn.primary:hover { filter: brightness(1.06) saturate(1.05); }
+.btn:disabled,
+.btn:disabled:hover { box-shadow: none; transform: none; filter: none; }
+/* 面板开关按钮的「已打开」状态：原来是写死的浅灰边框，深色模式下会变成刺眼的白框 */
+.btn.pressed,
+.btn.pressed:hover {
+  background: var(--blue-soft);
+  border-color: color-mix(in srgb, var(--blue) 30%, var(--border));
+  color: var(--blue-text);
+}
+
+input,
+select,
+textarea { transition: border-color 0.15s, box-shadow 0.15s; }
+input:focus,
+select:focus,
+textarea:focus { box-shadow: var(--focus-ring); }
+
+/* ---- 登录页 ---- */
+.login-story {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(60% 50% at 12% 18%, rgb(116 101 255 / 16%) 0%, transparent 70%),
+    radial-gradient(50% 45% at 88% 86%, rgb(20 184 166 / 10%) 0%, transparent 70%),
+    radial-gradient(40% 40% at 78% 28%, rgb(236 72 153 / 7%) 0%, transparent 70%),
+    var(--side);
+  border-right-color: var(--line-soft);
+}
+.login-copy h1 {
+  font-weight: 750;
+  letter-spacing: -0.03em;
+  background: linear-gradient(115deg, var(--text) 35%, var(--blue) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.login-copy .eyebrow { color: var(--blue-text); font-weight: 600; letter-spacing: 0.04em; }
+.login-principles > span {
+  padding: 6px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 75%, transparent);
+  box-shadow: var(--elev-1);
+}
+.login-form { background: var(--workspace); }
+.login-form form {
+  max-width: 420px;
+  padding: 40px 40px 32px;
+  background: var(--paper);
+  border: 1px solid var(--line-soft);
+  border-radius: 20px;
+  box-shadow: var(--elev-2);
+}
+.login-form form > .eyebrow { color: var(--blue-text); font-weight: 600; }
+.login-form .form-note { border-top-color: var(--line-soft); font-size: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .evidence-stats > button { transition: none; }
+  .btn:active:not(:disabled),
+  .evidence-stats > button:hover { transform: none; }
+}
+
+/* 停留时长 */
+.progress-dwell { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
+.review-dwell { color: var(--subtle); font-size: 12px; }

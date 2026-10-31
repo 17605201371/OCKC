@@ -181,12 +181,11 @@ onBeforeUnmount(() => { sequence++; });
 
     <div v-else class="ai-service-state">
       <span class="ai-state-icon"><Sparkles :size="19" /></span>
-      <h4>AI 服务尚未配置</h4>
-      <p>教师已为本作业开放 AI 反馈入口。接通模型服务后，才会提供真实的修改建议。</p>
+      <h4>AI 服务暂不可用</h4>
       <button class="text-btn ai-refresh" :disabled="loading" @click="load()"><RefreshCw :size="13" :class="{ spinning: loading }" />重新检查状态</button>
     </div>
 
-    <p class="sidebar-trust-note"><ShieldCheck :size="13" /><span>AI 建议仅供修订参考，不参与正式评分；引用来源仍需核验。</span></p>
+    <p class="sidebar-trust-note"><ShieldCheck :size="13" /><span>AI 建议仅供参考，不计入评分</span></p>
   </section>
   <div v-else-if="failed && assignmentEnabled" class="ai-status-error"><AlertCircle :size="14" /><span>暂时无法确认 AI 开放状态。</span><button class="text-btn" @click="load()">重试</button></div>
 </template>

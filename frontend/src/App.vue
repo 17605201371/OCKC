@@ -103,6 +103,8 @@ const managedAssignment=ref<any>(null);
 const ruleRefreshError=ref('');
 import { useReviewDraft } from "./useReviewDraft";
 import { assignmentState, dueLabel } from "./deadlines";
+import { criterionDescription } from "./rubricText";
+import { useDwellTime } from "./dwellTime";
 const clockNow = ref(Date.now()), serverOffset = ref(0);
 let deadlineTimer: ReturnType<typeof setInterval>;
 const deadlineNow = computed(() => clockNow.value + serverOffset.value);
@@ -218,6 +220,9 @@ const grading = ref<any[]>([]),
   gateReason = ref("");
 const course = computed(() => courses.value.find((c) => c.id === cid.value));
 const isTeacher = computed(() => course.value?.role === "TEACHER");
+// 停留时长：作者在编辑器里写自己的作品记「做题时间」，任课教师在批改页记「批改时间」。
+useDwellTime("WRITE", computed(() => page.value === "editor" && me.value && entry.value?.author_id === me.value.id ? entry.value.id : null));
+useDwellTime("GRADE", computed(() => page.value === "grading" && isTeacher.value && version.value?.id ? version.value.id : null));
 // 开课权限来自账号本身（app_user.is_teacher），不是「当前这门课里是不是教师」。
 const canCreateCourse = computed(() => me.value?.is_teacher === true);
 const isStaff = computed(() =>
@@ -1158,6 +1163,8 @@ const draftPrior = computed<any[]>(() => (latest.value?.priorFeedback || []).fil
 const priorBusy = ref(0);
 // 学生最近一次处理：ADOPT 表示「我已修改」，只是声明，不等于问题已解决。
 // priorFeedback 由后端直接带 student_action；本版批注只有 actions 列表，回退到列表里取最后一条。
+const FEEDBACK_ACTION_LABELS: Record<string, string> = { REPLY: "回复", ADOPT: "已采纳", IGNORE: "未采纳", RESOLVE: "已解决", REOPEN: "重新打开" };
+function actionLabel(type: string) { return FEEDBACK_ACTION_LABELS[type] || type; }
 function studentAction(f: any) {
   if (f.student_action) return f.student_action;
   const acts = (f.actions || []).filter((a: any) => ["ADOPT", "REPLY", "IGNORE"].includes(a.action_type));
@@ -1702,7 +1709,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="login-copy">
-        <span class="eyebrow">课程开放知识社区</span>
         <h1>让知识，<br />在每一次修订中生长。</h1>
         <p>
           从一篇知识帖开始，连接可靠的证据、<br />可执行的反馈与持续改进的学习。
@@ -1713,7 +1719,6 @@ onBeforeUnmount(() => {
           ><span><ShieldCheck :size="18" />证据可核验</span>
         </div>
       </div>
-      <p class="login-foot">面向课程的创作、评价与知识共建空间</p>
     </section>
     <section class="login-form">
       <form @submit.prevent="doLogin">
@@ -1742,10 +1747,6 @@ onBeforeUnmount(() => {
         <button class="btn primary full" :disabled="busy">
           {{ busy ? "正在登录…" : "登录工作空间" }}<ArrowUpRight :size="18" />
         </button>
-        <p class="form-note">
-          第一阶段开发版 · 账号由部署者配置<br />演示账号见项目
-          README，密码由启动环境设置。
-        </p>
       </form>
     </section>
   </div>
@@ -1813,9 +1814,6 @@ onBeforeUnmount(() => {
         </button>
       </nav>
       <div class="sidebar-bottom">
-        <div class="local-note">
-          <span class="dot"></span>课程内协同学习 · 开发版
-        </div>
         <div class="account">
           <span class="avatar">{{ me.display_name.slice(0, 1) }}</span>
           <div>
@@ -2192,7 +2190,7 @@ onBeforeUnmount(() => {
                   </button>
                 </div>
               </div>
-              <p class="comm-foot">{{ commRows.length }} 条 · 仅显示你有权查看的条目</p>
+              <p class="comm-foot">{{ commRows.length }} 条</p>
             </div>
 
             <aside class="comm-rail">
@@ -2236,7 +2234,7 @@ onBeforeUnmount(() => {
               <button class="text-btn muted" @click="go('assignments')">
                 <ArrowLeft :size="16" />返回作业
               </button>
-              <span class="workspace-kicker">KNOWLEDGE STUDIO</span><h1>创作与修订</h1>
+              <h1>创作与修订</h1>
               <p>
                 {{
                   saving
@@ -2317,7 +2315,7 @@ onBeforeUnmount(() => {
                 <button class="outline-add" @click="showModal('evidence')"><Plus :size="15" />挂载新证据</button>
               </section>
               <section class="outline-assignment"><span class="eyebrow">当前任务</span><strong>{{ currentAssignment?.title }}</strong><p><Clock :size="13" />{{ fmt(currentAssignment?.due_at) }} 截止</p><details><summary>查看任务要求</summary><p>{{ currentAssignment?.requirements }}</p></details></section>
-              <div class="outline-foot"><ShieldCheck :size="16" /><span>草稿持续保存，提交后生成独立版本。段落与图片均可关联证据。</span></div>
+
             </aside>
             <div class="document-column">
               <div class="document-paper">
@@ -2475,7 +2473,7 @@ onBeforeUnmount(() => {
                     :key="a.id"
                   >
                     <strong>{{ a.actor_name }}</strong
-                    ><span>{{ a.action_type }} · {{ a.body }}</span>
+                    ><span>{{ actionLabel(a.action_type) }} · {{ a.body }}</span>
                   </div>
                   <div class="feedback-controls">
                     <button
@@ -2553,11 +2551,11 @@ onBeforeUnmount(() => {
                   <ChevronRight :size="17" />
                 </button>
                 <p v-if="!entry.versions.length" class="empty-text">
-                  提交评审后生成不可变版本。
+                  还没有提交过版本。
                 </p>
               </div>
               </details>
-              <p class="sidebar-trust-note"><ShieldCheck :size="13" /><span>教师批注与 AI 建议分开呈现。正式质量分仅由任课教师确认。</span></p>
+
             </aside>
           </div>
           <div class="task-requirements">
@@ -2571,7 +2569,7 @@ onBeforeUnmount(() => {
           class="editing-page"
         >
           <p v-if="page==='grading'&&nextReviewMessage" role="status" class="review-next-status">{{nextReviewMessage}}</p>
-          <p v-if="page==='grading'&&reviewNavScope" class="review-next-status muted">下一份沿用进入时的队列范围和排序，只选择无正式评价的提交；不会跳过草稿保存，也不会自动发布。</p>
+
           <div class="editor-heading" v-workspace-actions>
             <div>
               <button
@@ -2666,11 +2664,7 @@ onBeforeUnmount(() => {
                   ><span>{{ a.text }}</span>
                 </button>
               </nav>
-              <div class="outline-foot">
-                <ShieldCheck :size="16" /><span
-                  >段落标识保持稳定，反馈不会随顺序变化而错位。</span
-                >
-              </div>
+
             </aside>
             <div class="document-column">
               <div class="document-paper" @mouseup="captureSelection">
@@ -2682,7 +2676,7 @@ onBeforeUnmount(() => {
                   ><span>{{ version.author_name }}</span
                   ><span>v{{ version.version_no }}</span>
                 </div>
-                <details class="assignment-snapshot"><summary>提交时的任务规则{{ version.assignmentSnapshot ? ' · r'+version.assignmentSnapshot.management_revision : ' · 未记录' }}</summary><template v-if="version.assignmentSnapshot"><p><strong>{{ version.assignmentSnapshot.title }}</strong></p><p>{{ version.assignmentSnapshot.requirements }}</p><p>{{ fmt(version.assignmentSnapshot.due_at) }} 截止 · {{ version.assignmentSnapshot.rubric_version }}</p><p class="muted">本规则快照随该提交保存，后续调整不改写本记录。</p></template><p v-else class="muted">此历史提交早于任务快照功能，未保存当时的规则；不使用当前规则冒充历史记录。</p></details>
+                <details class="assignment-snapshot"><summary>提交时的任务规则{{ version.assignmentSnapshot ? ' · r'+version.assignmentSnapshot.management_revision : ' · 未记录' }}</summary><template v-if="version.assignmentSnapshot"><p><strong>{{ version.assignmentSnapshot.title }}</strong></p><p>{{ version.assignmentSnapshot.requirements }}</p><p>{{ fmt(version.assignmentSnapshot.due_at) }} 截止 · {{ version.assignmentSnapshot.rubric_version }}</p></template><p v-else class="muted">未保存提交时的任务规则。</p></details>
                 <StepAnswer
                   v-if="isStepAssignment"
                   :content="version.content"
@@ -2714,7 +2708,7 @@ onBeforeUnmount(() => {
                 <details :open="versionHistory.length > 1">
                   <summary class="section-title">
                     <h3>修订历史</h3>
-                    <span class="muted">{{ versionHistory.length }} 个版本 · 批注记在它针对的那一版下面</span>
+                    <span class="muted">{{ versionHistory.length }} 个版本</span>
                   </summary>
                   <article
                     v-for="h in versionHistory"
@@ -3048,7 +3042,7 @@ onBeforeUnmount(() => {
                         <details class="grade-anchor">
                           <summary>锚点</summary>
                           <template v-if="gradingCriterion(i.code)?.description">
-                            <p>{{ gradingCriterion(i.code).description }}</p>
+                            <p v-if="criterionDescription(gradingCriterion(i.code))">{{ criterionDescription(gradingCriterion(i.code)) }}</p>
                             <p
                               v-for="[key, label] in [
                                 ['excellent', '优秀'],
@@ -3137,7 +3131,7 @@ onBeforeUnmount(() => {
                       class="feedback-replies"
                     >
                       <strong>{{ a.actor_name }}</strong
-                      ><span>{{ a.action_type }} · {{ a.body }}</span>
+                      ><span>{{ actionLabel(a.action_type) }} · {{ a.body }}</span>
                     </div>
                     <button
                       v-if="isTeacher"
@@ -3286,21 +3280,12 @@ onBeforeUnmount(() => {
                 </article>
               </template>
               </template>
-              <div class="ai-boundary">
-                <History :size="18" /><span
-                  >本页展示冻结的 v{{
-                    version.version_no
-                  }}。后续修订不会自动替换此版本。</span
-                >
-              </div>
+
             </aside>
           </div>
         </section>
       </template>
-      <footer class="app-footer">
-        <span>课程开放知识社区</span
-        ><span>创作有依据 · 反馈可行动 · 成长可追溯</span>
-      </footer>
+
     </main>
   </div>
   <div
@@ -3535,9 +3520,7 @@ onBeforeUnmount(() => {
               rows="2"
             />
           </label>
-          <p class="form-note">
-            来源不会被系统自动判定为真实。请仅引用获得授权、可回到原文核对的材料。
-          </p></template
+          <p class="form-note">请引用可回到原文核对的材料。</p></template
         ><template v-if="modal === 'feedback'"
           ><label
             >主责二级指标<select v-model="form.indicator">

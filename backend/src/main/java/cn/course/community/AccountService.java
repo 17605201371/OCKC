@@ -21,8 +21,8 @@ public class AccountService {
  record PasswordResult(int status,String message){}
  // Authentication failures return a result instead of throwing: the rate-limit update must commit.
  @Transactional public PasswordResult changePassword(String email,long version,String current,String next,String confirmation){
-  if(current==null||current.isEmpty()||current.getBytes(StandardCharsets.UTF_8).length>72) return new PasswordResult(400,"请填写当前密码（最多 72 个 UTF-8 字节）");
-  if(next==null||next.isBlank()||next.codePointCount(0,next.length())<12||next.getBytes(StandardCharsets.UTF_8).length>72||next.codePoints().anyMatch(Character::isISOControl))return new PasswordResult(400,"新密码至少 12 个字符，最多 72 个 UTF-8 字节，不含控制字符");
+  if(current==null||current.isEmpty()||current.getBytes(StandardCharsets.UTF_8).length>72) return new PasswordResult(400,"请填写当前密码");
+  if(next==null||next.isBlank()||next.codePointCount(0,next.length())<12||next.getBytes(StandardCharsets.UTF_8).length>72||next.codePoints().anyMatch(Character::isISOControl))return new PasswordResult(400,"新密码至少 12 个字符，且不能过长");
   if(!next.equals(confirmation))return new PasswordResult(400,"两次输入的新密码不一致");
   var row=s.one("SELECT id,password_hash,credential_version,password_failures,password_locked_until FROM app_user WHERE email=? FOR UPDATE",email);
   if(s.id(row,"credential_version")!=version)return new PasswordResult(401,"账号安全信息已变化，请重新登录");
