@@ -7,6 +7,8 @@ const props = defineProps<{ entryId: number; assignmentEnabled?: boolean; stepMo
 const emit = defineEmits<{ visibility: [enabled: boolean]; locate: [paragraphId: string]; content: [doc: any]; marks: [list: Array<{ blockId: string; quote: string; state: string }>] }>();
 const enabled = ref(false), loading = ref(false), failed = ref(false);
 const status = ref(''), message = ref(''), model = ref('');
+// 今天还能生成几轮；-1 表示不限，null 表示服务端没返回。
+const remaining = ref<number | null>(null);
 const suggestions = ref<Array<{ id?: number; paragraph_id?: string | null; quote_text?: string | null; replacement_text?: string | null; dimension: string; title: string; body: string; state?: string; step_index?: number | null }>>([]);
 // 替换前的段落快照：撤销时按 blockId 原样换回去。
 const undo = ref<Record<number, { paragraphId: string; before: any }>>({});
@@ -113,7 +115,10 @@ async function load(generate = false) {
     status.value = data.status || '';
     message.value = data.message || '';
     model.value = data.model || '';
+    remaining.value = typeof data.remaining === 'number' ? data.remaining : null;
     suggestions.value = Array.isArray(data.suggestions) ? data.suggestions : [];
+    // 次数用完时上一轮建议仍然有效：照常显示，只提示不能再生成。
+    if (data.status === 'LIMITED' && suggestions.value.length) { status.value = 'READY'; applyError.value = data.message || ''; }
     emit('visibility', enabled.value);
   } catch {
     if (current !== sequence) return;
@@ -147,7 +152,8 @@ onBeforeUnmount(() => { sequence++; });
         </div>
       </article>
       <p v-if="applyError" class="ai-apply-error">{{ applyError }}</p>
-      <button class="text-btn ai-refresh" :disabled="loading" @click="load(true)"><RefreshCw :size="13" :class="{ spinning: loading }" />重新生成建议</button>
+      <button class="text-btn ai-refresh" :disabled="loading || remaining === 0" @click="load(true)"><RefreshCw :size="13" :class="{ spinning: loading }" />重新生成建议</button>
+      <p v-if="remaining !== null && remaining >= 0" class="ai-act-note">今天还可生成 {{ remaining }} 次</p>
       <p class="ai-act-note">采纳会直接改正文，可点「撤销替换」还原。</p>
     </div>
 
@@ -163,7 +169,14 @@ onBeforeUnmount(() => { sequence++; });
       <h4>还没有生成建议</h4>
       <p v-if="stepMode">按步骤把正文发送给模型，逐条指出每一步的具体问题与最小改法；不代写答案，也不上传图片与证据原文。</p>
       <p v-else>将把当前草稿正文发送给模型，生成四维修改建议；不会上传图片与证据原文。</p>
-      <button class="btn secondary" :disabled="loading" @click="load(true)"><Wand2 :size="15" />{{ loading ? '生成中…' : '生成 AI 建议' }}</button>
+      <button class="btn secondary" :disabled="loading || remaining === 0" @click="load(true)"><Wand2 :size="15" />{{ loading ? '生成中…' : '生成 AI 建议' }}</button>
+      <p v-if="remaining !== null && remaining >= 0" class="ai-act-note">今天还可生成 {{ remaining }} 次</p>
+    </div>
+
+    <div v-else-if="status === 'LIMITED'" class="ai-service-state">
+      <span class="ai-state-icon"><AlertCircle :size="19" /></span>
+      <h4>今天的次数已用完</h4>
+      <p>{{ message || '明天再试。' }}</p>
     </div>
 
     <div v-else-if="status === 'FAILED'" class="ai-service-state">

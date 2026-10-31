@@ -32,6 +32,10 @@ app:
     base: ${AI_API_BASE:https://api.stepfun.com/step_plan/v1}
     key: ${AI_API_KEY:}
     model: ${AI_MODEL:step-3.7-flash}
+    daily-limit: ${AI_DAILY_LIMIT:10}
+  backup:
+    dir: ${BACKUP_DIR:}
+    keep: ${BACKUP_KEEP:14}
 logging:
   level:
     root: INFO

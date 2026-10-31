@@ -76,6 +76,13 @@ public class CommunityService {
  @org.springframework.beans.factory.annotation.Value("${app.ai.model:step-3.7-flash}") String aiModel;
  // 每轮最多保存的建议条数。提示词里的条数也从这里取，两边不能各写各的。
  static final int POST_AI_LIMIT=4,STEP_AI_LIMIT=5;
+ // 每人每天（北京时间自然日）最多生成几轮 AI 建议；0 表示不限。模型额度有限，失败的尝试也计数。
+ @org.springframework.beans.factory.annotation.Value("${app.ai.daily-limit:10}") int aiDailyLimit;
+ int aiUsedToday(long uid){
+  String since=java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).atStartOfDay(java.time.ZoneId.of("Asia/Shanghai")).toInstant().toString();
+  return s.db.queryForObject("SELECT COUNT(*) FROM audit_log WHERE actor_id=? AND action_type='AI_FEEDBACK_ATTEMPT' AND created_at>=?",Integer.class,uid,since);
+ }
+ int aiRemaining(long uid){return aiDailyLimit<=0?-1:Math.max(0,aiDailyLimit-aiUsedToday(uid));}
  public Map<String,Object> aiFeedback(long eid,long uid){return aiFeedback(eid,uid,false);}
  public Map<String,Object> aiFeedback(long eid,long uid,boolean generate){
   var e=entry(eid);String role=s.role(s.id(e,"course_id"),uid);
@@ -89,9 +96,11 @@ public class CommunityService {
   var saved=s.db.queryForList("SELECT id,paragraph_id,quote_text,replacement_text,dimension,title,body,state,step_index FROM ai_suggestion WHERE entry_id=? ORDER BY step_index NULLS FIRST,id",eid);
   // generate=true 是用户主动要一轮新的，不能被上一次的结果挡住，否则「重新生成」按钮永远无效。
   if(!generate){
-   if(!saved.isEmpty())return Map.of("enabled",true,"status","READY","suggestions",saved,"formalScore",false,"saved",true,"model",aiModel);
-   return Map.of("enabled",true,"status","NOT_GENERATED","suggestions",List.of(),"formalScore",false,"model",aiModel);
+   if(!saved.isEmpty())return Map.of("enabled",true,"status","READY","suggestions",saved,"formalScore",false,"saved",true,"model",aiModel,"remaining",aiRemaining(uid));
+   return Map.of("enabled",true,"status","NOT_GENERATED","suggestions",List.of(),"formalScore",false,"model",aiModel,"remaining",aiRemaining(uid));
   }
+  if(aiDailyLimit>0&&aiUsedToday(uid)>=aiDailyLimit)
+   return Map.of("enabled",true,"status","LIMITED","message","今天的 AI 建议次数已用完（每天 "+aiDailyLimit+" 次），明天再试。","suggestions",saved,"formalScore",false,"remaining",0);
   var paragraphs=anchors(decode(e.get("draft_json")));
   if(paragraphs.isEmpty()||text(decode(e.get("draft_json"))).isBlank())return Map.of("enabled",true,"status","EMPTY","suggestions",List.of(),"formalScore",false);
   // 只把段落标识与正文交给模型，图片与证据原文不出网。
@@ -113,6 +122,7 @@ public class CommunityService {
    if(listing.length()>6000)break;
   }
   String title=(String)e.get("title");
+  s.audit(uid,"AI_FEEDBACK_ATTEMPT","entry",eid);
   try{
    int stepCount=stepMode?sections.size():0;
    String content=requestSuggestions(title,listing.substring(0,Math.min(listing.length(),6000)),stepMode,stepCount);
@@ -145,10 +155,10 @@ public class CommunityService {
    }
    s.audit(uid,"AI_FEEDBACK_GENERATE","entry",eid);
    var list=s.db.queryForList("SELECT id,paragraph_id,quote_text,replacement_text,dimension,title,body,state,step_index FROM ai_suggestion WHERE entry_id=? AND revision=? ORDER BY step_index NULLS FIRST,id",eid,rev);
-   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"saved",true,"model",aiModel);
+   return Map.of("enabled",true,"status","READY","suggestions",list,"formalScore",false,"saved",true,"model",aiModel,"remaining",aiRemaining(uid));
   }catch(Exception ex){
    org.slf4j.LoggerFactory.getLogger(CommunityService.class).warn("AI feedback failed for entry {}: {}",eid,ex.toString());
-   return Map.of("enabled",true,"status","FAILED","message","模型服务暂时不可用，请稍后重试","suggestions",List.of(),"formalScore",false);
+   return Map.of("enabled",true,"status","FAILED","message","模型服务暂时不可用，请稍后重试","suggestions",List.of(),"formalScore",false,"remaining",aiRemaining(uid));
   }
  }
  private String stripStepPrefix(String title){String t=title==null?"":title.trim();return t.replaceFirst("^第[0-9一二三四五六七八九十]+步[\\s:：、.。]*","");}
