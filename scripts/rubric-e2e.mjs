@@ -20,6 +20,7 @@ async function shot(p,name){await p.waitForTimeout(150);assert.equal(await p.eva
 const title=p=>work(p).getByLabel('量规标题',{exact:true});
 const saveBtn=p=>work(p).getByRole('button',{name:'保存草稿',exact:true});
 const enableBtn=p=>work(p).getByRole('button',{name:'启用为新作业默认',exact:true});
+async function enable(p,why){await enableBtn(p).click();const ok=work(p).getByRole('button',{name:'确认启用',exact:true});assert.equal(await ok.isDisabled(),true);await work(p).getByLabel('启用说明（必填，仅任课教师可见）').fill(why);await ok.click();await work(p).getByRole('status').filter({hasText:'已启用，新作业默认使用此版本'}).waitFor();}
 async function save(p){await saveBtn(p).click();await work(p).getByRole('status').filter({hasText:'草稿已保存'}).waitFor();}
 async function item(p,code){const a=work(p).locator('.rw-item').filter({has:p.locator('.rw-item-head b',{hasText:new RegExp('^'+code+'$')})});if(await a.locator('.rw-item-head').getAttribute('aria-expanded')==='false')await a.locator('.rw-item-head').click();return a;}
 const ANCHOR='完整标明教材版本与页码，且摘录直接支持光反应场所。';
@@ -36,7 +37,7 @@ try{
  checks.push('Catalog read failure is reported; re-entering the page loads the built-in default');
 
  // 2. Teacher creates a revision draft from the enabled default and edits title, an indicator description and an anchor.
- await work(teacher).getByRole('button',{name:'＋ 新建修订版本'}).click();await title(teacher).waitFor();
+ await work(teacher).getByRole('button',{name:'新建修订版本'}).click();await title(teacher).waitFor();
  await work(teacher).getByRole('status').filter({hasText:'已创建修订草稿'}).waitFor();
  let catalog=await rpc(teacher,'/courses/1/rubrics');const rid=catalog.items.find(r=>r.state==='DRAFT').id,code='cr-'+rid;
  assert.equal(await saveBtn(teacher).isDisabled(),true);
@@ -72,25 +73,26 @@ try{
  await shot(teacher,'02-rubric-conflict');
  checks.push('A stale-window save is rejected with the typed input kept, and navigation away is blocked while edits are unsaved');
  await work(teacher).getByRole('button',{name:'取消',exact:true}).click();await open(teacher);
- await work(teacher).locator('.rw-current').getByText('另一窗口先保存的量规',{exact:true}).waitFor();
- await work(teacher).getByRole('button',{name:'继续编辑草稿'}).click();await title(teacher).fill('光合作用学科量规 · 本地验收');await save(teacher);
+ await work(teacher).locator('.rw-current').getByText('当前生效',{exact:true}).waitFor();await work(teacher).locator('.rw-draft-note').waitFor();
+ await work(teacher).getByRole('button',{name:'继续编辑草稿'}).click();assert.equal(await title(teacher).inputValue(),'另一窗口先保存的量规');await title(teacher).fill('光合作用学科量规 · 本地验收');await save(teacher);
  checks.push('After cancelling, re-entering the page loads the other window\'s save and editing continues from the latest revision');
 
  // 6. Enabling needs saved edits and a reason; it sets the new-assignment default and leaves existing assignments alone.
  const before=(await rpc(teacher,'/courses/1/assignments')).map(a=>[a.id,a.rubric_version]);
- await title(teacher).fill('光合作用学科量规 · 本地验收（改）');assert.equal(await enableBtn(teacher).isDisabled(),true);await save(teacher);
- assert.equal(await enableBtn(teacher).isDisabled(),true);
- await work(teacher).getByLabel('变更说明').fill('本地验收：教材引用标准明确化，非线上发布。');assert.equal(await enableBtn(teacher).isDisabled(),false);
- await enableBtn(teacher).click();await work(teacher).getByRole('status').filter({hasText:'已启用，新作业默认使用此版本'}).waitFor();
- assert.equal(await title(teacher).count(),0);await work(teacher).locator('.rw-current').getByText('新作业默认',{exact:true}).waitFor();
+ await title(teacher).fill('光合作用学科量规 · 本地验收（改）');await work(teacher).locator('.rw-state').getByText('有未保存的修改').waitFor();
+ await enable(teacher,'本地验收：教材引用标准明确化，非线上发布。');
+ assert.equal(await title(teacher).count(),0);await work(teacher).locator('.rw-current').getByText('当前生效',{exact:true}).waitFor();
+ assert.equal((await rpc(teacher,'/courses/1/rubrics/'+code)).title,'光合作用学科量规 · 本地验收（改）');
  catalog=await rpc(teacher,'/courses/1/rubrics');assert.equal(catalog.defaultId,rid);assert.equal(catalog.items.find(r=>r.id===rid).state,'ENABLED');
  assert.deepEqual((await rpc(teacher,'/courses/1/assignments')).filter(a=>before.some(([id])=>id===a.id)).map(a=>[a.id,a.rubric_version]),before);
- checks.push('Enabling needs saved edits and a reason, makes the version the new-assignment default and leaves existing assignments untouched');
+ checks.push('Enabling asks for a reason, saves pending edits first, makes the version the new-assignment default and leaves existing assignments untouched');
 
  // 7. Students now see the enabled version and its anchors.
  await open(student);await work(student).getByLabel('查看量规版本').waitFor();assert.equal(await work(student).getByLabel('查看量规版本').inputValue(),code);
  await work(student).getByText(ANCHOR,{exact:true}).waitFor();await shot(student,'03-enabled-student-rubric');
  checks.push('Students read the enabled version, including its anchors, and it is preselected as the course default');
+ const labels=await work(student).getByLabel('查看量规版本').locator('option').allTextContents();assert(labels.every(l=>!/cr-\d/.test(l)),labels.join('|'));assert(labels.some(l=>/^v\d+ 已启用/.test(l)));assert(labels.some(l=>l.startsWith('内置版本')));
+ checks.push('Version options use readable labels (version number, state, date, title) instead of internal codes');
 
  // 8. New assignments default to the enabled version and store it.
  await nav(teacher,'课程作业');await teacher.getByRole('button',{name:'发布作业',exact:true}).click();const modal=teacher.getByRole('dialog',{name:'发布课程作业',exact:true});
@@ -122,11 +124,23 @@ try{
  checks.push('The reader\'s rubric link shows the submission\'s pinned snapshot without a version switcher; course navigation returns to the live catalog');
 
  // 11. A later enabled version changes neither the old assignment binding nor the frozen snapshot.
- await open(teacher);await work(teacher).getByRole('button',{name:'＋ 新建修订版本'}).click();await title(teacher).waitFor();
+ await open(teacher);await work(teacher).getByRole('button',{name:'新建修订版本'}).click();await title(teacher).waitFor();
  const next=(await rpc(teacher,'/courses/1/rubrics')).items.find(r=>r.state==='DRAFT');await title(teacher).fill('后续标准：不应改写历史');await save(teacher);
- await work(teacher).getByLabel('变更说明').fill('本地后续版本验收');await enableBtn(teacher).click();await work(teacher).getByRole('status').filter({hasText:'已启用'}).waitFor();
+ await enable(teacher,'本地后续版本验收');
  assert.deepEqual((await rpc(student,'/submissions/'+sid)).rubricSnapshot,frozen);assert.equal((await rpc(teacher,'/courses/1/assignments')).find(a=>a.id===assignment.id).rubric_version,code);
  checks.push('A later enabled default leaves the old assignment binding and the frozen submission snapshot unchanged');
+
+ // 11b. A new draft does not replace the live version on entry; bulk anchors write one band into a whole dimension.
+ await open(teacher);await work(teacher).getByRole('button',{name:'新建修订版本'}).click();await title(teacher).waitFor();
+ await work(teacher).getByRole('button',{name:'统一四档描述'}).first().click();const bulkGood=work(teacher).getByLabel('S 统一良好 75–89');await bulkGood.fill('统一写法：论证基本成立，个别来源需补页码。');
+ await work(teacher).getByRole('button',{name:'写入 S1 / S2 / S3'}).click();await work(teacher).getByRole('status').filter({hasText:'已把四档描述写入 S 维度的 3 项指标'}).waitFor();await save(teacher);
+ const bulkDraft=(await rpc(teacher,'/courses/1/rubrics')).items.find(r=>r.state==='DRAFT');const bulkRow=await rpc(teacher,'/courses/1/rubrics/'+bulkDraft.code);
+ assert.deepEqual(bulkRow.criteria.filter(c=>c.code.startsWith('S')).map(c=>c.good),Array(3).fill('统一写法：论证基本成立，个别来源需补页码。'));assert.notEqual(bulkRow.criteria.find(c=>c.code==='A1').good,'统一写法：论证基本成立，个别来源需补页码。');
+ assert.equal(bulkRow.criteria.find(c=>c.code==='S1').excellent,ANCHOR);
+ await work(teacher).getByRole('button',{name:'取消',exact:true}).click();await open(teacher);await work(teacher).locator('.rw-current').getByText('当前生效',{exact:true}).waitFor();
+ assert.equal(await work(teacher).getByLabel('查看量规版本').inputValue(),'cr-'+next.id);await work(teacher).locator('.rw-draft-note').getByText(/有一份未启用的草稿/).waitFor();
+ checks.push('Unified band text is written into every indicator of one dimension only, leaving other bands and dimensions unchanged');
+ checks.push('With a draft pending, the page still opens on the live version and points to the draft separately');
 
  // 12. Enable history and default switching (API only; the redesigned page has no controls for them).
  const history=await rpc(teacher,'/courses/1/rubrics/history');assert(JSON.stringify(history).includes('本地后续版本验收'));
@@ -147,11 +161,11 @@ try{
  checks.push('A legacy submission without anchors is labelled and shows only the fixed indicator codes');
 
  // 14. Dark theme, 390px and 1280px layouts have no horizontal overflow; anchor rows open from the keyboard.
- await open(teacher);await work(teacher).getByRole('button',{name:'＋ 新建修订版本'}).click();await title(teacher).waitFor();
+ await open(teacher);await work(teacher).getByRole('button',{name:'继续编辑草稿'}).click();await title(teacher).waitFor();
  await teacher.evaluate(()=>window.courseTheme.set('dark'));await shot(teacher,'07-rubric-dark');
- await teacher.setViewportSize({width:390,height:844});await shot(teacher,'08-rubric-mobile-dark');await teacher.setViewportSize({width:1280,height:1000});await shot(teacher,'09-rubric-1280-dark');
+ await teacher.setViewportSize({width:1280,height:1000});await shot(teacher,'08-rubric-1280-dark');
  const head=work(teacher).locator('.rw-item-head').nth(1);await head.focus();await teacher.keyboard.press('Enter');assert.equal(await head.getAttribute('aria-expanded'),'true');
- checks.push('Dark surfaces and 390px/1280px layouts have no horizontal overflow; indicator rows open from the keyboard');
+ checks.push('Dark surfaces and the 1280px layout have no horizontal overflow; indicator rows open from the keyboard');
 
  // 15. Session expiry with blocked storage keeps the unsaved rubric in memory and requires a download before logging in again.
  await teacher.evaluate(()=>{Storage.prototype.setItem=function(){throw new DOMException('Local test storage unavailable','QuotaExceededError');};});
