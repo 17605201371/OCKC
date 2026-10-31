@@ -9,3 +9,8 @@ export function fmt(d: string) {
     hour12: false,
   });
 }
+
+// 分数统一保留一位小数；没有分数时显示「—」。
+export function number(n: any) {
+  return n == null ? "—" : Number(n).toFixed(1);
+}
