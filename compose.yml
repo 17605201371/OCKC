@@ -28,5 +28,8 @@ services:
       DEMO_SEED: ${DEMO_SEED:-false}
       DEMO_PASSWORD: ${DEMO_PASSWORD:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_API_BASE: ${AI_API_BASE:-https://api.stepfun.com/step_plan/v1}
+      AI_MODEL: ${AI_MODEL:-step-3.7-flash}
 volumes:
   mysql-data:

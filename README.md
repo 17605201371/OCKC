@@ -4,7 +4,7 @@
 
 **当前版本：v0.1.0 / 第一阶段可运行开发版，不是已完成的生产系统。**
 
-本仓库不是静态原型：Vue 页面调用 Spring Boot API，正文、提交、评价、核验与审计实际存入数据库。示例课程和分数由明确的演示数据初始化产生，不代表真实教学记录。AI 服务未接入，界面不会模拟 AI 评分。
+本仓库不是静态原型：Vue 页面调用 Spring Boot API，正文、提交、评价、核验与审计实际存入数据库。示例课程和分数由明确的演示数据初始化产生，不代表真实教学记录。AI 修改建议已接入 OpenAI 兼容的模型接口（默认 StepFun `step-3.7-flash`），由教师按作业开启，只给修订建议，不打分、不进入正式评价；未配置 `AI_API_KEY` 时界面显示「AI 服务尚未配置」。
 
 **本期范围：仅 PC 浏览器，建议视口宽度 1280px 及以上；移动端不在本期开发与验收范围。**
 
@@ -159,7 +159,7 @@ E2E_PASSWORD="$DEMO_PASSWORD" node scripts/ui-smoke.mjs
 
 ## 作业级 AI 策略与反馈右栏
 
-实现说明与安全边界见 [docs/FEEDBACK-SIDEBAR.md](docs/FEEDBACK-SIDEBAR.md)。当前仅完成入口策略和状态展示，尚未接入模型，不会发送学生正文。
+实现说明与安全边界见 [docs/FEEDBACK-SIDEBAR.md](docs/FEEDBACK-SIDEBAR.md)。服务端配置 `AI_API_KEY`（可选 `AI_API_BASE`、`AI_MODEL`）且教师为作业开启后，作者或任课教师点击「生成 AI 建议」时，会把当前草稿的标题和段落正文（最多约 6000 字）发送给模型服务；图片与证据原文不发送。未设置 `AI_API_KEY` 时不调用任何外部服务。
 
 ## 教学工作流增量
 

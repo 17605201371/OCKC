@@ -74,6 +74,8 @@ public class CommunityService {
  @org.springframework.beans.factory.annotation.Value("${app.ai.key:}") String aiKey;
  @org.springframework.beans.factory.annotation.Value("${app.ai.base:https://api.stepfun.com/step_plan/v1}") String aiBase;
  @org.springframework.beans.factory.annotation.Value("${app.ai.model:step-3.7-flash}") String aiModel;
+ // 每轮最多保存的建议条数。提示词里的条数也从这里取，两边不能各写各的。
+ static final int POST_AI_LIMIT=4,STEP_AI_LIMIT=5;
  public Map<String,Object> aiFeedback(long eid,long uid){return aiFeedback(eid,uid,false);}
  public Map<String,Object> aiFeedback(long eid,long uid,boolean generate){
   var e=entry(eid);String role=s.role(s.id(e,"course_id"),uid);
@@ -124,9 +126,9 @@ public class CommunityService {
    if(!node.path("suggestions").isArray()||node.path("suggestions").isEmpty())throw new IllegalStateException("模型未返回可用建议");
    // 一轮生成覆盖上一轮：采纳会改正文、revision 随之变化，按 revision 清会让旧建议残留成两批。
    s.db.update("DELETE FROM ai_suggestion WHERE entry_id=?",eid);
-   int count=0;
+   int count=0,limit=stepMode?STEP_AI_LIMIT:POST_AI_LIMIT;
    for(var item:node.path("suggestions")){
-    if(count++>=4)break;
+    if(count++>=limit)break;
     String pid=item.path("paragraphId").asText("").trim();
     // 段落标识必须是本文真实存在的锚点，否则建议无法定位，只保留文字。
     if(!paragraphs.containsKey(pid))pid="";
@@ -199,7 +201,7 @@ public class CommunityService {
     +"四个维度：S 科学性、A 准确性、C 完整性、L 逻辑性。"
     +"我会给你按步分组的正文，每步行如「第2步 标题」，下面每行形如 [p_xxx] 段落内容。"
     +"严格只输出 JSON，不要解释或代码块标记。格式：{\"suggestions\":[{\"stepIndex\":0,\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中逐字出现的 10-40 字原文\",\"replacement\":\"替换 quote 覆盖范围的文字\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，指出这一步的问题\"}]}。"
-    +"stepIndex 从 0 开始，必须对应我给出的步序；paragraphId 必须来自该步；每步最多 2 条，总数不超过 5 条；每条 body 不超过 60 字，务必保证 JSON 完整闭合。"
+    +"stepIndex 从 0 开始，必须对应我给出的步序；paragraphId 必须来自该步；每步最多 2 条，总数不超过 "+STEP_AI_LIMIT+" 条；每条 body 不超过 60 字，务必保证 JSON 完整闭合。"
     +"quote 必须逐字出现在该段落里，不能改写或省略中间的字；replacement 只改 quote 覆盖的那部分，保留学生原有语气与结论，不要重写整段、不要补出学生没写的推理。"
     +"公式一律写成 $...$ 形式（例如 $\\sin 2\\theta$），不要写裸的 LaTeX。")
    :("你是课程写作助教，帮助学生改进知识帖。只能依据四维量规给出可执行的修改建议，不得编造来源。"
@@ -208,10 +210,10 @@ public class CommunityService {
     +"严格只输出 JSON，不要任何解释或代码块标记。格式：{\"suggestions\":[{\"paragraphId\":\"p_xxx\",\"quote\":\"该段落中逐字出现的 10-40 字原文片段\",\"replacement\":\"替换 quote 覆盖范围的文字\",\"dimension\":\"S|A|C|L\",\"title\":\"不超过18字的结论\",\"body\":\"40-80字，说明为什么这样改\"}]}。"
     +"paragraphId 必须来自我给出的列表；quote 必须逐字出现在该段落里，不能改写、不能省略中间的字；"
     +"replacement 只改 quote 覆盖的那部分，保留学生原有语气与结论，不要重写整段，不要添加原文没有的数据；"
-    +"公式一律写成 $...$ 形式（例如 $\\sin 2\\theta$），不要写裸的 LaTeX。最多 4 条，按重要程度排序。");
+    +"公式一律写成 $...$ 形式（例如 $\\sin 2\\theta$），不要写裸的 LaTeX。最多 "+POST_AI_LIMIT+" 条，按重要程度排序。");
   String user=stepMode
-   ?"标题："+(title==null?"":title)+"\n分步正文（共 "+stepCount+" 步）：\n"+body+"\n\n请针对每一步指出具体问题，最多 6 条，每条都要能定位到某一步。"
-   :"标题："+(title==null?"":title)+"\n正文（带段落标识）：\n"+body+"\n\n请给出 3 到 4 条修改建议。";
+   ?"标题："+(title==null?"":title)+"\n分步正文（共 "+stepCount+" 步）：\n"+body+"\n\n请针对每一步指出具体问题，最多 "+STEP_AI_LIMIT+" 条，每条都要能定位到某一步。"
+   :"标题："+(title==null?"":title)+"\n正文（带段落标识）：\n"+body+"\n\n请给出 3 到 "+POST_AI_LIMIT+" 条修改建议。";
   Map<String,Object> payload=new LinkedHashMap<>();
   payload.put("model",aiModel);
   payload.put("temperature",0.3);
