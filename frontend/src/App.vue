@@ -69,6 +69,9 @@ import QualitySummary from "./QualitySummary.vue";
 import StepAnswer from "./StepAnswer.vue";
 import EditorPage from "./EditorPage.vue";
 import GradingPanel from "./GradingPanel.vue";
+import SubmissionRecords from "./SubmissionRecords.vue";
+import AnnotationPopover from "./AnnotationPopover.vue";
+import ReaderFeedbackPanel from "./ReaderFeedbackPanel.vue";
 import { STEP_DEFAULT_MAX, scrollToStep } from "./stepGrading";
 import NotificationCenter from "./NotificationCenter.vue";
 import AccountSettings from "./AccountSettings.vue";
@@ -827,12 +830,6 @@ async function focusAnchor(id: string, original = "") {
 }
 
 // ---- 四维批注：正文选中 → 就地浮层 ----
-const DIMENSIONS = [
-  { code: "S", name: "科学性" },
-  { code: "A", name: "准确性" },
-  { code: "C", name: "完整性" },
-  { code: "L", name: "逻辑性" },
-];
 
 const highlightFeedbackId = ref(0);
 // 修订历史：批注跟着版本走，而不是跟着「这篇帖子」走。
@@ -1778,156 +1775,29 @@ onBeforeUnmount(() => {
                   @annotate="annotateFigure"
                 />
               </div>
-              <section v-if="page === 'reader' && versionHistory.length" class="card source-panel revision-history">
-                <details :open="versionHistory.length > 1">
-                  <summary class="section-title">
-                    <h3>修订历史</h3>
-                    <span class="muted">{{ versionHistory.length }} 个版本</span>
-                  </summary>
-                  <article
-                    v-for="h in versionHistory"
-                    :key="h.id"
-                    class="history-row"
-                    :class="{ current: h.id === version.id }"
-                  >
-                    <button
-                      class="history-open"
-                      :disabled="h.id === version.id || historyBusy"
-                      :aria-current="h.id === version.id ? 'true' : undefined"
-                      @click="openVersion(h.id)"
-                    >
-                      <strong>v{{ h.version_no }}</strong>
-                      <span class="muted">{{ fmt(h.created_at) }}</span>
-                      <span v-if="h.published" class="badge green">已发布</span>
-                      <span v-else class="badge">未发布</span>
-                      <span v-if="h.q_final != null" class="history-score">{{ number(h.q_final) }} 分</span>
-                      <span v-if="h.id === version.id" class="muted">正在阅读</span>
-                    </button>
-                    <div v-if="h.feedbackVisible && h.feedback.length" class="history-feedback">
-                      <p v-for="f in h.feedback" :key="f.id" class="history-note">
-                        <span class="indicator-tag">{{ f.indicator_code }}</span>{{ f.body }}
-                      </p>
-                    </div>
-                    <p v-else-if="h.feedbackVisible" class="muted history-note">这一版没有批注。</p>
-                    <p v-else class="muted history-note">教师批注未公开。</p>
-                  </article>
-                </details>
-              </section>
-              <section class="card source-panel">
-                <details class="revision-diff">
-                  <summary>
-                    {{
-                      version.version_no === 1 ? "首个提交版本" : "与上一版相比"
-                    }}
-                    · {{ version.changes.length }} 处段落文本变化
-                  </summary>
-                  <div
-                    v-for="(c, i) in version.changes"
-                    :key="i"
-                    class="diff-item"
-                  >
-                    <strong>{{
-                      (
-                        {
-                          ADDED: "新增段落",
-                          DELETED: "删除段落",
-                          CHANGED: "修改段落",
-                          STRUCTURE: "格式或结构变化",
-                        } as any
-                      )[c.type]
-                    }}</strong>
-                    <p v-if="c.before" class="diff-before">− {{ c.before }}</p>
-                    <p v-if="c.after" class="diff-after">+ {{ c.after }}</p>
-                  </div>
-                  <p v-if="!version.changes.length" class="muted">
-                    正文段落文本未变化；标题及证据变化请在对应区域核对。
-                  </p>
-                </details>
-              </section>
-              <details class="card source-panel source-collapsed">
-                <summary class="section-title">
-                  <h3>来源与核验</h3>
-                  <span class="muted">{{ version.evidence.length }} 条 · 展开查看</span>
-                </summary>
-                <div
-                  v-for="e in version.evidence"
-                  :key="e.id"
-                  class="reader-source"
-                >
-                  <strong>{{ e.source_title }}</strong>
-                  <button class="text-btn" :disabled="busy" @click="openEvidence(e.id)">进入核验工作台<ArrowUpRight :size="14"/></button>
-                  <p>{{ e.claim_text }}</p>
-                  <blockquote>{{ e.excerpt }}</blockquote>
-                  <div class="evidence-actions">
-                    <span
-                      class="badge"
-                      :class="
-                        e.state === 'PASS'
-                          ? 'green'
-                          : e.state === 'FAIL'
-                            ? 'red'
-                            : 'orange'
-                      "
-                      >{{
-                        (
-                          {
-                            PENDING: "待核验",
-                            PASS: "已通过",
-                            FAIL: "未通过",
-                            DISPUTED: "有争议",
-                          } as any
-                        )[e.state]
-                      }}</span
-                    ><button class="text-btn" @click="viewVerification(e)">
-                      核验记录</button
-                    ><button
-                      v-if="page === 'grading' && isTeacher"
-                      class="text-btn"
-                      @click="
-                        showModal('verify', {
-                          id: e.id,
-                          sourceTitle: e.source_title,
-                        })
-                      "
-                    >
-                      核验 / 裁定
-                    </button>
-                  </div>
-                </div>
-                <p v-if="!version.evidence.length" class="muted">
-                  此版本未挂载证据；教师仍需评估需要依据的主张是否有充分来源。
-                </p>
-              </details>
+              <SubmissionRecords
+                :version="version"
+                :version-history="versionHistory"
+                :history-busy="historyBusy"
+                :busy="busy"
+                :is-reader="page === 'reader'"
+                :can-adjudicate="page === 'grading' && isTeacher"
+                @open-version="openVersion"
+                @open-evidence="openEvidence"
+                @view-verification="viewVerification"
+                @modal="showModal"
+              />
             </div>
-            <div
+            <AnnotationPopover
               v-if="annotation"
-              class="annotation-popover"
-              :style="{ left: annotation.left + 'px', top: annotation.top + 'px' }"
-              role="dialog"
-              aria-label="添加批注"
-              @mouseup.stop
-            >
-              <div class="annotation-popover-head">
-                <strong><MessageSquare :size="14" />{{ annotation.kind === "figure" ? "图片批注" : "添加批注" }}</strong>
-                <button class="annotation-close" aria-label="关闭批注浮层" @click="clearAnnotation"><X :size="15" /></button>
-              </div>
-              <p class="annotation-quote" :class="{ 'is-figure': annotation.kind === 'figure' }">{{ annotation.kind === "figure" ? annotation.label : annotation.quote }}</p>
-              <div class="annotation-dims" role="group" aria-label="批注维度">
-                <button
-                  v-for="d in DIMENSIONS"
-                  :key="d.code"
-                  type="button"
-                  :class="{ active: annotationDim === d.code }"
-                  @click="annotationDim = d.code"
-                >{{ d.name }}</button>
-              </div>
-              <textarea v-model="annotationBody" rows="3" maxlength="2000" :placeholder="annotation.kind === 'figure' ? '说明这张图的问题：读法、标注、与正文是否对得上' : '指出问题并给出改法，一两句即可'"></textarea>
-              <p v-if="annotationError" class="annotation-error">{{ annotationError }}</p>
-              <div class="annotation-actions">
-                <button class="text-btn" @click="clearAnnotation">取消</button>
-                <button class="btn primary" :disabled="annotationBusy" @click="submitAnnotation">{{ annotationBusy ? "保存中…" : "添加批注" }}</button>
-              </div>
-            </div>
+              v-model:dim="annotationDim"
+              v-model:body="annotationBody"
+              :annotation="annotation"
+              :error="annotationError"
+              :busy="annotationBusy"
+              @close="clearAnnotation"
+              @submit="submitAnnotation"
+            />
             <GradingPanel
               v-if="page === 'grading'"
               v-model:panel-visible="panelVisible"
@@ -1956,58 +1826,19 @@ onBeforeUnmount(() => {
               @restore-review="restoreReview"
               @notify="notify"
             />
-            <aside v-else v-show="panelVisible" class="feedback-sidebar">
-              <div class="panel-title">
-                <h2>质量与版本</h2>
-                <span class="badge">v{{ version.version_no }}</span>
-                <button class="panel-collapse" title="收起反馈面板" aria-label="收起反馈面板" @click="panelVisible = false"><ChevronRight :size="17" /></button>
-              </div>
-              <template v-if="version.evaluation"><QualitySummary v-if="Object.keys(version.evaluation.dimensions || {}).length" :evaluation="version.evaluation" :version="version.version_no" :dimensions="version.rubricSnapshot?.dimensions" @rubric="openRubric" /><div v-if="publishedStepScores.length" class="step-readonly"><div class="step-readonly-head"><h4>步骤分</h4><span>{{ number(publishedStepTotal) }} / {{ number(publishedStepMax) }}</span></div><div v-for="s in publishedStepScores" :key="s.index" class="step-readonly-row" role="button" tabindex="0" :aria-label="'定位到第 ' + (Number(s.index) + 1) + ' 步'" @click="scrollToStep(Number(s.index))" @keydown.enter="scrollToStep(Number(s.index))"><span class="step-index">{{ Number(s.index) + 1 }}</span><div class="step-readonly-main"><strong>{{ s.title || '步骤 ' + (Number(s.index) + 1) }}</strong><div v-if="s.tags && s.tags.length" class="step-tags static"><span v-for="t in s.tags" :key="t" class="step-tag on">{{ t }}</span></div></div><em>{{ number(Number(s.score) || 0) }} / {{ number(Number(s.max) || 10) }}</em></div></div><p class="teacher-summary">{{ version.evaluation.summary }}</p><p class="quality-teacher">{{ version.evaluation.teacher_name }} · {{ fmt(version.evaluation.created_at) }}</p></template>
-              <div v-else class="empty">
-                <Clock :size="26" />
-                <h3>等待教师评审</h3>
-              </div>
-              <p v-if="!feedbackVisible" class="feedback-empty">该知识贴未展示反馈信息</p>
-              <template v-else-if="!readerAsVisitor">
-              <h3 class="sub-panel-title">教师反馈</h3>
-              <p v-if="!version.feedback.length" class="feedback-empty">本版暂无段落批注。</p>
-              <article
-                v-for="f in version.feedback"
-                :key="f.id"
-                class="feedback-card"
-              >
-                <span class="indicator-tag">{{ f.indicator_code }}</span>
-                <p>{{ f.body }}</p>
-                <button
-                  class="text-btn"
-                  @click="focusAnchor(f.paragraph_id, f.original_text)"
-                >
-                  定位正文<ArrowUpRight :size="14" />
-                </button>
-              </article>
-              <template v-if="priorOpen.length">
-                <h3 class="sub-panel-title">历史未解决批注 · {{ priorOpen.length }}</h3>
-                <article
-                  v-for="f in priorOpen"
-                  :key="'prior-' + f.id"
-                  class="feedback-card is-prior"
-                >
-                  <span class="indicator-tag">v{{ f.source_version_no }} 提出</span>
-                  <p>{{ f.body }}</p>
-                  <p v-if="f.student_action === 'ADOPT'" class="prior-declared">你已声明修改，等老师确认。</p>
-                  <button
-                    v-if="!f.stale"
-                    class="text-btn"
-                    @click="focusAnchor(f.paragraph_id, f.original_text)"
-                  >
-                    定位正文<ArrowUpRight :size="14" />
-                  </button>
-                  <p v-else class="muted">这段正文已改动，原批注仅作提醒。</p>
-                </article>
-              </template>
-              </template>
-
-            </aside>
+            <ReaderFeedbackPanel
+              v-else
+              v-model:panel-visible="panelVisible"
+              :version="version"
+              :feedback-visible="feedbackVisible"
+              :reader-as-visitor="readerAsVisitor"
+              :prior-open="priorOpen"
+              :published-step-scores="publishedStepScores"
+              :published-step-total="publishedStepTotal"
+              :published-step-max="publishedStepMax"
+              @focus-anchor="focusAnchor"
+              @rubric="openRubric"
+            />
           </div>
         </section>
       </template>
