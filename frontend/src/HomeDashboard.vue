@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { assignmentState, dueLabel } from "./deadlines";
-import { computed } from "vue";
+import { computed, ref, watch, onBeforeUnmount } from "vue";
+import { api } from "./api";
 import {
   ArrowUpRight,
   Check,
@@ -41,12 +42,33 @@ const emit = defineEmits([
 const pendingCount=computed(()=>props.queueSummary?.pending_count??pending.value.length);
 const submissionCount=computed(()=>props.queueSummary?.submission_count??props.queue.length);
 const pending = computed(() => props.queue.filter((x) => x.q_final == null));
+// 只算还能处理的证据：已评分（核验冻结）、旧版本上的不算；学生不算自己的、已核验过的和教师已裁定的。
 const evidencePending = computed(() =>
-  props.evidences.filter((x) => ["PENDING", "DISPUTED"].includes(x.state)),
+  props.evidences.filter((x) =>
+    ["PENDING", "DISPUTED"].includes(x.state) && !x.graded && !x.superseded &&
+    (props.staff || (x.author_id !== props.me?.id && !x.verified_by_me && !x.teacher_decided)),
+  ),
 );
+// 教师的主卡片只放真正待评审的提交；全部评完时显示「都已评审」，不再把已评分的作品当成待办。
 const featured = computed(() =>
-  props.staff ? pending.value[0] || props.queue[0] : props.assignments[0],
+  props.staff ? pending.value[0] : props.assignments[0],
 );
+// 四维均分：取每篇作品最近一次正式评价，教师看全课程，学生看自己的作品（与教学进展页同一口径）。
+const progress = ref<any>(null);
+let alive = true, generation = 0;
+async function loadProgress() {
+  const id = props.course?.id, g = ++generation;
+  if (!id) { progress.value = null; return; }
+  try {
+    const r = await api(`/courses/${id}/progress-workbench?page=1`);
+    if (alive && g === generation) progress.value = r?.summary || null;
+  } catch {
+    if (alive && g === generation) progress.value = null;
+  }
+}
+watch(() => [props.course?.id, props.me?.id], loadProgress, { immediate: true });
+onBeforeUnmount(() => { alive = false; });
+const gradedEntries = computed(() => Number(progress.value?.graded_entries || 0));
 const quality = computed(() =>
   props.staff
     ? featured.value?.q_final
@@ -142,8 +164,7 @@ function date(d: string) {
     : "—";
 }
 function dimensionValue(key: string): number | null {
-  if (props.staff) return null;
-  const value = props.homeSubmission?.evaluation?.dimensions?.[key];
+  const value = progress.value?.latest_dimension_average?.[key];
   if (value == null || value === '') return null;
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
@@ -246,7 +267,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
         </ol>
         <div class="hero-quality">
           <span class="muted"
-            >{{ staff ? "此提交质量分" : "最近提交质量分" }} · {{ gradeBasis }}</span
+            >{{ staff ? "此提交质量分" : "这篇作品质量分" }} · {{ gradeBasis }}</span
           >
           <div>
             <strong>{{ score(quality) }}</strong
@@ -267,6 +288,12 @@ const today = new Date().toLocaleDateString("zh-CN", {
           </button>
         </div>
       </aside>
+    </section>
+    <section v-else-if="staff && queue.length" class="card empty hero-empty">
+      <Check :size="30" />
+      <h2>提交都已评审</h2>
+      <p>{{ submissionCount }} 份提交都有正式评价，新的提交会出现在这里。</p>
+      <button class="btn secondary" @click="emit('navigate', 'review')">查看批改队列</button>
     </section>
     <section v-else class="card empty hero-empty">
       <ClipboardList :size="30" />
@@ -432,7 +459,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
               <strong>{{score(dimensionValue(key))}}</strong>
             </div>
           </div>
-          <p v-if="!staff" class="home-dimension-note">{{homeSubmission?.evaluation?'当前作品正式评价 · 各维度按量规权重加权':'尚无评分'}}</p>
+          <p class="home-dimension-note">{{ gradedEntries ? `${staff ? '课程' : '我的'} ${gradedEntries} 篇作品最近一次正式评价的平均分` : '还没有正式评分' }}</p>
           <button class="card-link" @click="emit('navigate', 'rubric')">
             查看课程量规<ArrowUpRight :size="15" />
           </button>

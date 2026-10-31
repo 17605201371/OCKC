@@ -45,7 +45,15 @@ public class ProgressWorkbench {
   return new QueryScope(role,base,List.copyOf(args),condition,order);
  }
  Map<String,Object> summary(QueryScope scope){String base=scope.base();var args=scope.args();
-  return s.one("SELECT COUNT(*) AS entry_count,COALESCE(SUM(submission_count),0) AS submissions,AVG(latest_score) AS latest_average,COUNT(latest_score) AS graded_entries,COALESCE(SUM(feedback_open),0) AS open_feedback,COALESCE(SUM(pending_count),0) AS pending_versions,COALESCE(SUM(CASE WHEN submission_count=0 THEN 1 ELSE 0 END),0) AS draft_entries,COALESCE(SUM(CASE WHEN pending_count>0 THEN 1 ELSE 0 END),0) AS pending_entries,COALESCE(SUM(CASE WHEN feedback_open>0 THEN 1 ELSE 0 END),0) AS feedback_entries FROM ("+base+") scoped",args.toArray());
+  var out=new LinkedHashMap<String,Object>(s.one("SELECT COUNT(*) AS entry_count,COALESCE(SUM(submission_count),0) AS submissions,AVG(latest_score) AS latest_average,COUNT(latest_score) AS graded_entries,COALESCE(SUM(feedback_open),0) AS open_feedback,COALESCE(SUM(pending_count),0) AS pending_versions,COALESCE(SUM(CASE WHEN submission_count=0 THEN 1 ELSE 0 END),0) AS draft_entries,COALESCE(SUM(CASE WHEN pending_count>0 THEN 1 ELSE 0 END),0) AS pending_entries,COALESCE(SUM(CASE WHEN feedback_open>0 THEN 1 ELSE 0 END),0) AS feedback_entries FROM ("+base+") scoped",args.toArray()));
+  // 四维均分：取每篇作品最近一次正式评价的维度分再平均，与 latest_average 同一口径；没有评分的作品不计。
+  var sums=new LinkedHashMap<String,double[]>();for(String k:List.of("S","A","C","L"))sums.put(k,new double[2]);
+  for(var json:s.db.queryForList("SELECT latest_dimensions_json FROM ("+base+") scoped WHERE latest_dimensions_json IS NOT NULL",String.class,args.toArray())){
+   var dims=domain.decode(json);if(dims==null||!dims.isObject())continue;
+   for(var k:sums.keySet()){var v=dims.get(k);if(v!=null&&v.isNumber()){sums.get(k)[0]+=v.asDouble();sums.get(k)[1]++;}}
+  }
+  var avg=new LinkedHashMap<String,Object>();for(var e:sums.entrySet())avg.put(e.getKey(),e.getValue()[1]==0?null:e.getValue()[0]/e.getValue()[1]);
+  out.put("latest_dimension_average",avg);return out;
  }
  int count(QueryScope scope){String base=scope.base(),condition=scope.condition();var args=scope.args();
   return s.db.queryForObject("SELECT COUNT(*) FROM ("+base+") scoped WHERE "+condition,Integer.class,args.toArray());
