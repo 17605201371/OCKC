@@ -4,7 +4,7 @@ import fs from 'node:fs';
 const { request, chromium } = createRequire(new URL('../frontend/package.json', import.meta.url))('playwright');
 const base = process.env.DEMO_BASE_URL, password = process.env.E2E_PASSWORD;
 if (!base || !password || process.env.ALLOW_DEMO_WRITE !== 'true') throw Error('Set DEMO_BASE_URL, E2E_PASSWORD and ALLOW_DEMO_WRITE=true. Demo databases only.');
-const out = new URL('../.qa/studio',import.meta.url).pathname;fs.mkdirSync(out,{recursive:true});
+const out = decodeURIComponent(new URL('../.qa/studio',import.meta.url).pathname);fs.mkdirSync(out,{recursive:true});
 const browser = await chromium.launch({headless:true,args:['--no-sandbox'],...(process.env.CHROMIUM_PATH ? {executablePath:process.env.CHROMIUM_PATH} : {})});
 const image = await browser.newPage({viewport:{width:1280,height:610}});await image.goto(new URL('./fixtures/photosynthesis.svg',import.meta.url).href);await image.screenshot({path:out+'/diagram.png'});await browser.close();
 async function client(email) {

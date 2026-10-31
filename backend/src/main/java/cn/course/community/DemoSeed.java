@@ -18,7 +18,8 @@ public class DemoSeed implements CommandLineRunner {
   if(!enabled||s.db.queryForObject("SELECT COUNT(*) FROM app_user",Integer.class)>0)return;
   if(password.length()<12)throw new IllegalStateException("DEMO_SEED=true 时必须设置至少 12 位的 DEMO_PASSWORD；禁止生产环境启用演示数据");
   var emails=List.of("teacher@example.test","student@example.test","peer@example.test","outsider@example.test");var names=List.of("陈老师","林同学","周同学","其他课程学生");
-  for(int i=0;i<emails.size();i++)s.db.update("INSERT INTO app_user(email,display_name,password_hash) VALUES(?,?,?)",emails.get(i),names.get(i),passwords.encode(password));
+  // 只有第一个账号是教师账号（可开课），其余为普通学生账号。
+  for(int i=0;i<emails.size();i++)s.db.update("INSERT INTO app_user(email,display_name,password_hash,is_teacher) VALUES(?,?,?,?)",emails.get(i),names.get(i),passwords.encode(password),i==0);
   long teacher=s.uid(emails.get(0)),student=s.uid(emails.get(1)),peer=s.uid(emails.get(2)),outsider=s.uid(emails.get(3));
   long cid=s.id(service.createCourse("教学设计 · 演示课程","以可追溯的知识作品，连接创作、评价与改进。演示数据由系统初始化。",teacher),"id");
   service.addMember(cid,emails.get(1),"STUDENT",teacher);service.addMember(cid,emails.get(2),"STUDENT",teacher);
@@ -32,7 +33,7 @@ public class DemoSeed implements CommandLineRunner {
   long sid=s.id(service.submit(eid,1,"seed-version-one",student),"id");long ev=s.id(service.evidenceTasks(cid,teacher).getFirst(),"id");service.verify(ev,"PASS","演示核验：已对照课程提供的来源摘录；实际使用需换为获授权原件。",teacher);
   var items=new ArrayList<QualityCalculator.Item>();Integer[] scores={80,null,74,92,90,88,70,54,80,70,75};for(int i=0;i<11;i++)items.add(new QualityCalculator.Item(QualityCalculator.CODES.get(i),scores[i]==null?null:BigDecimal.valueOf(scores[i]),scores[i]==null?"NA":"SCORED",scores[i]==null?"本篇不涉及研究方法":""));
   service.evaluate(sid,new ApiController.EvaluationRequest(items,"","主要概念较准确。下一版请补全返回物质，并明确物质循环与能量转移的区别。",0),teacher);
-  service.addFeedback(sid,new ApiController.FeedbackRequest("p-gap","C2","请补出 ATP、NADPH 被利用后的物质去向，并解释为什么不能把能量描述为无限循环。"),teacher);
+  service.addFeedback(sid,new ApiController.FeedbackRequest("p-gap","C2","请补出 ATP、NADPH 被利用后的物质去向，并解释为什么不能把能量描述为无限循环。",null),teacher);
   service.requestPublication(sid,student);var pubs=service.publications(cid,teacher,true);service.publicationAction(s.id(pubs.getFirst(),"id"),"APPROVE",teacher);
   var pe=service.start(aid,peer);long peid=s.id(pe,"id");var pd=doc.deepCopy();((com.fasterxml.jackson.databind.node.ObjectNode)pd.path("content").get(0).path("content").get(0)).put("text","用因果链解释光合作用");
   service.save(peid,new ApiController.DraftRequest("一束光如何参与有机物合成",pd,0,List.of()),peer);service.submit(peid,1,"seed-peer-version",peer);

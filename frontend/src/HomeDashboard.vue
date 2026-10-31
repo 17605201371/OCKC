@@ -23,6 +23,7 @@ const props = defineProps<{
   assignments: any[];
   now?: number;
   queue: any[];
+  queueSummary?:any;
   publications: any[];
   evidences: any[];
   staff: boolean;
@@ -37,6 +38,8 @@ const emit = defineEmits([
   "publish-assignment",
   "select-course",
 ]);
+const pendingCount=computed(()=>props.queueSummary?.pending_count??pending.value.length);
+const submissionCount=computed(()=>props.queueSummary?.submission_count??props.queue.length);
 const pending = computed(() => props.queue.filter((x) => x.q_final == null));
 const evidencePending = computed(() =>
   props.evidences.filter((x) => ["PENDING", "DISPUTED"].includes(x.state)),
@@ -48,6 +51,10 @@ const quality = computed(() =>
   props.staff
     ? featured.value?.q_final
     : props.homeSubmission?.evaluation?.q_final,
+);
+// 步骤型作业按步骤分换算百分制，没有四维；标签跟着评分口径走，别再说「四维加权」。
+const gradeBasis = computed(() =>
+  (props.homeSubmission?.evaluation?.stepScores?.length || 0) > 0 ? "步骤分换算" : "四维加权",
 );
 const feedback = computed(
   () => props.homeSubmission?.feedback?.filter((x: any) => !x.resolved) || [],
@@ -101,11 +108,11 @@ const todoRows = computed(() => {
 const phases = computed(() => {
   if (props.staff)
     return [
-      { name: "学生提交", done: props.queue.length > 0 },
+      { name: "学生提交", done: submissionCount.value > 0 },
       {
         name: "教师评审",
-        current: pending.value.length > 0,
-        done: props.queue.length > 0 && !pending.value.length,
+        current: pendingCount.value > 0,
+        done: submissionCount.value > 0 && !pendingCount.value,
       },
       { name: "反馈修订", done: false },
       { name: "课程共享", done: props.publications.length > 0 },
@@ -133,6 +140,13 @@ function date(d: string) {
         hour12: false,
       })
     : "—";
+}
+function dimensionValue(key: string): number | null {
+  if (props.staff) return null;
+  const value = props.homeSubmission?.evaluation?.dimensions?.[key];
+  if (value == null || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
 }
 function score(n: any) {
   return n == null ? "—" : Number(n).toFixed(1);
@@ -167,7 +181,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
           {{ today }} ·
           {{
             staff
-              ? `${pending.length} 份提交等待评审`
+              ? `${pendingCount} 份提交等待评审`
               : `${todoRows.length} 项学习进度值得关注`
           }}
         </p>
@@ -195,41 +209,10 @@ const today = new Date().toLocaleDateString("zh-CN", {
         <h2>
           {{ staff ? featured.title : homeEntry?.title || featured.title }}
         </h2>
-        <div class="hero-meta">
-          <span v-if="staff"
+        <div v-if="staff" class="hero-meta">
+          <span
             >{{ featured.author_name }} · v{{ featured.version_no }}</span
-          ><span v-else
-            >{{
-              homeSubmission
-                ? `最近提交 v${homeSubmission.version_no}`
-                : homeEntry
-                  ? "草稿已创建"
-                  : "尚未开始"
-            }}<span v-if="homeEntry">
-              · 草稿 r{{ homeEntry.revision }}</span
-            ></span
-          ><span>四维评价 · 版本可追溯</span>
-        </div>
-        <div class="next-action">
-          <span>下一步</span>
-          <h3>
-            {{
-              staff
-                ? "先理解这一次变化，再给出关键反馈"
-                : feedback.length
-                  ? "根据教师批注，完善这一版解释"
-                  : homeSubmission && !homeSubmission.evaluation
-                    ? "等待教师反馈，或查看你的提交记录"
-                    : "围绕任务要求，写下有依据的解释"
-            }}
-          </h3>
-          <p>
-            {{
-              staff
-                ? "评审基于冻结版本，发布后学生即可查看。"
-                : feedback[0]?.body || featured.requirements
-            }}
-          </p>
+          >
         </div>
         <div class="hero-actions">
           <button class="btn primary" :disabled="!staff && !featured.entry_id && assignmentState(featured,now)==='CLOSED'" @click="openFeatured">
@@ -263,7 +246,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
         </ol>
         <div class="hero-quality">
           <span class="muted"
-            >{{ staff ? "此提交质量分" : "最近提交质量分" }} · 四维等权</span
+            >{{ staff ? "此提交质量分" : "最近提交质量分" }} · {{ gradeBasis }}</span
           >
           <div>
             <strong>{{ score(quality) }}</strong
@@ -328,7 +311,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
         </section>
         <section class="dashboard-card">
           <header class="card-header">
-            <h2>{{ staff ? "最近提交" : "近期作业" }}</h2>
+            <h2>{{ staff ? "评审队列摘录" : "近期作业" }}</h2>
             <button
               class="text-btn"
               @click="emit('navigate', staff ? 'review' : 'assignments')"
@@ -377,13 +360,17 @@ const today = new Date().toLocaleDateString("zh-CN", {
               </div>
               <span
                 class="badge"
-                :class="a.version_no ? 'green' : a.entry_id ? 'blue' : ''"
+                :class="a.entry_state === 'PASSED' ? 'green' : a.entry_state === 'REVISION' ? 'orange' : a.version_no ? 'green' : a.entry_id ? 'blue' : ''"
                 >{{
-                  a.version_no
-                    ? `已提交 v${a.version_no}`
-                    : a.entry_id
-                      ? "创作中"
-                      : "未开始"
+                  a.entry_state === "PASSED"
+                    ? "已通过定稿"
+                    : a.entry_state === "REVISION"
+                      ? "已打回 · 待修订"
+                      : a.version_no
+                        ? `已提交 v${a.version_no}`
+                        : a.entry_id
+                          ? "创作中"
+                          : "未开始"
                 }}</span
               ><ChevronRight :size="16" />
             </button>
@@ -414,7 +401,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
             <div>
               <strong>{{
                 staff
-                  ? pending.length
+                  ? pendingCount
                   : assignments.filter((a) => a.entry_id).length
               }}</strong
               ><span>{{ staff ? "待评审提交" : "我的作品" }}</span>
@@ -436,41 +423,21 @@ const today = new Date().toLocaleDateString("zh-CN", {
               <SlidersHorizontal :size="17" />
             </button>
           </header>
-          <div
-            v-if="!staff && homeSubmission?.evaluation"
-            class="home-dimensions"
-          >
-            <div
-              v-for="[key, label] in [
-                ['S', '科学性'],
-                ['A', '准确性'],
-                ['C', '完整性'],
-                ['L', '逻辑性'],
-              ]"
-              :key="key"
-            >
-              <span
-                ><i>{{ key }}</i
-                >{{ label }}</span
-              ><strong>{{
-                score(homeSubmission.evaluation.dimensions[key])
-              }}</strong>
+          <div class="home-dimensions" aria-label="四维质量分数">
+            <div v-for="[key, label] in [['S', '科学性'], ['A', '准确性'], ['C', '完整性'], ['L', '逻辑性']]" :key="key" class="home-dimension-row">
+              <span class="home-dimension-label"><i>{{key}}</i>{{label}}</span>
+              <div class="home-dimension-track" :class="{'is-unscored':dimensionValue(key)===null}" :role="dimensionValue(key)!==null?'progressbar':'img'" :aria-label="label+(dimensionValue(key)===null?'暂无正式评分':'质量分')" :aria-valuemin="dimensionValue(key)!==null?0:undefined" :aria-valuemax="dimensionValue(key)!==null?100:undefined" :aria-valuenow="dimensionValue(key)??undefined" :aria-valuetext="dimensionValue(key)===null?undefined:score(dimensionValue(key))+' / 100'">
+                <span v-if="dimensionValue(key)!==null" class="home-dimension-fill" :style="{width:dimensionValue(key)+'%'}"></span>
+              </div>
+              <strong>{{score(dimensionValue(key))}}</strong>
             </div>
           </div>
-          <div v-else class="rubric-intro">
-            <p>科学性 · 准确性<br />完整性 · 逻辑性</p>
-            <span>11 项指标，四个维度等权。</span>
-          </div>
+          <p v-if="!staff" class="home-dimension-note">{{homeSubmission?.evaluation?'当前作品正式评价 · 各维度按量规权重加权':'尚无评分'}}</p>
           <button class="card-link" @click="emit('navigate', 'rubric')">
             查看课程量规<ArrowUpRight :size="15" />
           </button>
         </section>
       </aside>
-    </div>
-    <div class="workspace-note">
-      <ShieldCheck :size="15" /><span
-        >保留每次提交、反馈与核验记录。知识不是一次写成的。</span
-      ><span class="grow"></span><span>课程内共享</span>
     </div>
   </section>
 </template>

@@ -4,7 +4,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 class DocumentContentTest {
- final ObjectMapper json=new ObjectMapper();final CommunityService service=new CommunityService(null, json, null, null);
+ final ObjectMapper json=new ObjectMapper();final CommunityService service=new CommunityService(null, json, null, null, null);
  JsonNode doc(String content)throws Exception{return json.readTree("{\"type\":\"doc\",\"content\":["+content+"]}");}
  @Test void markdownBlocksAndMarksAccepted()throws Exception{
   var node=doc("""

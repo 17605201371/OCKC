@@ -1,6 +1,11 @@
 server:
   address: ${SERVER_ADDRESS:127.0.0.1}
   port: ${PORT:8080}
+  # 公网带宽有限，文本类资源压缩后体积约为原来的三分之一。
+  compression:
+    enabled: true
+    min-response-size: 1024
+    mime-types: text/html,text/css,text/javascript,application/javascript,application/json,image/svg+xml
   servlet:
     session:
       timeout: 60m
@@ -23,6 +28,14 @@ spring:
 app:
   seed: ${DEMO_SEED:false}
   seed-password: ${DEMO_PASSWORD:}
+  ai:
+    base: ${AI_API_BASE:https://api.stepfun.com/step_plan/v1}
+    key: ${AI_API_KEY:}
+    model: ${AI_MODEL:step-3.7-flash}
+    daily-limit: ${AI_DAILY_LIMIT:10}
+  backup:
+    dir: ${BACKUP_DIR:}
+    keep: ${BACKUP_KEEP:14}
 logging:
   level:
     root: INFO
