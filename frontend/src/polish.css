@@ -502,3 +502,39 @@ textarea:focus { box-shadow: var(--focus-ring); }
   .stat-card,
   .stat-card:hover { transition: none; transform: none; }
 }
+
+/* ---- 用时统计（教学进展页） ---- */
+.time-stats { margin: 0 0 30px; padding: 18px 22px; border-radius: var(--card-radius); }
+.time-stats-head { display: flex; align-items: center; gap: 10px; }
+.time-stats-head select { width: auto; max-width: 260px; padding: 7px 10px; font-size: 13px; }
+.time-stats-toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 36px; color: var(--text); }
+.time-stats-toggle h2 { font-size: 17px; }
+.time-stats-toggle svg.flipped { transform: rotate(-90deg); }
+.stat-icon-inline { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--tone-soft); color: var(--tone); }
+.time-stats-body { margin-top: 16px; }
+.time-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.time-kpis > div { padding: 12px 14px; border-radius: 12px; background: var(--surface); }
+.time-kpis span { display: block; font-size: 12px; color: var(--muted); }
+.time-kpis strong { display: block; margin-top: 4px; font-size: 22px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.time-kpis small { font-size: 12px; color: var(--muted); font-weight: 400; }
+.time-note { font-size: 12px; color: var(--subtle); line-height: 1.7; margin-top: 8px; }
+.time-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px; margin-top: 18px; }
+.time-block { border: 1px solid var(--line-soft); border-radius: 12px; padding: 14px 16px; }
+.time-block h3 { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.time-scatter { width: 100%; height: auto; margin-top: 6px; }
+.time-scatter .axis line { stroke: var(--line-soft); }
+.time-scatter .axis text { fill: var(--subtle); font-size: 11px; }
+.time-scatter .dot { fill: var(--blue); fill-opacity: 0.75; stroke: var(--paper); stroke-width: 2; cursor: pointer; }
+.time-scatter .dot.high { fill: #10b981; }
+.time-scatter .dot.low { fill: #f59e0b; }
+.time-scatter .dot:hover, .time-scatter .dot:focus-visible { fill-opacity: 1; r: 8; outline: none; }
+.time-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.time-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; }
+.time-list .text-btn { min-height: 30px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.time-list small { color: var(--subtle); margin-left: 4px; }
+.time-table-title { font-size: 14px; margin: 22px 0 8px; }
+.time-table-wrap { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 12px; }
+.time-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.time-table th { text-align: left; font-weight: 600; color: var(--muted); background: var(--surface); padding: 9px 12px; white-space: nowrap; }
+.time-table td { padding: 9px 12px; border-top: 1px solid var(--line-soft); font-variant-numeric: tabular-nums; }
+.time-table tbody tr:hover { background: color-mix(in srgb, var(--blue-soft) 45%, var(--paper)); }

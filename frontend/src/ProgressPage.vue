@@ -4,6 +4,7 @@ import { TrendingUp, FileText, MessageSquare, ShieldCheck, ArrowUpRight, History
 import { api } from './api';
 import { durationLabel } from './dwellTime';
 import ReportExport from './ReportExport.vue';
+import TimeStatsPanel from './TimeStatsPanel.vue';
 const exportRequest=ref<any>(null);
 function exportCourse(){if(!data.value||loading.value)return;exportRequest.value={kind:'course',courseId:props.courseId,courseLabel:props.courseLabel,filters:{q:query.value,assignmentId:assignment.value,authorId:author.value,state:state.value,sort:sort.value},assignmentLabel:assignment.value==='0'?'全部作业':data.value.assignments.find((a:any)=>String(a.id)===assignment.value)?.title||assignment.value,authorLabel:!props.staff?'仅本人':author.value==='0'?'全部作者':data.value.authors.find((a:any)=>String(a.id)===author.value)?.display_name||author.value,stateLabel:tabs.find(t=>t.id===state.value)?.name,total:data.value.total};}
 function exportEntry(){if(!detail.value||detailLoading.value)return;exportRequest.value={kind:'entry',courseId:props.courseId,entryId:detail.value.entry.id};}
@@ -27,6 +28,7 @@ function reset(){query.value='';assignment.value='0';author.value='0';state.valu
 async function turn(delta:number){page.value+=delta;await load();document.querySelector('.progress-list-title')?.scrollIntoView({behavior:'smooth',block:'start'});}
 async function fetchDetail(){const g=++detailGeneration;detailLoading.value=true;detailError.value='';try{const params=new URLSearchParams({versionPage:String(versionPage.value),feedbackPage:String(feedbackPage.value),feedbackState:feedbackState.value});const d=await api(`/progress-entries/${detailId}?${params}`);if(alive&&g===detailGeneration){if(d.entry.course_id!==props.courseId)throw Error('作品不属于当前课程');detail.value=d;}}catch(e:any){if(g===detailGeneration){detail.value=null;detailError.value=e.message;}}finally{if(g===detailGeneration)detailLoading.value=false;}}
 async function open(e:any,which='versions'){returnFocus=document.activeElement as HTMLElement;detailId=e.id;tab.value=which;versionPage.value=1;feedbackPage.value=1;feedbackState.value='OPEN';detail.value=null;await nextTick();dialog.value?.showModal();await fetchDetail();}
+function openById(id:number){const e=entries.value.find((x:any)=>x.id===id)||{id};void open(e);}
 function close(){detailGeneration++;dialog.value?.close();detail.value=null;detailLoading.value=false;returnFocus?.focus();}
 function version(id:number){if(dialog.value?.open)close();emit('open-version',id);}
 function feedback(f:any){const target={submissionId:f.submission_id,paragraphId:f.paragraph_id};close();emit('open-feedback',target);}
@@ -41,6 +43,7 @@ onBeforeUnmount(()=>{alive=false;generation++;detailGeneration++;clearTimeout(de
  <div v-if="error" class="global-error" role="alert"><AlertCircle :size="18"/>{{ error }}<button class="text-btn" @click="load">重试读取</button></div>
  <template v-if="data">
   <div class="progress-stats"><article class="stat-card tone-indigo"><span><FileText :size="17"/>{{ staff?'课程作品':'已开始作品' }}</span><strong>{{ stats.entry_count }}<small>篇</small></strong></article><article class="stat-card tone-sky"><span><History :size="17"/>累计提交</span><strong>{{ stats.submissions }}<small>个版本</small></strong><p>{{ stats.pending_versions }} 个版本尚无正式评价</p></article><article class="stat-card tone-emerald"><span><TrendingUp :size="17"/>最近质量均分</span><strong>{{ number(stats.latest_average) }}<small>/100</small></strong></article><article class="stat-card tone-amber"><span><MessageSquare :size="17"/>未解决反馈</span><strong>{{ stats.open_feedback }}<small>条</small></strong></article></div>
+  <TimeStatsPanel v-if="staff" :course-id="courseId" @open="openById" />
   <div class="section-title progress-list-title"><div><h2>{{ staff?'作品与版本进展':'我的作品档案' }}</h2></div></div>
   <div class="progress-state-tabs" role="group" aria-label="按进展状态筛选"><button v-for="t in tabs" :key="t.id" :aria-pressed="state===t.id" :class="{active:state===t.id}" @click="state=t.id;filter()">{{ t.name }}<span class="badge">{{ stats[t.count]||0 }}</span></button></div>
   <div class="progress-results" :aria-busy="loading"><p v-if="loading" class="empty-text" role="status">正在读取课程记录…</p>
