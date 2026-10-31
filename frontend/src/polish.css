@@ -335,3 +335,6 @@ textarea:focus { box-shadow: var(--focus-ring); }
 .time-table th { text-align: left; font-weight: 600; color: var(--muted); background: var(--surface); padding: 9px 12px; white-space: nowrap; }
 .time-table td { padding: 9px 12px; border-top: 1px solid var(--line-soft); font-variant-numeric: tabular-nums; }
 .time-table tbody tr:hover { background: color-mix(in srgb, var(--blue-soft) 45%, var(--paper)); }
+
+/* 消息中心：写清楚是哪篇作品，比课程名更显眼。 */
+.notification-item > p.notification-subject { font-size: 12.5px; color: var(--text); margin: 2px 0 0; line-height: 1.5; }
