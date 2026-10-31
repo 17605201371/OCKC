@@ -23,7 +23,10 @@ public class ProgressWorkbench {
  "(SELECT COUNT(*) FROM feedback f JOIN submission v ON v.id=f.submission_id WHERE v.entry_id=e.id AND f.resolved=FALSE) AS feedback_open,"+
  "(SELECT COUNT(*) FROM evidence x JOIN submission v ON v.id=x.submission_id WHERE v.entry_id=e.id AND x.state='PASS') AS evidence_passed,"+
  "(SELECT g.q_final FROM submission v JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE v.entry_id=e.id ORDER BY v.version_no DESC LIMIT 1) AS latest_score,"+
- "(SELECT g.dimensions_json FROM submission v JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE v.entry_id=e.id ORDER BY v.version_no DESC LIMIT 1) AS latest_dimensions_json";
+ "(SELECT g.dimensions_json FROM submission v JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE v.entry_id=e.id ORDER BY v.version_no DESC LIMIT 1) AS latest_dimensions_json,"+
+ // 停留时长（秒）：作者写这篇作品的累计时间；教师批改这篇作品各版本的累计时间（仅教师/助教可见，见 list）。
+ "(SELECT COALESCE(SUM(t.seconds),0) FROM activity_time t WHERE t.kind='WRITE' AND t.target_id=e.id AND t.user_id=e.author_id) AS write_seconds,"+
+ "(SELECT COALESCE(SUM(t.seconds),0) FROM activity_time t JOIN submission v ON v.id=t.target_id WHERE t.kind='GRADE' AND v.entry_id=e.id) AS grade_seconds";
  boolean staff(String role){return Set.of("TEACHER","ASSISTANT").contains(role);}
  String marks(int n){return String.join(",",Collections.nCopies(n,"?"));}
  void versions(List<Map<String,Object>> rows){for(var v:rows){Object dims=v.remove("dimensions_json");v.put("dimensions",dims==null?Map.of():domain.decode(dims));}}
@@ -53,7 +56,7 @@ public class ProgressWorkbench {
   var scope=scope(cid,uid,q,aid,author,state,sort);String role=scope.role(),base=scope.base(),condition=scope.condition(),order=scope.order();boolean staff=staff(role);var args=scope.args();var summary=summary(scope);int total=count(scope);
   var paged=new ArrayList<>(args);paged.add(20);paged.add((page-1)*20);
   var rows=s.db.queryForList("SELECT * FROM ("+base+") scoped WHERE "+condition+" ORDER BY "+order+" LIMIT ? OFFSET ?",paged.toArray());
-  for(var e:rows){Object d=e.remove("latest_dimensions_json");e.put("latest_dimensions",d==null?Map.of():domain.decode(d));e.put("feedback_resolved",((Number)e.get("feedback_total")).longValue()-((Number)e.get("feedback_open")).longValue());e.put("versions",new ArrayList<Map<String,Object>>());}
+  for(var e:rows){Object d=e.remove("latest_dimensions_json");e.put("latest_dimensions",d==null?Map.of():domain.decode(d));e.put("feedback_resolved",((Number)e.get("feedback_total")).longValue()-((Number)e.get("feedback_open")).longValue());e.put("versions",new ArrayList<Map<String,Object>>());if(!staff)e.remove("grade_seconds");}
   if(!rows.isEmpty()){
    var ids=rows.stream().map(e->e.get("id")).toArray();
    var recent=s.db.queryForList("SELECT * FROM (SELECT v.id,v.entry_id,v.version_no,v.created_at,g.q_final,ROW_NUMBER() OVER(PARTITION BY v.entry_id ORDER BY v.version_no DESC) AS rn FROM submission v LEFT JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE v.entry_id IN ("+marks(ids.length)+")) ranked WHERE rn<=5 ORDER BY entry_id,version_no",ids);
@@ -68,7 +71,7 @@ public class ProgressWorkbench {
   var e=s.one("SELECT e.id,e.author_id,e.title,e.revision,e.updated_at,a.course_id,a.id AS assignment_id,a.title AS assignment_title,u.display_name AS author_name"+JOIN+"WHERE e.id=?",eid);
   String role=s.role(s.id(e,"course_id"),uid);if(!staff(role)&&s.id(e,"author_id")!=uid)throw fail(403,"只能查看本人的学习轨迹");
   if(versionPage<1||versionPage>100000||feedbackPage<1||feedbackPage>100000||!Set.of("OPEN","ALL","RESOLVED").contains(feedbackState))throw fail(400,"轨迹详情查询参数不正确");
-  var versions=s.db.queryForList("SELECT v.id,v.version_no,v.created_at,g.q_final,g.dimensions_json,g.revision_no AS evaluation_revision FROM submission v LEFT JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE v.entry_id=? ORDER BY v.version_no DESC LIMIT 20 OFFSET ?",eid,(versionPage-1)*20);versions(versions);
+  var versions=s.db.queryForList("SELECT v.id,v.version_no,v.created_at,g.q_final,g.dimensions_json,g.revision_no AS evaluation_revision,(SELECT COALESCE(SUM(t.seconds),0) FROM activity_time t WHERE t.kind='GRADE' AND t.target_id=v.id) AS grade_seconds FROM submission v LEFT JOIN evaluation g ON g.submission_id=v.id AND g.active=TRUE WHERE v.entry_id=? ORDER BY v.version_no DESC LIMIT 20 OFFSET ?",eid,(versionPage-1)*20);versions(versions);if(!staff(role))versions.forEach(v->v.remove("grade_seconds"));
   String filter=feedbackState.equals("ALL")?"":feedbackState.equals("OPEN")?" AND f.resolved=FALSE":" AND f.resolved=TRUE";
   String feedbackFrom=" FROM feedback f JOIN submission v ON v.id=f.submission_id JOIN entry e ON e.id=v.entry_id JOIN app_user u ON u.id=f.teacher_id WHERE v.entry_id=?";
   var feedback=s.db.queryForList("SELECT f.id,f.submission_id,f.paragraph_id,f.original_text,f.indicator_code,f.body,f.resolved,f.created_at,v.version_no,u.display_name AS teacher_name,(SELECT z.action_type FROM feedback_action z WHERE z.feedback_id=f.id AND z.user_id=e.author_id AND z.action_type IN ('REPLY','ADOPT','IGNORE') ORDER BY z.id DESC LIMIT 1) AS author_action"+feedbackFrom+filter+" ORDER BY f.id DESC LIMIT 20 OFFSET ?",eid,(feedbackPage-1)*20);

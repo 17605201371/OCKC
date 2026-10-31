@@ -39,6 +39,19 @@ export async function api(
   }
   return data;
 }
+// 关页面、切走标签页时也要把最后一段数据送出去：keepalive 请求在页面卸载后仍会发完。
+// 失败不提示、不触发登录失效流程，只用于停留时长这类可丢的上报。
+export async function apiKeepalive(path: string, body: unknown): Promise<number> {
+  if (!csrf) await refreshCsrf();
+  const r = await fetch("/api" + path, {
+    method: "POST",
+    credentials: "same-origin",
+    keepalive: true,
+    headers: { "Content-Type": "application/json", [csrf!.headerName]: csrf!.token },
+    body: JSON.stringify(body),
+  });
+  return r.status;
+}
 export async function login(email: string, password: string) {
   resetApiSession();
   await refreshCsrf();
