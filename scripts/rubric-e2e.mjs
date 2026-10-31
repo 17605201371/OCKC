@@ -31,19 +31,23 @@ try{
  // 1. A failed catalog read is shown; leaving and coming back reads it again (the page has no separate retry button).
  await teacher.route('**/api/courses/1/rubrics',route=>route.request().method()==='GET'?route.fulfill({status:503,contentType:'application/json',body:'{"message":"本地量规读取失败"}'}):route.continue());
  await nav(teacher,'课程量规');await work(teacher).getByRole('alert').filter({hasText:'本地量规读取失败'}).waitFor();
- await teacher.unroute('**/api/courses/1/rubrics');await open(teacher);
+ await teacher.unroute('**/api/courses/1/rubrics');await work(teacher).getByRole('button',{name:'重新读取',exact:true}).click();await ready(teacher);
  await work(teacher).locator('.rw-current').getByText('四维基础量规',{exact:true}).waitFor();
  assert.equal(await work(teacher).getByLabel('查看量规版本').count(),0);
- checks.push('Catalog read failure is reported; re-entering the page loads the built-in default');
+ checks.push('Catalog read failure is reported with a retry button that loads the built-in default');
 
  // 2. Teacher creates a revision draft from the enabled default and edits title, an indicator description and an anchor.
  await work(teacher).getByRole('button',{name:'新建修订版本'}).click();await title(teacher).waitFor();
- await work(teacher).getByRole('status').filter({hasText:'已创建修订草稿'}).waitFor();
- let catalog=await rpc(teacher,'/courses/1/rubrics');const rid=catalog.items.find(r=>r.state==='DRAFT').id,code='cr-'+rid;
- assert.equal(await saveBtn(teacher).isDisabled(),true);
+ await work(teacher).getByRole('status').filter({hasText:'第一次保存时才会生成草稿'}).waitFor();
+ assert.equal((await rpc(teacher,'/courses/1/rubrics')).items.some(r=>r.state==='DRAFT'),false);assert.equal(await saveBtn(teacher).isDisabled(),true);
+ await title(teacher).fill('只是看看');await work(teacher).getByRole('button',{name:'取消',exact:true}).click();await ready(teacher);
+ assert.equal((await rpc(teacher,'/courses/1/rubrics')).items.some(r=>r.state==='DRAFT'),false);await work(teacher).locator('.rw-current').getByText('当前生效',{exact:true}).waitFor();
+ checks.push('Starting a revision and cancelling leaves no empty draft behind; the draft is created on first save');
+ await work(teacher).getByRole('button',{name:'新建修订版本'}).click();await title(teacher).waitFor();
  await title(teacher).fill('光合作用学科量规 · 本地验收');
  const s1=await item(teacher,'S1');await s1.getByLabel('指标说明').fill('需要回到教材页码核对论断，不把示意图当作实测数据。');await s1.getByLabel('优秀 90–100').fill(ANCHOR);
  await save(teacher);
+ let catalog=await rpc(teacher,'/courses/1/rubrics');const rid=catalog.items.find(r=>r.state==='DRAFT').id,code='cr-'+rid;
  const savedDraft=await rpc(teacher,'/courses/1/rubrics/'+code);assert.equal(savedDraft.title,'光合作用学科量规 · 本地验收');assert.equal(savedDraft.criteria.find(c=>c.code==='S1').excellent,ANCHOR);assert.deepEqual(savedDraft.criteria.map(c=>c.code),codes);
  checks.push('Teacher creates a revision draft and edits title, indicator description and anchors; the 11 codes stay fixed');
  await shot(teacher,'01-teacher-rubric-draft');
@@ -72,10 +76,19 @@ try{
  await nav(teacher,'学习工作台');await work(teacher).getByRole('alert').filter({hasText:'未保存的修改'}).waitFor();assert.equal(await title(teacher).inputValue(),'当前窗口需核对的量规');
  await shot(teacher,'02-rubric-conflict');
  checks.push('A stale-window save is rejected with the typed input kept, and navigation away is blocked while edits are unsaved');
- await work(teacher).getByRole('button',{name:'取消',exact:true}).click();await open(teacher);
- await work(teacher).locator('.rw-current').getByText('当前生效',{exact:true}).waitFor();await work(teacher).locator('.rw-draft-note').waitFor();
- await work(teacher).getByRole('button',{name:'继续编辑草稿'}).click();assert.equal(await title(teacher).inputValue(),'另一窗口先保存的量规');await title(teacher).fill('光合作用学科量规 · 本地验收');await save(teacher);
- checks.push('After cancelling, re-entering the page loads the other window\'s save and editing continues from the latest revision');
+ await work(teacher).getByRole('button',{name:'载入最新版本并保留我的输入',exact:true}).click();await work(teacher).getByRole('status').filter({hasText:'你的输入保留'}).waitFor();
+ assert.equal(await title(teacher).inputValue(),'当前窗口需核对的量规');await save(teacher);assert.equal((await rpc(teacher,'/courses/1/rubrics/'+code)).title,'当前窗口需核对的量规');
+ await title(teacher).fill('光合作用学科量规 · 本地验收');await save(teacher);
+ checks.push('After a conflict the teacher can load the latest revision while keeping the typed input, and the next save succeeds with that input');
+
+ // 5b. Unsaved edits survive a reload through the local backup and can be restored explicitly.
+ await title(teacher).fill('掉线前没保存的量规标题');await teacher.waitForTimeout(900);await teacher.reload();await teacher.getByRole('button',{name:'退出登录'}).waitFor();
+ await nav(teacher,'课程量规');await ready(teacher);await work(teacher).locator('.rw-draft-note').getByText(/本机还有上次没保存的修改/).waitFor();
+ await work(teacher).getByRole('button',{name:'继续编辑草稿'}).click();await work(teacher).getByText('发现本机未同步的修改').waitFor();
+ assert.equal(await title(teacher).inputValue(),'光合作用学科量规 · 本地验收');await work(teacher).getByRole('button',{name:'恢复到编辑器',exact:true}).click();
+ assert.equal(await title(teacher).inputValue(),'掉线前没保存的量规标题');await title(teacher).fill('光合作用学科量规 · 本地验收');
+ assert.equal(await work(teacher).locator('.rw-state').innerText(),'未修改');
+ checks.push('Unsaved edits are kept locally across a reload, announced on the page and restored only when the teacher asks');
 
  // 6. Enabling needs saved edits and a reason; it sets the new-assignment default and leaves existing assignments alone.
  const before=(await rpc(teacher,'/courses/1/assignments')).map(a=>[a.id,a.rubric_version]);
@@ -125,7 +138,7 @@ try{
 
  // 11. A later enabled version changes neither the old assignment binding nor the frozen snapshot.
  await open(teacher);await work(teacher).getByRole('button',{name:'新建修订版本'}).click();await title(teacher).waitFor();
- const next=(await rpc(teacher,'/courses/1/rubrics')).items.find(r=>r.state==='DRAFT');await title(teacher).fill('后续标准：不应改写历史');await save(teacher);
+ await title(teacher).fill('后续标准：不应改写历史');await save(teacher);const next=(await rpc(teacher,'/courses/1/rubrics')).items.find(r=>r.state==='DRAFT');
  await enable(teacher,'本地后续版本验收');
  assert.deepEqual((await rpc(student,'/submissions/'+sid)).rubricSnapshot,frozen);assert.equal((await rpc(teacher,'/courses/1/assignments')).find(a=>a.id===assignment.id).rubric_version,code);
  checks.push('A later enabled default leaves the old assignment binding and the frozen submission snapshot unchanged');
