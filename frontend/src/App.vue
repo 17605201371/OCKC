@@ -8,11 +8,40 @@ import ReviewWorkbench from "./ReviewWorkbench.vue";
 import {defaultReviewQuery,reviewParams,reviewAdvanceBlocked,type ReviewQuery} from "./reviewQuery";
 const reviewFilters=ref<ReviewQuery>(defaultReviewQuery()),reviewNavScope=ref<ReviewQuery|null>(null),reviewQueueSummary=ref<any>(null),nextReviewBusy=ref(false),nextReviewMessage=ref('');
 // 课程作业卡片上的「查看提交」：直接打开只含这份作业的批改队列，不用再手动筛选。
+// 首页待办：每一类直接打开能处理它的地方。
+async function focusFeedbackSoon(id:number){for(let i=0;i<20;i++){await nextTick();if(document.getElementById('feedback-'+id)){await jumpToFeedback(id);return;}await new Promise(r=>setTimeout(r,150));}}
+async function openTodo(key:string,item:any){
+  if(key==='review'){await openVersion(item.submission_id,true);return;}
+  if(key==='responses'){if(await openVersion(item.submission_id,true))await focusFeedbackSoon(item.feedback_id);return;}
+  if(key==='publications'){await publicationManager.value?.open(item.publication_id,'');return;}
+  if(key==='disputes'||key==='verify'){await openEvidence(item.evidence_id);return;}
+  if(key==='due'&&isStaff.value){await reviewAssignment({id:item.assignment_id});return;}
+  const a=assignments.value.find((x:any)=>x.id===item.assignment_id);
+  if(!a){notify('这份作业已不可见，请刷新后再试');return;}
+  await openAssignment(a);
+  if(key==='feedback'&&page.value==='editor')await focusFeedbackSoon(item.feedback_id);
+}
+function todoMore(key:string){
+  if(key==='publications'){void publicationManager.value?.list();return;}
+  void go(({review:'review',disputes:'evidence',verify:'evidence'} as Record<string,string>)[key]||'home');
+}
 async function reviewAssignment(a:any){if(!a)return;if(!(await flushBeforeLeave()))return;reviewFilters.value={...defaultReviewQuery(),assignmentId:String(a.id)};await go('review');}
 async function openReviewRow(value:any){reviewFilters.value={...value.filters};if(await openVersion(value.id,true,true))reviewNavScope.value={...value.filters};}
+// 发布后直接打开同一筛选范围里的下一份待评审；这一批评完了就回到队列。
+async function advanceAfterPublish(done:{sid:number;title:string}){
+  const id=cid.value,uid=me.value?.id,epoch=accessEpoch,scope={...(reviewNavScope.value||reviewFilters.value||defaultReviewQuery())};
+  try{
+    const params=reviewParams(scope,true);params.set('excludeId',String(done.sid));
+    const result=await api(`/courses/${id}/review-workbench/next?${params}`);
+    if(id!==cid.value||uid!==me.value?.id||epoch!==accessEpoch||page.value!=='grading'||version.value?.id!==done.sid)return;
+    if(!result.item){await go('review');notify('正式评价已发布，这一批都评完了');return;}
+    if(await openVersion(result.item.id,true,true)){reviewNavScope.value=scope;const left=Number(result.remaining)||0;nextReviewMessage.value=`已发布《${done.title}》。这是下一份${left>1?`，含这份还剩 ${left} 份`:'，也是这一批的最后一份'}。`;}
+  }catch(e:any){notify('已发布；读取下一份失败，已回到批改队列');await go('review');}
+}
 async function nextReview(){if(nextReviewBusy.value||busy.value)return;nextReviewBusy.value=true;nextReviewMessage.value='';try{if(reviewAdvanceBlocked(review.state,isTeacher.value)){error.value='请先处理评分草稿的加载、恢复或冲突提示，再切换提交。';return;}if(!await flushBeforeLeave())return;const id=cid.value,uid=me.value?.id,epoch=accessEpoch,sid=version.value?.id,scope={...(reviewNavScope.value||defaultReviewQuery())};const params=reviewParams(scope,true);params.set('excludeId',String(sid));const result=await api(`/courses/${id}/review-workbench/next?${params}`);if(id!==cid.value||uid!==me.value?.id||epoch!==accessEpoch||page.value!=='grading'||version.value?.id!==sid)return;if(!result.item){nextReviewMessage.value='当前队列范围没有其他待评审提交。可返回队列调整筛选。';return;}await openVersion(result.item.id,true,true);reviewNavScope.value=scope;}catch(e:any){error.value=e.message||'无法读取下一份提交，当前评分仍保留';}finally{nextReviewBusy.value=false;}}
 const publicationManager=ref<InstanceType<typeof PublicationManager>>();
-async function publicationChanged(){const sid=version.value?.id,activeCourse=cid.value,activeUser=me.value?.id,epoch=accessEpoch;await refreshCourse();if(epoch!==accessEpoch||activeCourse!==cid.value||activeUser!==me.value?.id)return;if(sid&&version.value?.id===sid){const v=await api(`/submissions/${sid}`);if(epoch===accessEpoch&&activeCourse===cid.value&&activeUser===me.value?.id&&version.value?.id===sid)version.value=v;}if(epoch===accessEpoch&&activeUser===me.value?.id)notify("课程内发布处理已保存");}
+const todoStamp=ref(0);
+async function publicationChanged(){todoStamp.value++;const sid=version.value?.id,activeCourse=cid.value,activeUser=me.value?.id,epoch=accessEpoch;await refreshCourse();if(epoch!==accessEpoch||activeCourse!==cid.value||activeUser!==me.value?.id)return;if(sid&&version.value?.id===sid){const v=await api(`/submissions/${sid}`);if(epoch===accessEpoch&&activeCourse===cid.value&&activeUser===me.value?.id&&version.value?.id===sid)version.value=v;}if(epoch===accessEpoch&&activeUser===me.value?.id)notify("课程内发布处理已保存");}
 const evidenceFocus=ref<{id:number;nonce:number}>();
 async function openEvidence(id:number){if(!await flushBeforeLeave())return;evidenceFocus.value={id,nonce:Date.now()};page.value="evidence";}
 async function progressFeedback(d:any){if(await openVersion(d.submissionId,isStaff.value)){await nextTick();await focusAnchor(d.paragraphId);}}
@@ -1211,6 +1240,7 @@ async function modalSubmit() {
   });
 }
 async function publishGrade() {
+  let published:{sid:number;title:string}|null=null;
   await run(async () => {
     if(!review.state.loaded || review.state.stale || review.state.backup || review.state.conflict)throw new Error('请先处理评分草稿的加载、恢复或冲突提示。');
     const stepMode = isStepAssignment.value;
@@ -1224,7 +1254,7 @@ async function publishGrade() {
     if (!summary.value.trim()) throw new Error("请填写总评与下一步建议");
     if (
       !confirm(
-        "确认发布正式评价？学生将立即看到结果；复评会保留历史并撤回该版社区发布。",
+        "确认发布正式评价？学生将立即看到结果；发布后会打开下一份待评审。复评会保留历史并撤回该版社区发布。",
       )
     )
       return;
@@ -1250,10 +1280,10 @@ async function publishGrade() {
     await review.load(version.value.id);
     await refreshCourse();
     notify("正式评价已发布并留存历史记录");
-    // 发布后默认回到批改队列，继续处理下一份。
-    await go("review");
+    published={sid:version.value.id,title:version.value.title};
     } finally { reviewPublishing.value=false; }
   });
+  if(published)await advanceAfterPublish(published);
 }
 async function publicationRequest() {await publicationManager.value?.request(version.value.id,version.value.publication[0],version.value.title);}
 async function pubAction(id:number,action:string){await publicationManager.value?.open(id,action);}
@@ -1578,6 +1608,9 @@ onBeforeUnmount(() => {
           @open-version="openVersion"
           @publish-assignment="showModal('assignment')"
           @select-course="selectCourse"
+          :refresh="todoStamp"
+          @todo="openTodo"
+          @todo-more="todoMore"
         />
 
         <MembersPage v-else-if="page==='members' && isTeacher" :key="cid" :course-id="cid" @changed="refreshAssignmentRules" />
@@ -1910,5 +1943,5 @@ onBeforeUnmount(() => {
     @submit="modalSubmit"
     @load-rubrics="loadAssignmentRubrics"
   />
-  <div v-if="me && cid && ['community','reader'].includes(page)"><PublicationManager ref="publicationManager" :key="cid+'-'+me.id+'-'+page" :course-id="cid" :user-id="me.id" :role="course?.role||''" @changed="publicationChanged" @open-submission="openVersion" /></div>
+  <div v-if="me && cid && ['community','reader','home'].includes(page)"><PublicationManager ref="publicationManager" :key="cid+'-'+me.id+'-'+page" :course-id="cid" :user-id="me.id" :role="course?.role||''" @changed="publicationChanged" @open-submission="openVersion" /></div>
 </template>

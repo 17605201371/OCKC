@@ -417,6 +417,7 @@ function priorState(f: any) {
         <div
           v-for="f in priorOpen"
           :key="'prior-' + f.id"
+          :id="'feedback-' + f.id"
           class="feedback-card is-prior"
           :class="{ 'is-target': highlightFeedbackId === f.id }"
         >

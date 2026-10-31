@@ -399,6 +399,7 @@ function sidebarJump(id: string) { const target = document.getElementById(id), p
           <article
             v-for="f in draftPrior"
             :key="'dp-' + f.id"
+            :id="'feedback-' + f.id"
             class="feedback-card is-prior"
             :class="{ 'is-target': highlightFeedbackId === f.id }"
             @click="!f.stale && focusAnchor(f.paragraph_id, f.original_text)"

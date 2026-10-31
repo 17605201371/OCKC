@@ -2,6 +2,7 @@
 import { assignmentState, dueLabel } from "./deadlines";
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { api } from "./api";
+import TodoBoard from "./TodoBoard.vue";
 import {
   ArrowUpRight,
   Check,
@@ -31,6 +32,7 @@ const props = defineProps<{
   teacher: boolean;
   homeEntry: any;
   homeSubmission: any;
+  refresh?: number;
 }>();
 const emit = defineEmits([
   "navigate",
@@ -38,6 +40,8 @@ const emit = defineEmits([
   "open-version",
   "publish-assignment",
   "select-course",
+  "todo",
+  "todo-more",
 ]);
 const pendingCount=computed(()=>props.queueSummary?.pending_count??pending.value.length);
 const submissionCount=computed(()=>props.queueSummary?.submission_count??props.queue.length);
@@ -69,6 +73,24 @@ async function loadProgress() {
 watch(() => [props.course?.id, props.me?.id], loadProgress, { immediate: true });
 onBeforeUnmount(() => { alive = false; });
 const gradedEntries = computed(() => Number(progress.value?.graded_entries || 0));
+// 待办：此刻还没处理完的事（/today），每次回到首页重新读取。
+const todo = ref<any[]>([]), todayLoading = ref(false), todayError = ref("");
+let todayGeneration = 0;
+async function loadToday() {
+  const id = props.course?.id, g = ++todayGeneration;
+  if (!id) { todo.value = []; return; }
+  todayLoading.value = true; todayError.value = "";
+  try {
+    const r = await api(`/courses/${id}/today`);
+    if (alive && g === todayGeneration) todo.value = r?.groups || [];
+  } catch (e: any) {
+    if (alive && g === todayGeneration) todayError.value = e?.message || "待办读取失败";
+  } finally {
+    if (alive && g === todayGeneration) todayLoading.value = false;
+  }
+}
+watch(() => [props.course?.id, props.me?.id, props.refresh], loadToday, { immediate: true });
+const todoTotal = computed(() => todo.value.reduce((n, g) => n + Number(g.count || 0), 0));
 const quality = computed(() =>
   props.staff
     ? featured.value?.q_final
@@ -201,9 +223,11 @@ const today = new Date().toLocaleDateString("zh-CN", {
         <p>
           {{ today }} ·
           {{
-            staff
-              ? `${pendingCount} 份提交等待评审`
-              : `${todoRows.length} 项学习进度值得关注`
+            todayLoading && !todo.length
+              ? "正在读取待办…"
+              : staff
+                ? `${todoTotal} 项待处理`
+                : `${todoTotal} 项需要你处理`
           }}
         </p>
       </div>
@@ -218,7 +242,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
         }}
       </button>
     </div>
-    <section v-if="featured" class="workspace-hero">
+    <section v-if="featured && !staff" class="workspace-hero">
       <div class="workspace-hero-main">
         <div class="hero-context">
           <span class="course-dot"></span><span>{{ course.title }}</span
@@ -289,13 +313,7 @@ const today = new Date().toLocaleDateString("zh-CN", {
         </div>
       </aside>
     </section>
-    <section v-else-if="staff && queue.length" class="card empty hero-empty">
-      <Check :size="30" />
-      <h2>提交都已评审</h2>
-      <p>{{ submissionCount }} 份提交都有正式评价，新的提交会出现在这里。</p>
-      <button class="btn secondary" @click="emit('navigate', 'review')">查看批改队列</button>
-    </section>
-    <section v-else class="card empty hero-empty">
+    <section v-else-if="!assignments.length" class="card empty hero-empty">
       <ClipboardList :size="30" />
       <h2>{{ staff ? "从第一个课程任务开始" : "等待老师发布新任务" }}</h2>
       <p>任务、提交与反馈会在这里汇聚。</p>
@@ -309,36 +327,19 @@ const today = new Date().toLocaleDateString("zh-CN", {
     </section>
     <div class="dashboard-columns">
       <div class="dashboard-main stack">
-        <section class="dashboard-card">
+        <TodoBoard
+          :groups="todo"
+          :staff="staff"
+          :summary="staff"
+          :loading="todayLoading"
+          :error="todayError"
+          @act="(key, item) => emit('todo', key, item)"
+          @more="(key) => emit('todo-more', key)"
+          @retry="loadToday"
+        />
+        <section v-if="!staff" class="dashboard-card">
           <header class="card-header">
-            <h2>需要你处理</h2>
-            <span class="muted">{{ todoRows.length }} 项</span>
-          </header>
-          <div v-if="todoRows.length" class="todo-list">
-            <div v-for="(row, i) in todoRows" :key="i" class="todo-row">
-              <span class="todo-icon"
-                ><component :is="row.icon" :size="17"
-              /></span>
-              <div>
-                <strong>{{ row.title }}</strong>
-                <p>{{ row.sub }}</p>
-              </div>
-              <button class="btn secondary compact" @click="action(row)">
-                {{ row.label }}
-              </button>
-            </div>
-          </div>
-          <div v-else class="quiet-empty">
-            <Check :size="20" />
-            <div>
-              <strong>当前没有待处理事项</strong>
-              <p>继续创作，也可以看看课程里的好解释。</p>
-            </div>
-          </div>
-        </section>
-        <section class="dashboard-card">
-          <header class="card-header">
-            <h2>{{ staff ? "评审队列摘录" : "近期作业" }}</h2>
+            <h2>近期作业</h2>
             <button
               class="text-btn"
               @click="emit('navigate', staff ? 'review' : 'assignments')"
