@@ -2,7 +2,7 @@
 import {createRequire} from 'node:module';import fs from 'node:fs';import assert from 'node:assert/strict';
 const {chromium}=createRequire(new URL('../frontend/package.json',import.meta.url))('playwright');
 const base=process.env.E2E_BASE_URL,password=process.env.E2E_PASSWORD;if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(base||'')||!password)throw Error('Set isolated loopback E2E_BASE_URL and E2E_PASSWORD');
-const out=new URL('../.qa/reports',import.meta.url).pathname;fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.CHROMIUM_PATH||'/vercel/sandbox/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome'}),checks=[],errors=[];let shots=0;
+const out=decodeURIComponent(new URL('../.qa/reports',import.meta.url).pathname);fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.CHROMIUM_PATH||'/vercel/sandbox/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome'}),checks=[],errors=[];let shots=0;
 const codes=['S1','S2','S3','A1','A2','A3','C1','C2','L1','L2','L3'];
 function track(p){p.on('pageerror',e=>errors.push(e.message));p.on('dialog',d=>d.accept());}
 async function user(who){const ctx=await browser.newContext({viewport:{width:1440,height:1000},colorScheme:'light'}),p=await ctx.newPage();track(p);await p.goto(base);await p.getByLabel('账号邮箱').fill(who+'@example.test');await p.getByLabel('密码',{exact:true}).fill(password);await p.getByRole('button',{name:'登录工作空间'}).click();await p.getByRole('button',{name:'退出登录'}).waitFor();return p;}

@@ -6,7 +6,7 @@ const { chromium } = createRequire(new URL('../frontend/package.json', import.me
 const base = process.env.E2E_BASE_URL || 'http://127.0.0.1:8092';
 if (!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(base)) throw Error('Use an isolated local test database');
 if (!process.env.E2E_PASSWORD) throw Error('Set E2E_PASSWORD');
-const out = new URL('../.qa/sidebar', import.meta.url).pathname; fs.mkdirSync(out, { recursive: true });
+const out = decodeURIComponent(new URL('../.qa/sidebar', import.meta.url).pathname); fs.mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({ headless: true, args: ['--no-sandbox'], executablePath: process.env.CHROMIUM_PATH || '/vercel/sandbox/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome' });
 const errors = [], checks = [];
 async function session(who) {

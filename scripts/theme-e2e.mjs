@@ -1,7 +1,7 @@
 // Fresh loopback-only QA; never deploys or updates an online preview.
 import {createRequire} from 'node:module';import fs from 'node:fs';import assert from 'node:assert/strict';
 const {chromium}=createRequire(new URL('../frontend/package.json',import.meta.url))('playwright');const base=process.env.E2E_BASE_URL,password=process.env.E2E_PASSWORD;if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(base||'')||!password)throw Error('Set isolated localhost E2E_BASE_URL and E2E_PASSWORD');
-const out=new URL('../.qa/theme',import.meta.url).pathname;fs.mkdirSync(out,{recursive:true});const checks=[],errors=[];
+const out=decodeURIComponent(new URL('../.qa/theme',import.meta.url).pathname);fs.mkdirSync(out,{recursive:true});const checks=[],errors=[];
 const browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.CHROMIUM_PATH||'/vercel/sandbox/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome'});
 const ctx=await browser.newContext({viewport:{width:1440,height:1050},colorScheme:'dark'});const page=await ctx.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('dialog',d=>d.accept());
 const dark=async()=>assert.equal(await page.evaluate(()=>document.documentElement.dataset.theme),'dark');

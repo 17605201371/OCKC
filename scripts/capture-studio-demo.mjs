@@ -5,7 +5,7 @@ const { chromium }=createRequire(new URL('../frontend/package.json',import.meta.
 const base=process.env.E2E_BASE_URL || 'http://127.0.0.1:8090';
 if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(base))throw Error('Local previews only');
 if(!process.env.E2E_PASSWORD)throw Error('Set E2E_PASSWORD');
-const out=new URL('../.qa/studio-handoff',import.meta.url).pathname;fs.mkdirSync(out,{recursive:true});
+const out=decodeURIComponent(new URL('../.qa/studio-handoff',import.meta.url).pathname);fs.mkdirSync(out,{recursive:true});
 const browser=await chromium.launch({headless:true,args:['--no-sandbox'],...(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH}:{})});
 const page=await browser.newPage({viewport:{width:1600,height:1100},colorScheme:'light'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try{

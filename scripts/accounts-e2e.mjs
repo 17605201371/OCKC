@@ -3,7 +3,7 @@ import {createRequire} from 'node:module';import fs from 'node:fs';import assert
 const {chromium}=createRequire(new URL('../frontend/package.json',import.meta.url))('playwright');
 const base=process.env.E2E_BASE_URL,password=process.env.E2E_PASSWORD;
 if(!/^http:\/\/(127\.0\.0\.1|localhost):\d+$/.test(base||'')||!password)throw Error('Use an isolated loopback E2E_BASE_URL and E2E_PASSWORD');
-const out=new URL('../.qa/accounts',import.meta.url).pathname;fs.mkdirSync(out,{recursive:true});
+const out=decodeURIComponent(new URL('../.qa/accounts',import.meta.url).pathname);fs.mkdirSync(out,{recursive:true});
 const browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.CHROMIUM_PATH||'/vercel/sandbox/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome'});const errors=[],checks=[];let shots=0;
 async function signIn(p,who,pw=password){await p.getByLabel('账号邮箱').fill(who+'@example.test');await p.getByLabel('密码',{exact:true}).fill(pw);await p.getByRole('button',{name:'登录工作空间'}).click();}
 async function user(who){const ctx=await browser.newContext({viewport:{width:1280,height:1000},colorScheme:'light'});const p=await ctx.newPage();p.on('pageerror',e=>errors.push(e.message));await p.goto(base);await signIn(p,who);await p.getByRole('button',{name:'退出登录',exact:true}).waitFor();return p;}
