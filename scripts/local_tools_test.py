@@ -5,7 +5,8 @@ import local_preflight as p
 
 class LocalMaintenanceTest(unittest.TestCase):
     def setUp(self):
-        self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name);self.db=self.root/'community.mv.db';self.data=b'Local test data only\x00\xff'*200;self.db.write_bytes(self.data);self.archive=self.root/'snapshot.tar.gz'
+        # resolve(): macOS temp dirs sit under the /var -> /private/var symlink, which the tool rightly rejects.
+        self.tmp=tempfile.TemporaryDirectory();self.root=Path(self.tmp.name).resolve();self.db=self.root/'community.mv.db';self.data=b'Local test data only\x00\xff'*200;self.db.write_bytes(self.data);self.archive=self.root/'snapshot.tar.gz'
     def tearDown(self):self.tmp.cleanup()
     def backup(self):return m.backup(self.db,self.archive,True)
     def bad_archive(self,members):
